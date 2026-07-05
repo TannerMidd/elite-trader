@@ -29,6 +29,17 @@ networks** so other machines can connect.
 - **Station market** — sortable/filterable commodity table (populated when you open a
   station's commodities screen in game).
 - **Jump history** — last 20 jumps with distances.
+- **Autoplot (◎ buttons)** — click any system to plot a route to it in-game, like
+  EDCopilot: the app focuses the game window, opens the galaxy map with your own
+  keybind, types the system into search and plots to it. Needs keyboard keys bound
+  for Galaxy Map / UI Up / UI Right / UI Select (checked automatically; controller
+  binds alone are not enough). Leave the game window alone for ~10 seconds while it
+  runs. Timings are tunable at the top of `elite/autoplot.py` if the sequence
+  outruns the game on your PC.
+- **Open in app** — tick the checkbox on the Quick Links card (desktop window only)
+  to open Inara/EDSM results in a window inside the app instead of your browser.
+  (Inara's terms don't allow scraping their pages, so results are shown in a real
+  embedded browser rather than parsed into the page.)
 
 ## Configuration
 

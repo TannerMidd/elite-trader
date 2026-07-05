@@ -56,6 +56,25 @@ def create_app(state):
             return jsonify({"error": str(exc)}), 502
         return jsonify({"hops": hops})
 
+    @app.post("/api/plot")
+    def api_plot():
+        body = request.get_json(silent=True) or {}
+        system = (body.get("system") or "").strip()
+        if not system:
+            return jsonify({"error": "No system name given."}), 400
+        # Imported lazily so an input-emulation problem can't take the server down.
+        from . import autoplot
+
+        try:
+            steps = autoplot.plot_route(
+                system,
+                dry_run=bool(body.get("dry_run", False)),
+                close_map=bool(body.get("close_map", True)),
+            )
+        except autoplot.AutoplotError as exc:
+            return jsonify({"error": str(exc)}), 409
+        return jsonify({"ok": True, "system": system, "steps": steps})
+
     return app
 
 

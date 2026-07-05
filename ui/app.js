@@ -34,12 +34,55 @@ function copyText(text, btn) {
   }
 }
 
-function openExternal(url) {
-  if (window.pywebview && window.pywebview.api && window.pywebview.api.open_url) {
-    window.pywebview.api.open_url(url);
-    return true;
+function openExternal(url, label) {
+  if (window.pywebview && window.pywebview.api) {
+    if ($("inapp-toggle").checked && window.pywebview.api.open_inline) {
+      window.pywebview.api.open_inline(url, label || "Browser");
+      return true;
+    }
+    if (window.pywebview.api.open_url) {
+      window.pywebview.api.open_url(url);
+      return true;
+    }
   }
   return false; // let the browser handle it
+}
+
+/* ---------- autoplot ---------- */
+
+let plotBusy = false;
+
+async function plotSystem(system) {
+  if (!system || plotBusy) return;
+  const status = $("plot-status");
+  plotBusy = true;
+  status.classList.remove("error");
+  status.textContent = `Plotting route to ${system} — leave the game window alone for ~10s…`;
+  try {
+    const resp = await fetch("/api/plot", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ system }),
+    });
+    const data = await resp.json();
+    if (!resp.ok) throw new Error(data.error || "Plot failed");
+    status.textContent = `Sent plot sequence for ${system} — check the game.`;
+  } catch (err) {
+    status.classList.add("error");
+    status.textContent = String(err.message || err);
+  } finally {
+    plotBusy = false;
+  }
+}
+
+function plotButton(system) {
+  const btn = document.createElement("button");
+  btn.className = "plotbtn";
+  btn.type = "button";
+  btn.title = "Plot route in game to " + system;
+  btn.textContent = "◎";
+  btn.addEventListener("click", () => plotSystem(system));
+  return btn;
 }
 
 /* ---------- rendering ---------- */
@@ -113,7 +156,7 @@ function renderLinks() {
     a.rel = "noopener";
     a.textContent = l.label;
     a.addEventListener("click", (ev) => {
-      if (openExternal(l.url)) ev.preventDefault();
+      if (openExternal(l.url, l.label)) ev.preventDefault();
     });
     row.appendChild(a);
   }
@@ -183,6 +226,7 @@ function renderJumps() {
     btn.textContent = "⧉";
     btn.addEventListener("click", () => copyText(j.system, btn));
     li.appendChild(btn);
+    li.appendChild(plotButton(j.system));
     ul.appendChild(li);
   }
 }
@@ -273,6 +317,10 @@ function renderRoutes(hops) {
       (h.distance != null ? `<div class="commodities">${Number(h.distance).toFixed(1)} ly jump` +
         (h.to_dist_ls != null ? ` · ${fmtNum(h.to_dist_ls)} ls to station` : "") +
         (h.cumulative_profit != null ? ` · total so far: ${fmtNum(h.cumulative_profit)} cr` : "") + `</div>` : "");
+    if (h.to_system) {
+      const line = div.querySelector(".route-line");
+      line.insertBefore(plotButton(h.to_system), line.querySelector(".profit"));
+    }
     results.appendChild(div);
   }
 }
@@ -302,6 +350,20 @@ document.addEventListener("DOMContentLoaded", () => {
 
   $("route-form").addEventListener("submit", findRoutes);
   $("route-form").addEventListener("input", () => { routeFormTouched = true; });
+
+  $("plot-form").addEventListener("submit", (ev) => {
+    ev.preventDefault();
+    const name = $("plot-input").value.trim();
+    if (name) plotSystem(name);
+  });
+
+  // "open in app" toggle: only meaningful inside the desktop (pywebview) window.
+  const toggle = $("inapp-toggle");
+  toggle.checked = localStorage.getItem("inappLinks") === "1";
+  toggle.addEventListener("change", () => localStorage.setItem("inappLinks", toggle.checked ? "1" : "0"));
+  const showToggle = () => $("inapp-toggle-wrap").classList.remove("hidden");
+  if (window.pywebview) showToggle();
+  window.addEventListener("pywebviewready", showToggle);
 
   document.querySelectorAll("#market-table th").forEach((th) => {
     th.addEventListener("click", () => {

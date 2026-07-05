@@ -31,6 +31,11 @@
         <button class="copy hidden" id="station-copy" title="Copy station name">⧉</button>
       </div>
       <div class="dest-row dim" id="destination-row"></div>
+      <form id="plot-form" class="plot-form">
+        <input type="text" id="plot-input" placeholder="Plot route to system…" autocomplete="off">
+        <button type="submit" class="primary small">PLOT</button>
+      </form>
+      <div id="plot-status" class="dim"></div>
     </div>
     <div class="stats">
       <div class="stat"><div class="label">CREDITS</div><div class="value orange" id="credits">—</div></div>
@@ -41,7 +46,12 @@
   </section>
 
   <section class="card">
-    <div class="label">QUICK LINKS <span class="dim">(pre-filled with your current system)</span></div>
+    <div class="card-head">
+      <div class="label">QUICK LINKS <span class="dim">(pre-filled with your current system)</span></div>
+      <label class="inapp-toggle hidden" id="inapp-toggle-wrap" title="Show Inara/EDSM results in a window inside the app instead of your browser">
+        <input type="checkbox" id="inapp-toggle"> open in app
+      </label>
+    </div>
     <div class="linkrow" id="links"></div>
   </section>
 

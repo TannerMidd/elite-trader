@@ -33,6 +33,15 @@ class WindowApi:
         if isinstance(url, str) and url.startswith(("http://", "https://")):
             webbrowser.open(url)
 
+    def open_inline(self, url, title=None):
+        """Open a site in a child window inside the app (Inara results 'inline').
+        A real WebView2 browser, so Inara's bot protection is not an issue."""
+        if not (isinstance(url, str) and url.startswith(("http://", "https://"))):
+            return
+        import webview
+
+        webview.create_window(str(title or "Browser"), url, width=1150, height=850)
+
 
 def main():
     parser = argparse.ArgumentParser(description="Elite Dangerous companion app")

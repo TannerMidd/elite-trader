@@ -141,8 +141,43 @@ button.primary {
 button.primary:hover { background: var(--orange-soft); }
 button.primary:disabled { background: var(--border); color: var(--dim); cursor: wait; }
 
-#route-status { min-height: 18px; font-size: 13px; margin-bottom: 4px; }
-#route-status.error { color: var(--bad); }
+#route-status, #plot-status { min-height: 18px; font-size: 13px; margin-bottom: 4px; }
+#route-status.error, #plot-status.error { color: var(--bad); }
+
+/* autoplot */
+.plot-form { display: flex; gap: 8px; margin-top: 10px; }
+.plot-form input {
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  color: var(--text);
+  border-radius: 5px;
+  padding: 6px 10px;
+  font-size: 13px;
+  width: 220px;
+}
+.plot-form input:focus { outline: none; border-color: var(--orange); }
+button.primary.small { padding: 6px 12px; font-size: 12px; }
+
+.plotbtn {
+  background: var(--panel-2);
+  color: var(--orange-soft);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  cursor: pointer;
+  font-size: 13px;
+  padding: 2px 8px;
+}
+.plotbtn:hover { color: var(--orange); border-color: var(--orange); }
+
+.inapp-toggle {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+  color: var(--dim);
+  cursor: pointer;
+  white-space: nowrap;
+}
 
 .hop {
   background: var(--panel-2);
