@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Elite Trader</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<header class="topbar">
+  <div class="brand">ELITE <span>TRADER</span></div>
+  <div class="pilot">
+    <span id="commander">—</span>
+    <span class="dim" id="ship">—</span>
+  </div>
+</header>
+
+<div id="banner" class="banner hidden"></div>
+
+<main>
+  <section class="card location">
+    <div class="loc-main">
+      <div class="label">CURRENT SYSTEM</div>
+      <div class="system-row">
+        <h1 id="system">—</h1>
+        <button class="copy" data-copy-target="system" title="Copy system name">⧉</button>
+      </div>
+      <div class="station-row">
+        <span id="station-status" class="dim">—</span>
+        <button class="copy hidden" id="station-copy" title="Copy station name">⧉</button>
+      </div>
+      <div class="dest-row dim" id="destination-row"></div>
+    </div>
+    <div class="stats">
+      <div class="stat"><div class="label">CREDITS</div><div class="value orange" id="credits">—</div></div>
+      <div class="stat"><div class="label">FUEL</div><div class="value" id="fuel">—</div></div>
+      <div class="stat"><div class="label">CARGO</div><div class="value" id="cargo">—</div></div>
+      <div class="stat"><div class="label">LEGAL</div><div class="value" id="legal">—</div></div>
+    </div>
+  </section>
+
+  <section class="card">
+    <div class="label">QUICK LINKS <span class="dim">(pre-filled with your current system)</span></div>
+    <div class="linkrow" id="links"></div>
+  </section>
+
+  <section class="card">
+    <div class="card-head">
+      <div class="label">TRADE ROUTES <span class="dim">via Spansh</span></div>
+    </div>
+    <form id="route-form" class="route-form">
+      <label>Capital <input type="number" id="rf-capital" min="1000" step="1000"></label>
+      <label>Cargo (t) <input type="number" id="rf-cargo" min="2"></label>
+      <label>Max hop (ly) <input type="number" id="rf-hop" min="1" step="0.1"></label>
+      <label>Hops <input type="number" id="rf-hops" min="1" max="10" value="4"></label>
+      <label>Max star dist (ls) <input type="number" id="rf-lsdist" min="1" value="1000"></label>
+      <label>Price age (days) <input type="number" id="rf-age" min="1" value="30"></label>
+      <label class="check"><input type="checkbox" id="rf-largepad"> Large pad</label>
+      <button type="submit" id="rf-go" class="primary">FIND ROUTES</button>
+    </form>
+    <div id="route-status" class="dim"></div>
+    <div id="route-results"></div>
+  </section>
+
+  <div class="two-col">
+    <section class="card">
+      <div class="card-head">
+        <div class="label" id="market-title">STATION MARKET</div>
+        <input type="search" id="market-filter" placeholder="filter…">
+      </div>
+      <div class="table-wrap">
+        <table id="market-table">
+          <thead>
+            <tr>
+              <th data-sort="name">Commodity</th>
+              <th data-sort="sell" class="num">Sell</th>
+              <th data-sort="buy" class="num">Buy</th>
+              <th data-sort="demand" class="num">Demand</th>
+              <th data-sort="stock" class="num">Stock</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+        <div id="market-empty" class="dim empty">No market data yet — open the commodities screen at a station.</div>
+      </div>
+    </section>
+
+    <section class="card">
+      <div class="label">JUMP HISTORY</div>
+      <ul id="jumps" class="jumps"></ul>
+      <div id="jumps-empty" class="dim empty">No jumps recorded yet this session.</div>
+      <div class="label cargo-label">CARGO HOLD</div>
+      <ul id="cargo-list" class="cargo-list"></ul>
+      <div id="cargo-empty" class="dim empty">Cargo hold is empty.</div>
+    </section>
+  </div>
+</main>
+
+<footer class="dim">Elite Trader · journal data refreshes every ~2s · routes by <span class="orange">spansh.co.uk</span> · links to inara.cz &amp; edsm.net</footer>
+
+<script src="app.js"></script>
+</body>
+</html>

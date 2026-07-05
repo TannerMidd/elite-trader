@@ -1,0 +1,13 @@
+# Python
+.venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+
+# Editors / OS
+.vscode/
+.idea/
+Thumbs.db
+
+# Local runtime leftovers
+*.log

@@ -1,0 +1,215 @@
+:root {
+  --bg: #0d0e10;
+  --panel: #16181c;
+  --panel-2: #1d2026;
+  --border: #2a2e36;
+  --text: #d8dbe0;
+  --dim: #8a8f98;
+  --orange: #ff7100;
+  --orange-soft: #ff9a40;
+  --good: #6fbf73;
+  --bad: #e05d5d;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: "Segoe UI", system-ui, sans-serif;
+  font-size: 15px;
+}
+
+.topbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 18px;
+  background: var(--panel);
+  border-bottom: 2px solid var(--orange);
+}
+
+.brand { font-weight: 800; letter-spacing: 3px; color: var(--orange); }
+.brand span { color: var(--text); font-weight: 300; }
+.pilot { display: flex; gap: 12px; align-items: baseline; }
+.pilot #commander { font-weight: 600; }
+
+.banner {
+  background: #4a2c00;
+  color: var(--orange-soft);
+  padding: 8px 18px;
+  border-bottom: 1px solid var(--orange);
+}
+
+main {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.card {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 14px 16px;
+}
+
+.card-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 6px;
+}
+
+.label {
+  font-size: 11px;
+  letter-spacing: 2px;
+  color: var(--dim);
+  margin-bottom: 4px;
+}
+
+.dim { color: var(--dim); }
+.orange { color: var(--orange); }
+.hidden { display: none !important; }
+.empty { padding: 8px 2px; font-size: 13px; }
+
+/* location card */
+.location { display: flex; justify-content: space-between; gap: 18px; flex-wrap: wrap; }
+.system-row { display: flex; align-items: center; gap: 10px; }
+.system-row h1 { margin: 0; font-size: 30px; font-weight: 650; color: var(--orange); }
+.station-row { margin-top: 4px; font-size: 16px; display: flex; align-items: center; gap: 8px; }
+.dest-row { margin-top: 4px; font-size: 13px; }
+
+.stats { display: flex; gap: 22px; align-items: center; flex-wrap: wrap; }
+.stat .value { font-size: 19px; font-weight: 600; margin-top: 2px; white-space: nowrap; }
+
+.copy {
+  background: var(--panel-2);
+  color: var(--dim);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  cursor: pointer;
+  font-size: 13px;
+  padding: 2px 8px;
+}
+.copy:hover { color: var(--orange); border-color: var(--orange); }
+.copy.done { color: var(--good); border-color: var(--good); }
+
+/* quick links */
+.linkrow { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 6px; }
+.linkrow a {
+  color: var(--orange-soft);
+  text-decoration: none;
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  padding: 7px 13px;
+  border-radius: 999px;
+  font-size: 13px;
+}
+.linkrow a:hover { border-color: var(--orange); color: var(--orange); }
+
+/* trade route form */
+.route-form { display: flex; gap: 10px; flex-wrap: wrap; align-items: flex-end; margin: 8px 0; }
+.route-form label { display: flex; flex-direction: column; gap: 3px; font-size: 11px; color: var(--dim); letter-spacing: 1px; }
+.route-form input[type="number"] {
+  width: 105px;
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  color: var(--text);
+  border-radius: 5px;
+  padding: 6px 8px;
+  font-size: 14px;
+}
+.route-form input:focus { outline: none; border-color: var(--orange); }
+.route-form .check { flex-direction: row; align-items: center; gap: 6px; padding-bottom: 8px; font-size: 13px; }
+
+button.primary {
+  background: var(--orange);
+  color: #14100a;
+  font-weight: 700;
+  letter-spacing: 1px;
+  border: none;
+  border-radius: 5px;
+  padding: 9px 18px;
+  cursor: pointer;
+}
+button.primary:hover { background: var(--orange-soft); }
+button.primary:disabled { background: var(--border); color: var(--dim); cursor: wait; }
+
+#route-status { min-height: 18px; font-size: 13px; margin-bottom: 4px; }
+#route-status.error { color: var(--bad); }
+
+.hop {
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--orange);
+  border-radius: 6px;
+  padding: 10px 12px;
+  margin-bottom: 8px;
+}
+.hop .route-line { display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; }
+.hop .route-line b { font-size: 15px; }
+.hop .arrow { color: var(--orange); }
+.hop .profit { margin-left: auto; color: var(--good); font-weight: 700; white-space: nowrap; }
+.hop .commodities { margin-top: 5px; font-size: 13px; color: var(--dim); }
+.hop .commodities b { color: var(--text); }
+
+/* tables */
+.two-col { display: grid; grid-template-columns: 3fr 2fr; gap: 14px; align-items: start; }
+@media (max-width: 900px) { .two-col { grid-template-columns: 1fr; } }
+
+.table-wrap { overflow-x: auto; max-height: 430px; overflow-y: auto; }
+table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+th, td { text-align: left; padding: 5px 8px; border-bottom: 1px solid var(--border); }
+th {
+  position: sticky; top: 0;
+  background: var(--panel);
+  color: var(--dim);
+  font-size: 11px;
+  letter-spacing: 1px;
+  cursor: pointer;
+  user-select: none;
+  white-space: nowrap;
+}
+th:hover { color: var(--orange); }
+th.sorted { color: var(--orange); }
+.num { text-align: right; }
+td.num { font-variant-numeric: tabular-nums; }
+td .sub { color: var(--dim); font-size: 11px; }
+
+#market-filter {
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  color: var(--text);
+  border-radius: 5px;
+  padding: 5px 9px;
+  font-size: 13px;
+  width: 140px;
+}
+#market-filter:focus { outline: none; border-color: var(--orange); }
+
+/* jump history & cargo */
+.jumps, .cargo-list { list-style: none; margin: 4px 0; padding: 0; }
+.jumps li, .cargo-list li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 2px;
+  border-bottom: 1px solid var(--border);
+  font-size: 13.5px;
+}
+.jumps .sysname { flex: 1; }
+.jumps .dist, .jumps .when { color: var(--dim); font-size: 12px; white-space: nowrap; }
+.cargo-list .count { margin-left: auto; color: var(--orange-soft); font-variant-numeric: tabular-nums; }
+.cargo-label { margin-top: 16px; }
+
+footer {
+  text-align: center;
+  padding: 12px;
+  font-size: 12px;
+}
