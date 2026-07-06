@@ -148,9 +148,9 @@ def plot_route(system, dry_run=False, close_map=True):
         f"focus search box ({_desc(binds['UI_Up'])} then {_desc(binds['UI_Select'])})",
         f"clear search box ({CLEAR_BACKSPACES}x backspace)",
         f"type '{system}', wait {TYPE_TO_ENTER_DELAY}s for autocomplete, enter",
-        f"exit search box ({_desc(binds['UI_Back'])})",
+        f"move to plot control ({_desc(binds['UI_Right'])})",
         f"hold {_desc(binds['UI_Select'])} {PLOT_HOLD}s to plot (verified via NavRoute.json; "
-        f"up to {SEARCH_ROUNDS} full search rounds with fallback exits)",
+        f"up to {SEARCH_ROUNDS} full search rounds with fallback attempts)",
     ]
     if close_map:
         steps.append("close galaxy map")
@@ -199,10 +199,11 @@ def plot_route(system, dry_run=False, close_map=True):
             pdi.press("enter")
             time.sleep(AFTER_SEARCH_DELAY)  # camera flies to the system
 
-            # After Enter the box may still be in edit mode - keys would be
-            # typed as text, not act as UI commands. Back out, then hold select
-            # to plot; try harder exits if the first attempt doesn't take.
-            for attempt_keys in (("UI_Back",), ("UI_Right",), ("UI_Back",)):
+            # Enter releases the search box focus by itself. The proven
+            # sequence (same as EDAutopilot's) is UI_Right onto the panel's
+            # plot control, then hold select. UI_Back must NOT come first -
+            # it collapses the search panel and breaks every later attempt.
+            for attempt_keys in (("UI_Right",), (), ("UI_Back", "UI_Right")):
                 for action in attempt_keys:
                     _press(pdi, binds[action]["key"], binds[action]["mods"])
                     time.sleep(STEP_DELAY)
