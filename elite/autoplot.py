@@ -27,7 +27,7 @@ TYPE_TO_ENTER_DELAY = 1.3   # autocomplete populating; Enter too early does noth
 AFTER_SEARCH_DELAY = 4.0    # camera flying to the searched system
 SEARCH_ROUNDS = 2           # full search redo if the first pass never navigated
 STEP_DELAY = 0.4            # small pause between UI keypresses
-PLOT_HOLD = 1.5             # holding UI_Select on a system = "plot route"
+PLOT_HOLD = 2.0             # holding UI_Select on a system = "plot route"
 MAP_OPEN_TIMEOUT = 12.0
 CLEAR_BACKSPACES = 40       # wipe leftover text in the search box before typing
 PLOT_CONFIRM_WAIT = 3.0     # time for NavRoute.json to appear after the hold
@@ -98,16 +98,12 @@ def _press(pdi, key, mods=(), hold=0.0):
     for m in mods:
         pdi.keyDown(m)
     if hold:
-        # Elite Dangerous polls input DEVICE STATE, so a single synthetic
-        # keydown held only by a sleep lapses and registers as a tap - the
-        # hold-to-plot bar never fills. Re-assert the keydown continuously
-        # until release so the game sees the key genuinely held down.
-        end = time.monotonic() + hold
-        pdi.keyDown(key)
-        while time.monotonic() < end:
-            pdi.keyDown(key)
-            time.sleep(0.02)
-        pdi.keyUp(key)
+        # One clean continuous hold. Do NOT re-assert the keydown in a loop:
+        # repeated keydown events read as auto-repeat and reset Elite's
+        # hold-to-plot timer, so the circle never starts filling.
+        pdi.keyDown(key, _pause=False)
+        time.sleep(hold)
+        pdi.keyUp(key, _pause=False)
     else:
         pdi.press(key)
     for m in reversed(mods):
@@ -247,7 +243,8 @@ def _plot_hold_keys(binds):
     override = os.environ.get("ED_PLOT_KEY")
     if override:
         return [{"key": k.strip(), "mods": []} for k in override.split(",") if k.strip()]
-    candidates = [{"key": "enter", "mods": []}, binds["UI_Select"]]
+    # UI_Select (the real plot binding) first, Enter as a fallback.
+    candidates = [binds["UI_Select"], {"key": "enter", "mods": []}]
     seen, out = set(), []
     for k in candidates:
         if k["key"] not in seen:
