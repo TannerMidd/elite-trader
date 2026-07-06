@@ -60,7 +60,8 @@
       "PowerShell(Copy-Item \"C:\\\\Users\\\\Tanner\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\bundled-skills\\\\2.1.201\\\\e57af7d9955e75bb8e96534bdeac22bc\\\\dataviz\\\\scripts\\\\validate_palette.js\" \"$env:TEMP\\\\validate_palette.mjs\"; node \"$env:TEMP\\\\validate_palette.mjs\" \"#ff7100\" --mode dark; Write-Host \"---- diverging pair ----\"; node \"$env:TEMP\\\\validate_palette.mjs\" \"#6fbf73,#e05d5d\" --mode dark)",
       "PowerShell(node \"$env:TEMP\\\\validate_palette.mjs\" \"#ff7100\" --mode dark 2>&1 | Out-String; node \"$env:TEMP\\\\validate_palette.mjs\" --help 2>&1 | Out-String; Get-Content \"C:\\\\Users\\\\Tanner\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\bundled-skills\\\\2.1.201\\\\e57af7d9955e75bb8e96534bdeac22bc\\\\dataviz\\\\scripts\\\\validate_palette.js\" -TotalCount 40)",
       "PowerShell(cmd /c \"node %TEMP%\\\\validate_palette.mjs \"\"#ff7100\"\" --mode dark --surface \"\"#16181c\"\" 2>&1\"; Write-Host \"exit1: $LASTEXITCODE\"; cmd /c \"node %TEMP%\\\\validate_palette.mjs \"\"#6fbf73,#e05d5d\"\" --mode dark --surface \"\"#16181c\"\" 2>&1\"; Write-Host \"exit2: $LASTEXITCODE\")",
-      "PowerShell($env:PYTHONIOENCODING='utf-8'; .venv\\\\Scripts\\\\python -m py_compile elite/exploration.py elite/biovalues.py elite/journal.py elite/state.py; if \\($?\\) { Write-Host 'py OK' }; node --check ui\\\\app.js; if \\($?\\) { Write-Host 'js OK' }; .venv\\\\Scripts\\\\python tests\\\\test_bio.py)"
+      "PowerShell($env:PYTHONIOENCODING='utf-8'; .venv\\\\Scripts\\\\python -m py_compile elite/exploration.py elite/biovalues.py elite/journal.py elite/state.py; if \\($?\\) { Write-Host 'py OK' }; node --check ui\\\\app.js; if \\($?\\) { Write-Host 'js OK' }; .venv\\\\Scripts\\\\python tests\\\\test_bio.py)",
+      "PowerShell(.venv\\\\Scripts\\\\python \"C:\\\\Users\\\\Tanner\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\f--Development-elite-trader\\\\d59487b9-6b0b-40c2-815b-b3f2527203ef\\\\scratchpad\\\\shots2.py\")"
     ]
   }
 }

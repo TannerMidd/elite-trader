@@ -55,11 +55,15 @@ any module ("6A Fuel Scoop") or ship.
 estimated payouts — and a **neutron highway plotter** for long-range travel, each
 waypoint one click from the in-game galaxy map.
 
+<div align="center"><img src="docs/screenshots/guides.png" alt="Road to Riches and neutron plotter" width="900"></div>
+
 ### 📈 Profit analytics
 
 Every buy/sell from your entire journal history feeds an analytics tab: profit
 today / this week / this period, credits-over-time curve, daily profit bars and
 your top commodities by profit.
+
+<div align="center"><img src="docs/screenshots/analytics.png" alt="Profit analytics" width="900"></div>
 
 ### 🏗️ Colonization helper
 
@@ -93,6 +97,8 @@ genus candidates** for unmapped bodies from atmosphere/temperature/gravity, and
 the sample-spacing distance), live sampling progress, and the unsold samples
 you're carrying with their estimated Vista Genomics payout. First footfall pays
 5× on top.
+
+<div align="center"><img src="docs/screenshots/explore.png" alt="Exploration data and exobiology" width="900"></div>
 
 ### 🚀 Live ship & local data
 
