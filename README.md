@@ -49,6 +49,8 @@ available, pad size and price age. One click plots the route in game. A
 right now, and an outfitting/shipyard search finds the nearest station selling
 any module ("6A Fuel Scoop") or ship.
 
+<div align="center"><img src="docs/screenshots/commodity-search.png" alt="Commodity search" width="900"></div>
+
 ### 🧭 Guides
 
 **Road to Riches** — high-value scan/mapping targets near you in visit order with
@@ -69,8 +71,6 @@ your top commodities by profit.
 
 Construction depots you've visited show their remaining resource needs, the
 payout for delivering them, and the cheapest nearby sources for each commodity.
-
-<div align="center"><img src="docs/screenshots/commodity-search.png" alt="Commodity search" width="900"></div>
 
 ### 🎯 Autoplot (Windows)
 
