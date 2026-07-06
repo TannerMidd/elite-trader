@@ -22,7 +22,9 @@ NEEDED_ACTIONS = ["GalaxyMapOpen", "UI_Up", "UI_Right", "UI_Select", "UI_Back"]
 # Timing (seconds) - tweak here if the sequence outruns the game on your PC.
 MAP_LOAD_DELAY = 3.0        # galaxy map opening animation
 SEARCH_READY_DELAY = 1.0    # search box entering edit mode after selecting it
+TYPE_TO_ENTER_DELAY = 1.3   # autocomplete populating; Enter too early does nothing
 AFTER_SEARCH_DELAY = 4.0    # camera flying to the searched system
+SEARCH_ROUNDS = 2           # full search redo if the first pass never navigated
 STEP_DELAY = 0.4            # small pause between UI keypresses
 PLOT_HOLD = 1.5             # holding UI_Select on a system = "plot route"
 MAP_OPEN_TIMEOUT = 12.0
@@ -145,9 +147,10 @@ def plot_route(system, dry_run=False, close_map=True):
         f"open galaxy map ({_desc(binds['GalaxyMapOpen'])})",
         f"focus search box ({_desc(binds['UI_Up'])} then {_desc(binds['UI_Select'])})",
         f"clear search box ({CLEAR_BACKSPACES}x backspace)",
-        f"type '{system}' + enter",
+        f"type '{system}', wait {TYPE_TO_ENTER_DELAY}s for autocomplete, enter",
         f"exit search box ({_desc(binds['UI_Back'])})",
-        f"hold {_desc(binds['UI_Select'])} {PLOT_HOLD}s to plot (verified via NavRoute.json, retries with fallbacks)",
+        f"hold {_desc(binds['UI_Select'])} {PLOT_HOLD}s to plot (verified via NavRoute.json; "
+        f"up to {SEARCH_ROUNDS} full search rounds with fallback exits)",
     ]
     if close_map:
         steps.append("close galaxy map")
@@ -170,31 +173,44 @@ def plot_route(system, dry_run=False, close_map=True):
                 )
             time.sleep(MAP_LOAD_DELAY)
 
-        _press(pdi, binds["UI_Up"]["key"], binds["UI_Up"]["mods"])  # focus the search field
-        time.sleep(STEP_DELAY)
-        # Explicitly enter edit mode; typing too early swallows leading characters.
-        _press(pdi, binds["UI_Select"]["key"], binds["UI_Select"]["mods"])
-        time.sleep(SEARCH_READY_DELAY)
-        pdi.press("backspace", presses=CLEAR_BACKSPACES, interval=0.01)  # clear leftovers
-        time.sleep(STEP_DELAY)
-        _type_text(pdi, system)
-        time.sleep(STEP_DELAY)
-        pdi.press("enter")
-        time.sleep(AFTER_SEARCH_DELAY)  # camera flies to the system
-
-        # After Enter the search box is still in edit mode - keys would be typed
-        # as text, not act as UI commands. Back out first, then hold select to
-        # plot; NavRoute.json updating is the proof it worked. Try harder exits
-        # if the first attempt doesn't take.
+        # NavRoute.json updating is the only reliable proof the plot happened,
+        # so search + plot runs in verified rounds: if a round never navigates
+        # (e.g. Enter pressed before the autocomplete was ready) or the holds
+        # don't take, redo the search from scratch.
         baseline = _navroute_mtime()
         plotted = False
-        for attempt_keys in (("UI_Back",), ("UI_Right",), ("UI_Back",)):
-            for action in attempt_keys:
-                _press(pdi, binds[action]["key"], binds[action]["mods"])
+        for rnd in range(SEARCH_ROUNDS):
+            if gui_focus() != GUI_FOCUS_GALAXY_MAP:
+                raise AutoplotError("The galaxy map closed unexpectedly mid-sequence.")
+            if rnd > 0:
+                # Whatever state the failed round left: exit any edit mode,
+                # then walk back up to the search row.
+                _press(pdi, binds["UI_Back"]["key"], binds["UI_Back"]["mods"])
                 time.sleep(STEP_DELAY)
-            _press(pdi, binds["UI_Select"]["key"], binds["UI_Select"]["mods"], hold=PLOT_HOLD)
-            if _route_plotted_since(baseline):
-                plotted = True
+            _press(pdi, binds["UI_Up"]["key"], binds["UI_Up"]["mods"])  # focus the search field
+            time.sleep(STEP_DELAY)
+            # Explicitly enter edit mode; typing too early swallows characters.
+            _press(pdi, binds["UI_Select"]["key"], binds["UI_Select"]["mods"])
+            time.sleep(SEARCH_READY_DELAY)
+            pdi.press("backspace", presses=CLEAR_BACKSPACES, interval=0.02)  # clear leftovers
+            time.sleep(STEP_DELAY)
+            _type_text(pdi, system)
+            time.sleep(TYPE_TO_ENTER_DELAY)  # let the autocomplete populate
+            pdi.press("enter")
+            time.sleep(AFTER_SEARCH_DELAY)  # camera flies to the system
+
+            # After Enter the box may still be in edit mode - keys would be
+            # typed as text, not act as UI commands. Back out, then hold select
+            # to plot; try harder exits if the first attempt doesn't take.
+            for attempt_keys in (("UI_Back",), ("UI_Right",), ("UI_Back",)):
+                for action in attempt_keys:
+                    _press(pdi, binds[action]["key"], binds[action]["mods"])
+                    time.sleep(STEP_DELAY)
+                _press(pdi, binds["UI_Select"]["key"], binds["UI_Select"]["mods"], hold=PLOT_HOLD)
+                if _route_plotted_since(baseline):
+                    plotted = True
+                    break
+            if plotted:
                 break
 
         if not plotted:
