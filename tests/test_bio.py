@@ -57,3 +57,34 @@ with tempfile.TemporaryDirectory() as td:
 assert samp["progress"] == 2 and samp["species"] == "Stratum Tectonicas" and samp["colony_m"] == 500, samp
 
 print("bio pipeline OK: signals+genus values+body details, sampling progress, vault total all correct")
+
+# Exploration tracker + genus prediction
+explo_events = [
+    {"timestamp": "2026-07-06T02:00:00Z", "event": "Location", "StarSystem": "Testland", "StarPos": [0, 0, 0], "Docked": False},
+    {"timestamp": "2026-07-06T02:01:00Z", "event": "Scan", "BodyName": "Testland 3", "PlanetClass": "High metal content body",
+     "TerraformState": "Terraformable", "WasDiscovered": False, "SurfaceGravity": 4.0, "SurfaceTemperature": 300},
+    {"timestamp": "2026-07-06T02:02:00Z", "event": "SAAScanComplete", "BodyName": "Testland 3"},
+    {"timestamp": "2026-07-06T02:03:00Z", "event": "Scan", "BodyName": "Testland 4 b", "PlanetClass": "Rocky body",
+     "Atmosphere": "thin carbon dioxide atmosphere", "SurfaceGravity": 1.96, "SurfaceTemperature": 180.0,
+     "Landable": True, "WasDiscovered": True},
+    {"timestamp": "2026-07-06T02:04:00Z", "event": "FSSBodySignals", "BodyName": "Testland 4 b",
+     "Signals": [{"Type": "$SAA_SignalType_Biological;", "Count": 5}]},
+]
+with tempfile.TemporaryDirectory() as td:
+    (Path(td) / "Journal.2026-07-06T020000.01.log").write_text(
+        "\n".join(json.dumps(e) for e in explo_events), encoding="utf-8")
+    state3 = AppState()
+    JournalWatcher(state3, journal_dir=td).bootstrap()
+    snap3 = state3.snapshot()
+
+ex = snap3["exploration"]
+assert ex["count"] == 2 and ex["mapped"] == 1 and ex["firsts"] == 1, ex
+top = ex["top"][0]
+assert top["body"] == "Testland 3" and top["value"] == int(163000 * 2.6 * 3.3), top
+
+bio_body = snap3["bio"]["system_signals"][0]
+predicted = [g["name"] for g in bio_body.get("predicted", [])]
+assert "Bacterium" in predicted and "Cactoida" in predicted and "Tussock" in predicted, predicted
+assert "Fonticulua" not in predicted and "Fumerola" not in predicted, predicted
+
+print("exploration tracker + genus prediction OK")

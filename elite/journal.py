@@ -7,7 +7,7 @@ import threading
 import time
 from pathlib import Path
 
-from . import biovalues, marketdb
+from . import biovalues, exploration, marketdb
 
 BIO_SIGNAL_TYPE = "$SAA_SignalType_Biological;"
 
@@ -195,6 +195,13 @@ class JournalWatcher:
         if genuses is not None:
             entry["genuses"] = genuses
         entry.update(self._body_scans.get(body_name) or {})
+        if not entry.get("genuses") and entry.get("landable"):
+            entry["predicted"] = biovalues.predict_genera(
+                entry.get("planet_class"), entry.get("atmosphere"),
+                entry.get("temp_k"), entry.get("gravity_g"), entry.get("volcanism"),
+            )
+        else:
+            entry.pop("predicted", None)
         signals[body_name] = entry
         self.state.update(bio_signals=signals)
 
@@ -214,7 +221,23 @@ class JournalWatcher:
 
     def _on_scan(self, e):
         body = e.get("BodyName")
-        if not body or e.get("PlanetClass") is None:
+        if not body:
+            return
+        # Cartographic value estimate for the exploration tracker
+        base = exploration.scan_base_value(e)
+        if base is not None:
+            scans = dict(self.state.explo_scans)
+            prev = scans.get(body)
+            scans[body] = {
+                "body": body,
+                "base": base,
+                "first": not e.get("WasDiscovered", True),
+                "mapped": prev.get("mapped", False) if prev else False,
+                "class": e.get("PlanetClass") or e.get("StarType"),
+            }
+            self.state.update(explo_scans=scans)
+
+        if e.get("PlanetClass") is None:
             return
         gravity = e.get("SurfaceGravity")
         details = {
@@ -223,10 +246,26 @@ class JournalWatcher:
             "gravity_g": round(gravity / 9.80665, 2) if gravity is not None else None,
             "temp_k": round(e.get("SurfaceTemperature")) if e.get("SurfaceTemperature") else None,
             "landable": bool(e.get("Landable")),
+            "volcanism": e.get("Volcanism") or "",
         }
         self._body_scans[body] = details
         if body in self.state.bio_signals:
             self._update_bio_body(body)
+
+    def _on_saascancomplete(self, e):
+        body = e.get("BodyName")
+        scans = dict(self.state.explo_scans)
+        if body in scans:
+            entry = dict(scans[body])
+            entry["mapped"] = True
+            scans[body] = entry
+            self.state.update(explo_scans=scans)
+
+    def _on_sellexplorationdata(self, e):
+        self.state.update(explo_scans={})
+
+    def _on_multisellexplorationdata(self, e):
+        self.state.update(explo_scans={})
 
     def _on_scanorganic(self, e):
         species = e.get("Species_Localised") or _clean_name(e.get("Species"))
@@ -323,7 +362,8 @@ class JournalWatcher:
         self.state.update(bio_vault=[], bio_sampling=None)
 
     def _on_died(self, e):
-        self.state.update(bio_vault=[], bio_sampling=None)  # exobio data is lost on death
+        # Exobio samples and unsold cartographic data are lost on death.
+        self.state.update(bio_vault=[], bio_sampling=None, explo_scans={})
 
     # ---------- status json files ----------
 

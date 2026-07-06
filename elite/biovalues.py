@@ -81,6 +81,50 @@ GENUS_VALUE_RANGE.setdefault("Anemone", (1499900, 5100900))
 GENUS_VALUE_RANGE.setdefault("Brain Tree", (3565100, 3565100))
 
 
+# Simplified genus prediction rules for landable thin-atmosphere bodies:
+# (atmosphere keywords or None=any, temp range K, max gravity g, body classes
+# or None=any, volcanism required). Community-derived; predictions, not fact.
+ROCKY = {"Rocky body", "High metal content body"}
+ICY = {"Icy body", "Rocky ice body"}
+PREDICTION_RULES = {
+    "Bacterium": (None, (20, 400), 0.61, None, False),
+    "Tussock": ({"carbon dioxide", "ammonia", "argon", "methane", "sulphur dioxide", "water", "nitrogen"}, (145, 197), 0.28, ROCKY, False),
+    "Stratum": ({"carbon dioxide", "ammonia", "sulphur dioxide", "water", "oxygen"}, (165, 400), 0.58, ROCKY, False),
+    "Cactoida": ({"carbon dioxide", "ammonia", "water"}, (160, 197), 0.28, ROCKY, False),
+    "Clypeus": ({"carbon dioxide", "water"}, (190, 455), 0.28, ROCKY, False),
+    "Concha": ({"carbon dioxide", "ammonia", "water", "nitrogen"}, (160, 200), 0.28, ROCKY, False),
+    "Frutexa": ({"carbon dioxide", "ammonia", "sulphur dioxide", "water", "nitrogen"}, (146, 200), 0.28, ROCKY, False),
+    "Fonticulua": ({"argon", "neon", "methane", "nitrogen", "oxygen", "carbon dioxide"}, (50, 150), 0.28, ICY, False),
+    "Fungoida": ({"carbon dioxide", "ammonia", "argon", "methane"}, (160, 210), 0.28, ROCKY | ICY, False),
+    "Osseus": ({"carbon dioxide", "ammonia", "argon", "methane", "nitrogen"}, (160, 200), 0.28, ROCKY | ICY, False),
+    "Aleoida": ({"carbon dioxide", "ammonia"}, (152, 197), 0.28, ROCKY, False),
+    "Electricae": ({"argon", "neon", "helium"}, (50, 150), 0.28, {"Icy body"}, False),
+    "Recepta": ({"sulphur dioxide", "carbon dioxide"}, (130, 300), 0.28, ROCKY | ICY, False),
+    "Tubus": ({"carbon dioxide", "ammonia", "argon", "methane", "nitrogen"}, (160, 197), 0.16, {"Rocky body"}, False),
+    "Fumerola": ({"carbon dioxide", "ammonia", "argon", "methane", "sulphur dioxide", "water"}, (50, 450), 0.28, None, True),
+}
+
+
+def predict_genera(planet_class, atmosphere, temp_k, gravity_g, volcanism):
+    """Genus candidates for an unmapped landable body. Best-effort heuristics."""
+    atmo = (atmosphere or "").lower()
+    if "thin" not in atmo or temp_k is None or gravity_g is None:
+        return []
+    has_volcanism = bool(volcanism)
+    out = []
+    for genus, (keywords, (t_lo, t_hi), g_max, classes, needs_volcanism) in PREDICTION_RULES.items():
+        if keywords is not None and not any(k in atmo for k in keywords):
+            continue
+        if not (t_lo <= temp_k <= t_hi) or gravity_g > g_max:
+            continue
+        if classes is not None and planet_class not in classes:
+            continue
+        if needs_volcanism and not has_volcanism:
+            continue
+        out.append(genus_info(genus))
+    return out
+
+
 def species_value(species_localised):
     return SPECIES_VALUES.get(species_localised)
 

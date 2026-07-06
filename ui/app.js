@@ -262,6 +262,27 @@ function fmtRange(lo, hi) {
 function renderBio() {
   const bio = state.bio || {};
 
+  // Exploration data card
+  const ex = state.exploration || { total: 0, count: 0, top: [] };
+  $("explo-total").textContent = ex.count ? "≈" + fmtNum(ex.total) + " cr" : "";
+  $("explo-summary").textContent = ex.count
+    ? `${ex.count} bodies scanned · ${ex.mapped} mapped · ${ex.firsts} first discoveries`
+    : "";
+  $("explo-empty").classList.toggle("hidden", ex.count > 0);
+  const exUl = $("explo-top");
+  const exSig = JSON.stringify(ex.top);
+  if (exUl.dataset.sig !== exSig) {
+    exUl.dataset.sig = exSig;
+    exUl.innerHTML = "";
+    for (const b of ex.top || []) {
+      const li = document.createElement("li");
+      li.innerHTML = `<span>${esc(b.body)} <span class="sub">${esc(b.class || "")}` +
+        `${b.mapped ? " · mapped" : ""}${b.first ? " · first discovery" : ""}</span></span>` +
+        `<span class="count">≈${fmtNum(b.value)} cr</span>`;
+      exUl.appendChild(li);
+    }
+  }
+
   // Sampling progress
   const sampCard = $("bio-sampling-card");
   const samp = bio.sampling;
@@ -307,10 +328,15 @@ function renderBio() {
   tbody.dataset.sig = bsig;
   tbody.innerHTML = "";
   for (const b of rows) {
-    const genuses = (b.genuses || []).map((g) =>
+    const known = (b.genuses || []).map((g) =>
       `<div>${esc(g.name)} <span class="sub">${fmtRange(g.min_value, g.max_value)}` +
       (g.colony_m ? ` · ${g.colony_m} m` : "") + `</span></div>`
-    ).join("") || `<span class="dim">${b.count ? "not mapped yet" : ""}</span>`;
+    ).join("");
+    const predicted = !known && (b.predicted || []).length
+      ? `<div class="sub">predicted: ${(b.predicted).map((g) =>
+          `${esc(g.name)} (${fmtRange(g.min_value, g.max_value)})`).join(", ")}</div>`
+      : "";
+    const genuses = known || predicted || `<span class="dim">${b.count ? "not mapped yet" : ""}</span>`;
     const tr = document.createElement("tr");
     tr.innerHTML =
       `<td>${esc(b.body)}${b.landable === false ? ' <span class="sub">not landable</span>' : ""}</td>` +

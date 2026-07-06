@@ -49,7 +49,7 @@
   <nav class="tabs" id="tabs">
     <button class="tab active" data-tab="trade">TRADE ROUTES</button>
     <button class="tab" data-tab="commodities">COMMODITIES</button>
-    <button class="tab" data-tab="bio">BIO</button>
+    <button class="tab" data-tab="bio">EXPLORE</button>
     <button class="tab" data-tab="guides">GUIDES</button>
     <button class="tab" data-tab="analytics">ANALYTICS</button>
     <button class="tab" data-tab="local">LOCAL</button>
@@ -123,6 +123,16 @@
   </div>
 
   <div class="tabpane hidden" id="tab-bio">
+    <section class="card">
+      <div class="card-head">
+        <div class="label">EXPLORATION DATA <span class="dim">unsold cartographic value · estimates; first discovery ×2.6, mapping ×3.3</span></div>
+        <div class="value orange" id="explo-total"></div>
+      </div>
+      <div class="commodities" id="explo-summary"></div>
+      <ul id="explo-top" class="cargo-list"></ul>
+      <div id="explo-empty" class="dim empty">No unsold scans — FSS some bodies and this fills in.</div>
+    </section>
+
     <section class="card hidden" id="bio-sampling-card">
       <div class="label">SAMPLING IN PROGRESS</div>
       <div id="bio-sampling"></div>

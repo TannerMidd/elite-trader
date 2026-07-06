@@ -49,6 +49,9 @@ class AppState:
         # Colonization construction depots (latest event per MarketID)
         self.colonisation = {}  # market_id -> {progress, resources, station, ...}
 
+        # Unsold cartographic data (cleared on sell/death)
+        self.explo_scans = {}  # body name -> {base, first, mapped, class}
+
         self.last_journal_event = None  # timestamp string of most recent event seen
         self.journal_dir_found = True
 
@@ -62,6 +65,21 @@ class AppState:
             self.jump_history.appendleft(
                 {"system": system, "dist": dist, "timestamp": timestamp}
             )
+
+    def _exploration_snapshot(self):
+        from . import exploration
+
+        entries = [
+            {**e, "value": exploration.effective_value(e)} for e in self.explo_scans.values()
+        ]
+        entries.sort(key=lambda e: -e["value"])
+        return {
+            "total": sum(e["value"] for e in entries),
+            "count": len(entries),
+            "mapped": sum(1 for e in entries if e.get("mapped")),
+            "firsts": sum(1 for e in entries if e.get("first")),
+            "top": entries[:8],
+        }
 
     def snapshot(self):
         with self._lock:
@@ -105,6 +123,7 @@ class AppState:
                         "total": sum(i.get("value") or 0 for i in self.bio_vault),
                     },
                 },
+                "exploration": self._exploration_snapshot(),
                 "colonisation": sorted(
                     self.colonisation.values(), key=lambda c: c.get("updated") or "", reverse=True
                 ),
