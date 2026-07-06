@@ -82,6 +82,23 @@ def find_binds_file():
     return max(candidates, key=lambda p: p.stat().st_mtime)
 
 
+def keyboard_key_name(action):
+    """Raw ED key name (e.g. 'Key_Numpad_Add') of an action's keyboard bind,
+    even when it has no pydirectinput equivalent. None if not keyboard-bound."""
+    try:
+        root = ET.parse(find_binds_file()).getroot()
+    except (BindingsError, ET.ParseError):
+        return None
+    node = root.find(action)
+    if node is None:
+        return None
+    for slot in ("Primary", "Secondary"):
+        el = node.find(slot)
+        if el is not None and el.get("Device") == "Keyboard" and el.get("Key"):
+            return el.get("Key")
+    return None
+
+
 def load_keyboard_binds(actions):
     """Return {action: {"key": <pydirectinput name>, "mods": [...]}} for each
     requested action, preferring whichever of Primary/Secondary is a keyboard key.

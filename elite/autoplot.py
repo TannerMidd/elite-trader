@@ -11,14 +11,14 @@ import os
 import threading
 import time
 
-from .bindings import BindingsError, load_keyboard_binds
+from .bindings import BindingsError, ed_key_to_pydirect, keyboard_key_name, load_keyboard_binds
 from .journal import find_journal_dir
 
 ED_WINDOW_TITLE = "Elite - Dangerous (CLIENT)"
 GUI_FOCUS_NONE = 0
 GUI_FOCUS_GALAXY_MAP = 6
 
-NEEDED_ACTIONS = ["GalaxyMapOpen", "UI_Up", "UI_Right", "UI_Select", "UI_Back"]
+NEEDED_ACTIONS = ["GalaxyMapOpen", "UI_Up", "UI_Down", "UI_Right", "UI_Select", "UI_Back"]
 
 # Timing (seconds) - tweak here if the sequence outruns the game on your PC.
 MAP_LOAD_DELAY = 3.0        # galaxy map opening animation
@@ -37,6 +37,39 @@ SHIFTED = {"+": "=", "_": "-", ":": ";", '"': "'", "?": "/", "!": "1", "*": "8",
 
 _plot_lock = threading.Lock()
 user32 = ctypes.windll.user32
+
+# Raw SendInput scancodes for keys pydirectinput cannot send (numpad).
+NUMPAD_SCANCODES = {
+    "Key_Numpad_Add": 0x4E,
+    "Key_Numpad_Subtract": 0x4A,
+    "Key_Numpad_Multiply": 0x37,
+    "Key_Numpad_0": 0x52, "Key_Numpad_1": 0x4F, "Key_Numpad_2": 0x50,
+    "Key_Numpad_3": 0x51, "Key_Numpad_4": 0x4B, "Key_Numpad_5": 0x4C,
+    "Key_Numpad_6": 0x4D, "Key_Numpad_7": 0x47, "Key_Numpad_8": 0x48,
+    "Key_Numpad_9": 0x49,
+}
+
+_KEYEVENTF_SCANCODE = 0x0008
+_KEYEVENTF_KEYUP = 0x0002
+
+
+class _KI(ctypes.Structure):
+    _fields_ = [("wVk", ctypes.c_ushort), ("wScan", ctypes.c_ushort),
+                ("dwFlags", ctypes.c_ulong), ("time", ctypes.c_ulong),
+                ("dwExtraInfo", ctypes.POINTER(ctypes.c_ulong))]
+
+
+class _INPUT(ctypes.Structure):
+    _fields_ = [("type", ctypes.c_ulong), ("ki", _KI),
+                ("padding", ctypes.c_ubyte * 8)]
+
+
+def _scancode_tap(scancode, hold=0.08):
+    down = _INPUT(type=1, ki=_KI(0, scancode, _KEYEVENTF_SCANCODE, 0, None))
+    up = _INPUT(type=1, ki=_KI(0, scancode, _KEYEVENTF_SCANCODE | _KEYEVENTF_KEYUP, 0, None))
+    user32.SendInput(1, ctypes.byref(down), ctypes.sizeof(_INPUT))
+    time.sleep(hold)
+    user32.SendInput(1, ctypes.byref(up), ctypes.sizeof(_INPUT))
 
 
 class AutoplotError(Exception):
@@ -152,9 +185,10 @@ def plot_route(system, dry_run=False, close_map=True):
         f"focus search box ({_desc(binds['UI_Up'])} then {_desc(binds['UI_Select'])})",
         f"clear search box ({CLEAR_BACKSPACES}x backspace)",
         f"type '{system}', wait {TYPE_TO_ENTER_DELAY}s for autocomplete, enter",
-        f"move to plot control ({_desc(binds['UI_Right'])})",
+        f"refocus panel + move to result ({_desc(binds['UI_Down'])}, {_desc(binds['UI_Up'])}, {_desc(binds['UI_Right'])})",
+        f"TAP {_desc(binds['UI_Select'])} to commit selection, zoom in (CamZoomIn)",
         f"hold {_desc(binds['UI_Select'])} {PLOT_HOLD}s to plot (verified via NavRoute.json; "
-        f"up to {SEARCH_ROUNDS} full search rounds with fallback attempts)",
+        f"up to {SEARCH_ROUNDS} rounds with fallback variants)",
     ]
     if close_map:
         steps.append("close galaxy map")
@@ -204,21 +238,36 @@ def plot_route(system, dry_run=False, close_map=True):
             pdi.press("enter")
             time.sleep(AFTER_SEARCH_DELAY)  # camera flies to the system
 
-            # After search the system is selected with the "hold to plot"
-            # prompt (usually) already focused. Try each candidate plot key
-            # with no navigation first, then nudge focus for later attempts.
+            # EDAPGui's field-proven post-search sequence: refocus the panel
+            # (UI_Down/UI_Up), UI_Right onto the result, TAP select once to
+            # actually commit the system selection, zoom toward it, THEN hold
+            # select to plot. The commit tap is what this setup was missing -
+            # the visible "hold to plot" prompt is not enough by itself.
             # Every hold is verified against NavRoute.json, so trying several
-            # keys/positions is safe.
-            for attempt_keys in ((), ("UI_Right",), ("UI_Back", "UI_Right")):
-                for action in attempt_keys:
+            # variants is safe.
+            def _attempt(pre, tap_select, zoom):
+                for action in pre:
                     _press(pdi, binds[action]["key"], binds[action]["mods"])
                     time.sleep(STEP_DELAY)
+                if tap_select:
+                    _press(pdi, binds["UI_Select"]["key"], binds["UI_Select"]["mods"])
+                    time.sleep(0.6)
+                if zoom:
+                    _cam_zoom_in(pdi)
+                    time.sleep(0.5)
                 for pk in plot_keys:
                     _press(pdi, pk["key"], pk["mods"], hold=PLOT_HOLD)
                     if _route_plotted_since(baseline):
-                        plotted = True
-                        break
-                if plotted:
+                        return True
+                return False
+
+            for pre, tap, zoom in (
+                (("UI_Down", "UI_Up", "UI_Right"), True, True),  # full EDAP sequence
+                ((), True, False),                               # commit tap + hold in place
+                ((), False, False),                              # bare hold
+            ):
+                if _attempt(pre, tap, zoom):
+                    plotted = True
                     break
             if plotted:
                 break
@@ -234,6 +283,19 @@ def plot_route(system, dry_run=False, close_map=True):
         return steps
     finally:
         _plot_lock.release()
+
+
+def _cam_zoom_in(pdi):
+    """Tap the map zoom-in key if one is keyboard-bound (numpad keys go via
+    raw scancodes, which pydirectinput cannot send)."""
+    name = keyboard_key_name("CamZoomIn")
+    if not name:
+        return
+    pd_key = ed_key_to_pydirect(name)
+    if pd_key and pd_key in pdi.KEYBOARD_MAPPING:
+        pdi.press(pd_key)
+    elif name in NUMPAD_SCANCODES:
+        _scancode_tap(NUMPAD_SCANCODES[name], hold=0.3)
 
 
 def _plot_hold_keys(binds):
