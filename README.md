@@ -56,6 +56,19 @@ Python. It stores its database in a `data\` folder next to the exe. Share the ex
 with friends who don't want to install anything (they still need Elite Dangerous
 and, for the desktop window, Windows 11's built-in WebView2 runtime).
 
+### Releases
+
+Grab `EliteTrader.exe` from the [Releases](../../releases) page — every release
+also includes a source archive automatically.
+
+To cut a release (maintainer): tag and push, and GitHub Actions builds the exe,
+smoke-tests it and publishes the release with the exe attached:
+
+```
+git tag v1.0.0
+git push origin v1.0.0
+```
+
 ## First run: build the market database
 
 The trade engine needs local market data. Open the **Database** tab and click

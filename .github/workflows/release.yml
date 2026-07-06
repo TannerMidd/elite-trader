@@ -1,0 +1,47 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  build-release:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt pyinstaller
+
+      - name: Build EliteTrader.exe
+        run: >
+          pyinstaller --noconfirm --onefile --windowed --name EliteTrader
+          --add-data "ui;ui"
+          --hidden-import webview.platforms.winforms
+          --hidden-import webview.platforms.edgechromium
+          app.py
+
+      - name: Smoke test (headless server answers)
+        shell: pwsh
+        run: |
+          Start-Process -FilePath dist\EliteTrader.exe -ArgumentList "--headless","--port","8699"
+          Start-Sleep -Seconds 12
+          $r = Invoke-WebRequest -UseBasicParsing http://127.0.0.1:8699/api/state -TimeoutSec 15
+          if ($r.StatusCode -ne 200) { throw "exe did not serve /api/state" }
+          $ui = Invoke-WebRequest -UseBasicParsing http://127.0.0.1:8699/ -TimeoutSec 15
+          if ($ui.StatusCode -ne 200) { throw "exe did not serve the UI" }
+
+      - name: Publish release with exe attached
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/EliteTrader.exe
+          generate_release_notes: true
