@@ -219,11 +219,16 @@ def plan_loops(
     requires_large_pad=False,
     min_supply=1,
     jump_range=20.0,
+    max_leg=None,
     top_n=LOOP_RESULTS,
 ):
     """Inara-style 2-station round trips near the player: fill the hold A->B,
     refill B->A, rank by estimated profit PER HOUR (travel-time model: jumps +
-    supercruise + docking), not raw profit per trip. Legs may span several jumps."""
+    supercruise + docking), not raw profit per trip. Legs may span several jumps.
+
+    `radius` = how far from the player loop stations may be (getting to a distant
+    loop is a one-time cost, so it is not penalised in the ranking); `max_leg` =
+    the max distance between the two loop stations (defaults to radius)."""
     conn = marketdb.connect()
     try:
         if not marketdb.status(conn)["ready"]:
@@ -278,6 +283,9 @@ def plan_loops(
         capital = int(capital)
         max_cargo = int(max_cargo)
         min_supply = max(1, int(min_supply))
+        # Without a cap, two stations each within radius of the player could
+        # still be up to 2x radius apart from each other.
+        leg_cap = float(max_leg) if max_leg else float(radius)
         seen_pairs = set()
         loops = []
         for (a, b) in directed:
@@ -285,10 +293,8 @@ def plan_loops(
             if key in seen_pairs:
                 continue
             seen_pairs.add(key)
-            # Radius also caps the leg length; both-near-me-but-opposite-sides
-            # pairs would otherwise sneak in at up to 2x radius apart.
             pair_dist = _dist(by_id[a], by_id[b])
-            if pair_dist > float(radius):
+            if pair_dist > leg_cap:
                 continue
             out = _fill_cargo(directed.get((a, b), []), max_cargo, capital, min_supply)
             back = _fill_cargo(directed.get((b, a), []), max_cargo, capital, min_supply)

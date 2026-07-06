@@ -251,6 +251,7 @@ function seedRouteForm() {
   if (state.credits != null && !$("rf-capital").value) $("rf-capital").value = state.credits;
   if (state.cargo_capacity != null && !$("rf-cargo").value) $("rf-cargo").value = state.cargo_capacity;
   if (state.max_jump_range != null && !$("rf-hop").value) $("rf-hop").value = state.max_jump_range.toFixed(1);
+  if (state.max_jump_range != null && !$("rf-jumprange").value) $("rf-jumprange").value = state.max_jump_range.toFixed(1);
   // Default min supply to the hold size so listed routes can actually fill it.
   if (state.cargo_capacity && !$("rf-minsupply").value) $("rf-minsupply").value = state.cargo_capacity;
 }
@@ -281,6 +282,9 @@ async function findRoutes(ev) {
         capital: Number($("rf-capital").value) || undefined,
         max_cargo: Number($("rf-cargo").value) || undefined,
         radius: Number($("rf-radius").value) || undefined,
+        max_leg: Number($("rf-maxleg").value) || undefined,
+        jump_range: Number($("rf-jumprange").value) || undefined,
+        results: Number($("rf-results").value) || undefined,
         min_supply: Number($("rf-minsupply").value) || undefined,
         max_hop_distance: Number($("rf-hop").value) || undefined,
         max_hops: Number($("rf-hops").value) || undefined,
@@ -607,11 +611,39 @@ document.addEventListener("DOMContentLoaded", () => {
 
   $("route-form").addEventListener("submit", findRoutes);
   $("route-form").addEventListener("input", () => { routeFormTouched = true; });
-  $("rf-mode").addEventListener("change", () => {
+  const applyMode = () => {
     const loop = $("rf-mode").value === "loop";
-    $("rf-radius-wrap").classList.toggle("hidden", !loop);
+    for (const id of ["rf-radius-wrap", "rf-maxleg-wrap", "rf-jumprange-wrap", "rf-results-wrap"])
+      $(id).classList.toggle("hidden", !loop);
     $("rf-hop-wrap").classList.toggle("hidden", loop);
     $("rf-hops-wrap").classList.toggle("hidden", loop);
+  };
+  $("rf-mode").addEventListener("change", applyMode);
+
+  // Persist route settings across reloads; restored values win over auto-seeding.
+  const FORM_FIELDS = ["rf-mode", "rf-capital", "rf-cargo", "rf-radius", "rf-maxleg",
+    "rf-jumprange", "rf-results", "rf-hop", "rf-hops", "rf-minsupply", "rf-lsdist",
+    "rf-age", "rf-largepad"];
+  try {
+    const saved = JSON.parse(localStorage.getItem("routeForm") || "{}");
+    let restored = false;
+    for (const id of FORM_FIELDS) {
+      if (!(id in saved)) continue;
+      const el = $(id);
+      if (el.type === "checkbox") el.checked = !!saved[id];
+      else el.value = saved[id];
+      restored = true;
+    }
+    if (restored) routeFormTouched = true;
+  } catch (e) { /* corrupted storage - use defaults */ }
+  applyMode();
+  $("route-form").addEventListener("input", () => {
+    const out = {};
+    for (const id of FORM_FIELDS) {
+      const el = $(id);
+      out[id] = el.type === "checkbox" ? el.checked : el.value;
+    }
+    localStorage.setItem("routeForm", JSON.stringify(out));
   });
 
   $("plot-form").addEventListener("submit", (ev) => {

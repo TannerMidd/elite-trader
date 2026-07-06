@@ -16,7 +16,11 @@ any phone, tablet or PC on your home network.
 - **Trade routes (local engine)** — Inara-style 2-station round-trip loops, ranked
   by **estimated profit per hour** (travel-time model: jumps, supercruise distance,
   docking overhead), with full per-commodity breakdowns: units, buy/sell price,
-  stock, demand, profit per unit. A multi-hop chain mode is also available.
+  stock, demand, profit per unit. Loops don't have to start where you are — a
+  better loop several jumps away outranks a mediocre one next door. Search radius,
+  max leg length, jump range, minimum stock/demand and result count are all
+  configurable, and your settings persist. A multi-hop chain mode is also
+  available.
 - **Commodity search** — where to buy or sell any commodity near you, best price
   first, with distance, supply/demand and price age.
 - **Autoplot** — click the ◎ next to any system and the app opens the in-game

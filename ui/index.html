@@ -66,7 +66,10 @@
         </label>
         <label>Capital <input type="number" id="rf-capital" min="0" step="any"></label>
         <label>Cargo (t) <input type="number" id="rf-cargo" min="2"></label>
-        <label id="rf-radius-wrap">Radius (ly) <input type="number" id="rf-radius" min="5" value="100"></label>
+        <label id="rf-radius-wrap" title="How far from you the loop's stations may be. A great loop 4-5 jumps away is worth relocating to - the one-time trip there is not held against it.">Search radius (ly) <input type="number" id="rf-radius" min="5" value="100"></label>
+        <label id="rf-maxleg-wrap" title="Max distance between the loop's two stations (each leg may take several jumps)">Max leg (ly) <input type="number" id="rf-maxleg" min="0" value="80"></label>
+        <label id="rf-jumprange-wrap" title="Used to estimate jumps per leg for the profit/hour ranking; auto-filled from your ship">Jump range (ly) <input type="number" id="rf-jumprange" min="1" step="any"></label>
+        <label id="rf-results-wrap" title="How many loops to list">Results <input type="number" id="rf-results" min="1" max="25" value="8"></label>
         <label id="rf-hop-wrap" class="hidden">Max hop (ly) <input type="number" id="rf-hop" min="1" step="any"></label>
         <label id="rf-hops-wrap" class="hidden">Hops <input type="number" id="rf-hops" min="1" max="10" value="4"></label>
         <label>Min units <input type="number" id="rf-minsupply" min="1" title="Ignore commodities with less stock or demand than this"></label>

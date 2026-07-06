@@ -79,6 +79,8 @@ def create_app(state):
                     requires_large_pad=params["requires_large_pad"],
                     min_supply=num("min_supply", 1, int),
                     jump_range=num("jump_range", snap.get("max_jump_range") or 20.0),
+                    max_leg=num("max_leg", 0) or None,
+                    top_n=max(1, min(25, num("results", 8, int))),
                 )
             except routes.RouteError as exc:
                 return jsonify({"error": str(exc), "source": "local"}), 502
