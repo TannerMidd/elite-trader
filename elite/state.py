@@ -46,6 +46,9 @@ class AppState:
         self.bio_sampling = None  # {"genus","species","variant","progress"}
         self.bio_vault = []     # [{"species","genus","variant","value","body"}]
 
+        # Colonization construction depots (latest event per MarketID)
+        self.colonisation = {}  # market_id -> {progress, resources, station, ...}
+
         self.last_journal_event = None  # timestamp string of most recent event seen
         self.journal_dir_found = True
 
@@ -102,6 +105,9 @@ class AppState:
                         "total": sum(i.get("value") or 0 for i in self.bio_vault),
                     },
                 },
+                "colonisation": sorted(
+                    self.colonisation.values(), key=lambda c: c.get("updated") or "", reverse=True
+                ),
                 "last_journal_event": self.last_journal_event,
                 "journal_dir_found": self.journal_dir_found,
             }

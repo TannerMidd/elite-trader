@@ -211,6 +211,32 @@ def create_app(state):
             return jsonify({"error": str(exc)}), 400
         return jsonify({"results": results})
 
+    @app.get("/api/colonisation-sources")
+    def api_colonisation_sources():
+        snap = state.snapshot()
+        try:
+            market_id = int(request.args.get("market_id", 0))
+        except ValueError:
+            market_id = 0
+        depot = next((d for d in snap.get("colonisation") or [] if d["market_id"] == market_id), None)
+        if not depot:
+            return jsonify({"error": "Unknown construction depot."}), 404
+        needed = [r for r in depot["resources"] if r["remaining"] > 0][:10]
+        out = []
+        for res in needed:
+            try:
+                found = routes.search_commodity(
+                    query=res["symbol"], mode="buy",
+                    system=snap.get("system"), star_pos=snap.get("star_pos"),
+                    radius=float(request.args.get("radius", 50)),
+                    min_units=1, limit=2,
+                )
+                sources = found["results"]
+            except routes.RouteError:
+                sources = []
+            out.append({**res, "sources": sources})
+        return jsonify({"commodities": out})
+
     @app.get("/api/alerts")
     def api_alerts():
         resp = jsonify(alerts.snapshot())

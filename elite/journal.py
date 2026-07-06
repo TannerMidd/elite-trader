@@ -15,6 +15,7 @@ DEFAULT_JOURNAL_DIR = (
     Path.home() / "Saved Games" / "Frontier Developments" / "Elite Dangerous"
 )
 BOOTSTRAP_MAX_FILES = 25
+BOOTSTRAP_MIN_FILES = 12  # context like colonization depots spans sessions
 POLL_SECONDS = 1.0
 
 ED_STEAM_APP_ID = "359320"
@@ -251,6 +252,42 @@ class JournalWatcher:
             })
             self.state.update(bio_vault=vault, bio_sampling=None)
 
+    # ---------- colonization ----------
+
+    def _on_colonisationconstructiondepot(self, e):
+        market_id = e.get("MarketID")
+        if not market_id:
+            return
+        resources = []
+        for r in e.get("ResourcesRequired") or []:
+            required = r.get("RequiredAmount") or 0
+            provided = r.get("ProvidedAmount") or 0
+            resources.append({
+                "symbol": (r.get("Name") or "").strip("$;").removesuffix("_name").lower(),
+                "name": r.get("Name_Localised") or _clean_name(r.get("Name")),
+                "required": required,
+                "provided": provided,
+                "remaining": max(0, required - provided),
+                "payment": r.get("Payment") or 0,
+            })
+        depots = dict(self.state.colonisation)
+        depots[market_id] = {
+            "market_id": market_id,
+            "progress": e.get("ConstructionProgress"),
+            "complete": bool(e.get("ConstructionComplete")),
+            "failed": bool(e.get("ConstructionFailed")),
+            "updated": e.get("timestamp"),
+            # The event fires while docked at the depot, so current location names it.
+            "station": self.state.station if self.state.docked else None,
+            "system": self.state.system,
+            "resources": sorted(resources, key=lambda r: -r["remaining"]),
+        }
+        # Keep the most recent handful of projects only.
+        if len(depots) > 8:
+            for key in sorted(depots, key=lambda k: depots[k].get("updated") or "")[: len(depots) - 8]:
+                depots.pop(key, None)
+        self.state.update(colonisation=depots)
+
     # ---------- trade & balance logging (analytics) ----------
 
     def _on_marketbuy(self, e):
@@ -427,7 +464,7 @@ class JournalWatcher:
                 needed["loadout"] = True
             if '"event":"Commander"' in text or '"event":"LoadGame"' in text:
                 needed["commander"] = True
-            if all(needed.values()):
+            if all(needed.values()) and len(selected) >= BOOTSTRAP_MIN_FILES:
                 break
 
         for path in selected:

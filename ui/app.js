@@ -127,6 +127,7 @@ function render() {
   renderJumps();
   renderCargo();
   renderBio();
+  renderColonisation();
   seedRouteForm();
 }
 
@@ -786,6 +787,69 @@ async function planNeutron(ev) {
     status.textContent = String(err.message || err);
   } finally {
     go.disabled = false;
+  }
+}
+
+/* ---------- colonization ---------- */
+
+function renderColonisation() {
+  const card = $("colonisation-card");
+  const list = $("colonisation-list");
+  const depots = (state.colonisation || []).filter((d) => !d.complete && !d.failed);
+  card.classList.toggle("hidden", depots.length === 0);
+  const sig = JSON.stringify(depots);
+  if (list.dataset.sig === sig) return;
+  list.dataset.sig = sig;
+  list.innerHTML = "";
+  for (const d of depots) {
+    const div = document.createElement("div");
+    div.className = "hop";
+    const pct = Math.round((d.progress || 0) * 100);
+    const remaining = d.resources.filter((r) => r.remaining > 0);
+    const rows = remaining.slice(0, 12).map((r) =>
+      `<tr><td>${esc(r.name)}</td><td class="num">${fmtNum(r.remaining)}</td>` +
+      `<td class="num">${fmtNum(r.payment)}</td>` +
+      `<td class="num profit-cell">+${fmtNum(r.remaining * r.payment)}</td><td class="src" data-symbol="${esc(r.symbol)}"></td></tr>`
+    ).join("");
+    div.innerHTML =
+      `<div class="route-line"><b>${esc(d.station || "Construction site")}</b>` +
+      `<span class="dim">${esc(d.system || "")}</span>` +
+      `<span class="profit">${pct}% complete</span></div>` +
+      `<div class="seedbar"><div style="height:100%;width:${pct}%;background:var(--orange)"></div></div>` +
+      (remaining.length
+        ? `<table class="hop-table"><thead><tr><th>Still needed</th><th class="num">Units</th>` +
+          `<th class="num">Pays/unit</th><th class="num">Total payout</th><th>Nearest source</th></tr></thead>` +
+          `<tbody>${rows}</tbody></table>`
+        : `<div class="commodities">All resources delivered.</div>`);
+    if (remaining.length) {
+      const btn = document.createElement("button");
+      btn.className = "plotbtn";
+      btn.textContent = "FIND SOURCES";
+      btn.title = "Cheapest nearby stations selling what's still needed";
+      btn.addEventListener("click", async () => {
+        btn.disabled = true;
+        btn.textContent = "SEARCHING…";
+        try {
+          const resp = await fetch(`/api/colonisation-sources?market_id=${d.market_id}&radius=50`);
+          const data = await resp.json();
+          if (!resp.ok) throw new Error(data.error || "failed");
+          for (const c of data.commodities || []) {
+            const cell = div.querySelector(`.src[data-symbol="${CSS.escape(c.symbol)}"]`);
+            if (!cell) continue;
+            cell.innerHTML = (c.sources || []).map((s) =>
+              `<div>${esc(s.station)} <span class="sub">${esc(s.system)} · ${fmtNum(s.buy_price)} cr · ` +
+              `${fmtNum(s.supply)} supply · ${s.distance} ly</span></div>`
+            ).join("") || '<span class="dim">none within 50 ly</span>';
+          }
+          btn.textContent = "DONE";
+        } catch (e) {
+          btn.textContent = "FIND SOURCES";
+          btn.disabled = false;
+        }
+      });
+      div.querySelector(".route-line").insertBefore(btn, div.querySelector(".profit"));
+    }
+    list.appendChild(div);
   }
 }
 
