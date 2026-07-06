@@ -10,14 +10,35 @@ class BindingsError(Exception):
     pass
 
 
+_BINDINGS_SUFFIX = Path("Frontier Developments/Elite Dangerous/Options/Bindings")
+_PROTON_BINDINGS_SUFFIX = (
+    Path("steamapps/compatdata/359320/pfx/drive_c/users/steamuser/AppData/Local")
+    / _BINDINGS_SUFFIX
+)
+
+
+def _candidate_bindings_dirs():
+    local = os.environ.get("LOCALAPPDATA")
+    if local:  # native Windows
+        yield Path(local) / _BINDINGS_SUFFIX
+    home = Path.home()
+    for steam_root in (  # Linux: Steam Proton prefixes
+        home / ".local/share/Steam",
+        home / ".steam/steam",
+        home / ".steam/debian-installation",
+    ):
+        yield steam_root / _PROTON_BINDINGS_SUFFIX
+
+
 def bindings_dir():
     override = os.environ.get("ED_BINDINGS_DIR")
     if override:
         return Path(override)
-    return (
-        Path(os.environ.get("LOCALAPPDATA", ""))
-        / "Frontier Developments" / "Elite Dangerous" / "Options" / "Bindings"
-    )
+    candidates = list(_candidate_bindings_dirs())
+    for candidate in candidates:
+        if candidate.is_dir():
+            return candidate
+    return candidates[0]
 
 
 # ED "Key_*" names -> pydirectinput key names.

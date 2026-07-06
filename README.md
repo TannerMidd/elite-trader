@@ -33,9 +33,9 @@ any phone, tablet or PC on your home network.
 - **Quick links** — Inara / EDSM / Spansh pages pre-filled with your current
   system (footer), optionally opened inside the app window.
 
-## Quick start (from source)
+## Quick start (Windows)
 
-Requires Windows and Python 3.10+.
+Requires Python 3.10+.
 
 ```
 git clone <this repo>
@@ -48,6 +48,31 @@ The desktop window opens; the LAN URL (e.g. `http://192.168.1.65:8666`) is print
 at startup for other devices. `run.bat --headless` runs the server without a window.
 
 Allow the Windows Firewall prompt on **Private networks** if you want LAN access.
+
+## Quick start (Linux / Steam Deck)
+
+The game runs under Steam Proton; the app runs natively with Python 3.10+:
+
+```
+git clone <this repo>
+cd elite-trader
+chmod +x run.sh
+./run.sh --headless
+```
+
+Then open the printed URL in any browser (same machine or LAN). Notes:
+
+- **Journals and bindings are auto-detected** inside the Proton prefix
+  (`~/.local/share/Steam/steamapps/compatdata/359320/pfx/...` and the `~/.steam`
+  variants). If your Steam library lives elsewhere, point `ED_JOURNAL_DIR` at the
+  journal folder inside the prefix.
+- **Headless + browser is the recommended mode.** The desktop window works too,
+  but pywebview needs GTK/WebKit system packages
+  (e.g. Debian/Ubuntu: `sudo apt install python3-gi gir1.2-gtk-3.0 gir1.2-webkit2-4.1`).
+- **Autoplot is Windows-only for now** (it injects keystrokes into the game
+  client); the plot buttons report this cleanly on Linux. Everything else — live
+  status, the local trade engine, commodity search, EDDN updates — works fully.
+- The prebuilt exe is Windows-only; on Linux run from source as above.
 
 ## Standalone exe
 

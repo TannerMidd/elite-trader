@@ -8,6 +8,7 @@ opened via Status.json GuiFocus before typing anything."""
 import ctypes
 import json
 import os
+import sys
 import threading
 import time
 
@@ -35,8 +36,10 @@ PLOT_CONFIRM_WAIT = 3.0     # time for NavRoute.json to appear after the hold
 # Characters that need shift on a US layout (rare in system names).
 SHIFTED = {"+": "=", "_": "-", ":": ";", '"': "'", "?": "/", "!": "1", "*": "8", "(": "9", ")": "0"}
 
+IS_WINDOWS = sys.platform == "win32"
+
 _plot_lock = threading.Lock()
-user32 = ctypes.windll.user32
+user32 = ctypes.windll.user32 if IS_WINDOWS else None
 
 # Raw SendInput scancodes for keys pydirectinput cannot send (numpad).
 NUMPAD_SCANCODES = {
@@ -166,6 +169,11 @@ def _wait_for_map(timeout=MAP_OPEN_TIMEOUT):
 def plot_route(system, dry_run=False, close_map=True):
     """Returns a list of step descriptions. Raises AutoplotError with a
     user-facing message when preconditions fail."""
+    if not IS_WINDOWS:
+        raise AutoplotError(
+            "Autoplot only works on Windows for now - it injects keystrokes into "
+            "the game client. Everything else in the app works on Linux."
+        )
     if not system or not system.strip():
         raise AutoplotError("No system name given.")
     system = system.strip()

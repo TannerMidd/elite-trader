@@ -13,6 +13,23 @@ DEFAULT_JOURNAL_DIR = (
 BOOTSTRAP_MAX_FILES = 25
 POLL_SECONDS = 1.0
 
+ED_STEAM_APP_ID = "359320"
+_PROTON_SUFFIX = (
+    Path("steamapps/compatdata") / ED_STEAM_APP_ID
+    / "pfx/drive_c/users/steamuser/Saved Games/Frontier Developments/Elite Dangerous"
+)
+
+
+def _candidate_journal_dirs():
+    yield DEFAULT_JOURNAL_DIR  # native Windows
+    home = Path.home()
+    for steam_root in (  # Linux: Steam Proton prefixes
+        home / ".local/share/Steam",
+        home / ".steam/steam",
+        home / ".steam/debian-installation",
+    ):
+        yield steam_root / _PROTON_SUFFIX
+
 
 def _clean_name(raw):
     """Turn an internal name like '$gold_name;' into 'Gold'."""
@@ -28,6 +45,9 @@ def find_journal_dir():
     override = os.environ.get("ED_JOURNAL_DIR")
     if override:
         return Path(override)
+    for candidate in _candidate_journal_dirs():
+        if candidate.is_dir():
+            return candidate
     return DEFAULT_JOURNAL_DIR
 
 
