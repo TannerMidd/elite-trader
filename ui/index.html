@@ -13,11 +13,53 @@
   <div class="pilot">
     <span id="commander">—</span>
     <span class="dim" id="ship">—</span>
+    <button id="panel-toggle" class="copy" title="Switch to the touch-friendly tablet flight panel">◈ PANEL</button>
   </div>
 </header>
 
 <div id="banner" class="banner hidden"></div>
 <div id="alert-strip" class="alert-strip hidden"></div>
+
+<div id="flight-panel" class="hidden">
+  <div class="fp-head">
+    <span class="fp-brand">ELITE <b>TRADER</b> · FLIGHT PANEL</span>
+    <span class="fp-cmdr" id="fp-cmdr"></span>
+    <button id="panel-exit" class="fp-btn fp-btn-small">EXIT</button>
+  </div>
+  <div class="fp-system-label">CURRENT SYSTEM</div>
+  <div class="fp-system" id="fp-system">—</div>
+  <div class="fp-sub" id="fp-station">—</div>
+  <div class="fp-sub fp-dest" id="fp-dest"></div>
+
+  <div class="fp-gauges">
+    <div class="fp-gauge">
+      <div class="fp-label">FUEL</div>
+      <div class="fp-bar"><div id="fp-fuel-fill"></div></div>
+      <div class="fp-gvalue" id="fp-fuel">—</div>
+    </div>
+    <div class="fp-gauge">
+      <div class="fp-label">CARGO</div>
+      <div class="fp-bar"><div id="fp-cargo-fill"></div></div>
+      <div class="fp-gvalue" id="fp-cargo">—</div>
+    </div>
+  </div>
+
+  <div class="fp-tiles">
+    <div class="fp-tile"><div class="fp-label">CREDITS</div><div class="fp-value" id="fp-credits">—</div></div>
+    <div class="fp-tile"><div class="fp-label">LEGAL</div><div class="fp-value" id="fp-legal">—</div></div>
+    <div class="fp-tile"><div class="fp-label">EXPLO DATA</div><div class="fp-value" id="fp-explo">—</div></div>
+    <div class="fp-tile"><div class="fp-label">BIO SAMPLES</div><div class="fp-value" id="fp-bio">—</div></div>
+  </div>
+
+  <div class="fp-label fp-section">RECENT JUMPS · TAP TO RE-PLOT</div>
+  <div class="fp-jumps" id="fp-jumps"></div>
+
+  <form id="fp-plot-form" class="fp-plotrow">
+    <input type="text" id="fp-plot-input" placeholder="Plot route to system…" autocomplete="off">
+    <button type="submit" class="fp-btn">PLOT</button>
+  </form>
+  <div id="fp-plot-status" class="fp-sub fp-status"></div>
+</div>
 
 <main>
   <section class="card location">

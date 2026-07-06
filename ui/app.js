@@ -52,12 +52,19 @@ function openExternal(url, label) {
 
 let plotBusy = false;
 
+function setPlotStatus(text, isError) {
+  for (const id of ["plot-status", "fp-plot-status"]) {
+    const el = $(id);
+    if (!el) continue;
+    el.classList.toggle("error", !!isError);
+    el.textContent = text;
+  }
+}
+
 async function plotSystem(system) {
   if (!system || plotBusy) return;
-  const status = $("plot-status");
   plotBusy = true;
-  status.classList.remove("error");
-  status.textContent = `Plotting route to ${system} — leave the game window alone for ~10s…`;
+  setPlotStatus(`Plotting route to ${system} — leave the game window alone for ~10s…`, false);
   try {
     const resp = await fetch("/api/plot", {
       method: "POST",
@@ -66,12 +73,73 @@ async function plotSystem(system) {
     });
     const data = await resp.json();
     if (!resp.ok) throw new Error(data.error || "Plot failed");
-    status.textContent = `Sent plot sequence for ${system} — check the game.`;
+    setPlotStatus(`Sent plot sequence for ${system} — check the game.`, false);
   } catch (err) {
-    status.classList.add("error");
-    status.textContent = String(err.message || err);
+    setPlotStatus(String(err.message || err), true);
   } finally {
     plotBusy = false;
+  }
+}
+
+/* ---------- flight panel mode ---------- */
+
+function setPanelMode(on) {
+  document.body.classList.toggle("panel-mode", on);
+  $("flight-panel").classList.toggle("hidden", !on);
+  localStorage.setItem("panelMode", on ? "1" : "0");
+  try {
+    if (on && document.documentElement.requestFullscreen) {
+      document.documentElement.requestFullscreen();
+    } else if (!on && document.fullscreenElement) {
+      document.exitFullscreen();
+    }
+  } catch (e) { /* fullscreen is a nicety, not a requirement */ }
+  if (on && state) renderPanel();
+}
+
+function renderPanel() {
+  if (!document.body.classList.contains("panel-mode")) return;
+  $("fp-cmdr").textContent = state.commander ? "CMDR " + state.commander : "";
+  $("fp-system").textContent = state.system || "—";
+  $("fp-station").textContent = state.docked && state.station
+    ? `DOCKED · ${state.station}`
+    : (state.body && state.body !== state.system ? `IN SPACE · ${state.body}` : "IN SPACE");
+  $("fp-dest").textContent = state.destination ? `DESTINATION · ${state.destination}` : "";
+
+  const fuelPct = state.fuel_capacity > 0 ? Math.min(100, (state.fuel_main / state.fuel_capacity) * 100) : 0;
+  const fill = $("fp-fuel-fill");
+  fill.style.width = fuelPct + "%";
+  fill.style.background = fuelPct < 25 ? "var(--bad)" : "var(--orange)";
+  $("fp-fuel").textContent = state.fuel_main != null
+    ? `${state.fuel_main.toFixed(1)} / ${(state.fuel_capacity || 0).toFixed(0)} t` : "—";
+
+  const cargoPct = state.cargo_capacity > 0 ? Math.min(100, (state.cargo_tons / state.cargo_capacity) * 100) : 0;
+  $("fp-cargo-fill").style.width = cargoPct + "%";
+  $("fp-cargo").textContent = state.cargo_tons != null
+    ? `${Math.round(state.cargo_tons)} / ${state.cargo_capacity || 0} t` : "—";
+
+  $("fp-credits").textContent = state.credits != null ? shortCr(state.credits) + " cr" : "—";
+  const legal = $("fp-legal");
+  legal.textContent = state.legal_state || "—";
+  legal.style.color = state.legal_state && state.legal_state !== "Clean" ? "var(--bad)" : "var(--good)";
+  const ex = state.exploration || {};
+  $("fp-explo").textContent = ex.count ? "≈" + shortCr(ex.total) + " cr" : "—";
+  const vault = (state.bio || {}).vault || {};
+  $("fp-bio").textContent = (vault.items || []).length ? "≈" + shortCr(vault.total) + " cr" : "—";
+
+  const jumps = (state.jump_history || []).slice(0, 4);
+  const jl = $("fp-jumps");
+  const sig = JSON.stringify(jumps);
+  if (jl.dataset.sig !== sig) {
+    jl.dataset.sig = sig;
+    jl.innerHTML = "";
+    for (const j of jumps) {
+      const b = document.createElement("button");
+      b.className = "fp-jump";
+      b.innerHTML = `<span>${esc(j.system)}</span><span class="fp-jump-dist">${j.dist != null ? j.dist.toFixed(1) + " ly" : ""}</span>`;
+      b.addEventListener("click", () => plotSystem(j.system));
+      jl.appendChild(b);
+    }
   }
 }
 
@@ -128,6 +196,7 @@ function render() {
   renderCargo();
   renderBio();
   renderColonisation();
+  renderPanel();
   seedRouteForm();
 }
 
@@ -1250,6 +1319,16 @@ document.addEventListener("DOMContentLoaded", () => {
     const name = $("plot-input").value.trim();
     if (name) plotSystem(name);
   });
+
+  // Flight panel mode (tablet as a cockpit display)
+  $("panel-toggle").addEventListener("click", () => setPanelMode(true));
+  $("panel-exit").addEventListener("click", () => setPanelMode(false));
+  $("fp-plot-form").addEventListener("submit", (ev) => {
+    ev.preventDefault();
+    const name = $("fp-plot-input").value.trim();
+    if (name) plotSystem(name);
+  });
+  if (localStorage.getItem("panelMode") === "1") setPanelMode(true);
 
   // "open in app" toggle: only meaningful inside the desktop (pywebview) window.
   const toggle = $("inapp-toggle");

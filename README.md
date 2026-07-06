@@ -100,6 +100,16 @@ you're carrying with their estimated Vista Genomics payout. First footfall pays
 
 <div align="center"><img src="docs/screenshots/explore.png" alt="Exploration data and exobiology" width="900"></div>
 
+### 🖥️ Flight panel mode
+
+Tap **◈ PANEL** and the whole UI transforms into a touch-first, Elite-themed
+cockpit display for a tablet mounted at your flight station: glowing system
+readout, fuel and cargo gauges, credits/legal/exploration tiles, recent jumps as
+big tap-to-replot buttons and a one-line route plotter. Goes fullscreen where
+the browser allows; remembers the mode per device.
+
+<div align="center"><img src="docs/screenshots/flight-panel.png" alt="Flight panel mode on a tablet" width="700"></div>
+
 ### 🚀 Live ship & local data
 
 Current system, station, credits, fuel, cargo and legal state ~2 s behind the
