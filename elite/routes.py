@@ -54,6 +54,7 @@ def plan_route_local(
     max_system_distance=1000,
     max_price_age_days=30,
     requires_large_pad=False,
+    min_supply=1,
 ):
     conn = marketdb.connect()
     try:
@@ -84,7 +85,8 @@ def plan_route_local(
             candidates = []
             for route in beam:
                 candidates.extend(
-                    _extend(conn, route, float(max_hop_distance), int(max_cargo), filters)
+                    _extend(conn, route, float(max_hop_distance), int(max_cargo), filters,
+                            max(1, int(min_supply)))
                 )
             if not candidates:
                 break
@@ -128,7 +130,7 @@ def _source_candidates(conn, start, station_name, max_hop, filters):
     return near[:MAX_SOURCE_CANDIDATES]
 
 
-def _extend(conn, route, max_hop, max_cargo, filters):
+def _extend(conn, route, max_hop, max_cargo, filters, min_supply=1):
     src = route["at"]
     dests = marketdb.stations_near(conn, src["x"], src["y"], src["z"], max_hop, **filters)
     dest_by_id = {
@@ -158,7 +160,7 @@ def _extend(conn, route, max_hop, max_cargo, filters):
 
     extensions = []
     for market_id, flows in flows_by_dest.items():
-        load = _fill_cargo(flows, max_cargo, route["capital"])
+        load = _fill_cargo(flows, max_cargo, route["capital"], min_supply)
         if not load:
             continue
         dest = dest_by_id[market_id]
@@ -179,13 +181,15 @@ def _extend(conn, route, max_hop, max_cargo, filters):
 
 
 def _fill_cargo(flows, max_cargo, capital, min_supply=1):
-    """Greedy fill by unit profit; flows are pre-sorted by the SQL query."""
+    """Greedy fill by unit profit; flows are pre-sorted by the SQL query.
+    min_supply is a floor on BOTH source stock and destination demand, so
+    routes never hinge on a handful of units."""
     space, funds = max_cargo, capital
     load = []
     for symbol, buy, sell, supply, demand in flows:
         if space <= 0 or funds < buy:
             break
-        if supply < min_supply:
+        if supply < min_supply or demand < min_supply:
             continue
         if any(c["symbol"] == symbol for c in load):
             continue
@@ -213,10 +217,13 @@ def plan_loops(
     max_price_age_days=30,
     max_system_distance=1000,
     requires_large_pad=False,
+    min_supply=1,
+    jump_range=20.0,
     top_n=LOOP_RESULTS,
 ):
     """Inara-style 2-station round trips near the player: fill the hold A->B,
-    refill B->A, rank by total round-trip profit. Legs may span several jumps."""
+    refill B->A, rank by estimated profit PER HOUR (travel-time model: jumps +
+    supercruise + docking), not raw profit per trip. Legs may span several jumps."""
     conn = marketdb.connect()
     try:
         if not marketdb.status(conn)["ready"]:
@@ -241,15 +248,16 @@ def plan_loops(
         conn.execute("CREATE TEMP TABLE near_sell(market_id INTEGER, symbol TEXT, sell INTEGER, demand INTEGER)")
         marks = ",".join("?" for _ in by_id)
         ids = list(by_id.keys())
+        min_units = max(1, int(min_supply))
         conn.execute(
             f"INSERT INTO temp.near_buy SELECT market_id, symbol, buy_price, supply"
-            f" FROM commodities WHERE market_id IN ({marks}) AND supply > 0 AND buy_price > 0",
-            ids,
+            f" FROM commodities WHERE market_id IN ({marks}) AND supply >= ? AND buy_price > 0",
+            ids + [min_units],
         )
         conn.execute(
             f"INSERT INTO temp.near_sell SELECT market_id, symbol, sell_price, demand"
-            f" FROM commodities WHERE market_id IN ({marks}) AND demand > 0 AND sell_price > 0",
-            ids,
+            f" FROM commodities WHERE market_id IN ({marks}) AND demand >= ? AND sell_price > 0",
+            ids + [min_units],
         )
         conn.execute("CREATE INDEX temp.idx_nearsell_sym ON near_sell(symbol)")
 
@@ -269,6 +277,7 @@ def plan_loops(
 
         capital = int(capital)
         max_cargo = int(max_cargo)
+        min_supply = max(1, int(min_supply))
         seen_pairs = set()
         loops = []
         for (a, b) in directed:
@@ -278,10 +287,11 @@ def plan_loops(
             seen_pairs.add(key)
             # Radius also caps the leg length; both-near-me-but-opposite-sides
             # pairs would otherwise sneak in at up to 2x radius apart.
-            if _dist(by_id[a], by_id[b]) > float(radius):
+            pair_dist = _dist(by_id[a], by_id[b])
+            if pair_dist > float(radius):
                 continue
-            out = _fill_cargo(directed.get((a, b), []), max_cargo, capital)
-            back = _fill_cargo(directed.get((b, a), []), max_cargo, capital)
+            out = _fill_cargo(directed.get((a, b), []), max_cargo, capital, min_supply)
+            back = _fill_cargo(directed.get((b, a), []), max_cargo, capital, min_supply)
             out_p = sum(c["profit"] for c in out)
             back_p = sum(c["profit"] for c in back)
             if out_p + back_p <= 0:
@@ -289,11 +299,18 @@ def plan_loops(
             # Present the more profitable leg as the outbound one.
             if back_p > out_p:
                 a, b, out, back, out_p, back_p = b, a, back, out, back_p, out_p
+            trip_s = (
+                _leg_time_s(pair_dist, by_id[b]["dist_ls"], float(jump_range))
+                + _leg_time_s(pair_dist, by_id[a]["dist_ls"], float(jump_range))
+            )
             loops.append(
                 {"a": by_id[a], "b": by_id[b], "out": out, "back": back,
-                 "profit": out_p + back_p, "out_profit": out_p, "back_profit": back_p}
+                 "profit": out_p + back_p, "out_profit": out_p, "back_profit": back_p,
+                 "trip_s": trip_s, "profit_per_hour": (out_p + back_p) * 3600.0 / trip_s}
             )
-        loops.sort(key=lambda l: l["profit"], reverse=True)
+        # Rank by earnings rate: a 4M loop that takes an hour loses to a 2M
+        # loop that takes 20 minutes.
+        loops.sort(key=lambda l: l["profit_per_hour"], reverse=True)
         loops = loops[:top_n]
         if not loops:
             raise RouteError("No profitable loop found with those settings.")
@@ -314,6 +331,8 @@ def _format_loops(conn, loops, start):
                 "buy_price": c["buy_price"],
                 "sell_price": c["sell_price"],
                 "profit": c["profit"],
+                "supply": c.get("supply"),
+                "demand": c.get("demand"),
             }
             for c in commodities
         ]
@@ -334,6 +353,8 @@ def _format_loops(conn, loops, start):
             "b": endpoint(l["b"]),
             "distance": round(_dist(l["a"], l["b"]), 1),
             "profit": l["profit"],
+            "minutes_per_trip": round(l["trip_s"] / 60.0),
+            "profit_per_hour": int(l["profit_per_hour"]),
             "outbound": {"profit": l["out_profit"], "commodities": leg(l["out"])},
             "inbound": {"profit": l["back_profit"], "commodities": leg(l["back"])},
         }
@@ -463,6 +484,8 @@ def _format(conn, route):
                         "buy_price": c["buy_price"],
                         "sell_price": c["sell_price"],
                         "profit": c["profit"],
+                        "supply": c.get("supply"),
+                        "demand": c.get("demand"),
                     }
                     for c in hop["commodities"]
                 ],

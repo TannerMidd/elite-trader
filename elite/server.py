@@ -77,6 +77,8 @@ def create_app(state):
                     max_price_age_days=params["max_price_age_days"],
                     max_system_distance=params["max_system_distance"],
                     requires_large_pad=params["requires_large_pad"],
+                    min_supply=num("min_supply", 1, int),
+                    jump_range=num("jump_range", snap.get("max_jump_range") or 20.0),
                 )
             except routes.RouteError as exc:
                 return jsonify({"error": str(exc), "source": "local"}), 502
@@ -84,7 +86,11 @@ def create_app(state):
 
         if source == "local":
             try:
-                hops = routes.plan_route_local(star_pos=snap.get("star_pos"), **params)
+                hops = routes.plan_route_local(
+                    star_pos=snap.get("star_pos"),
+                    min_supply=num("min_supply", 1, int),
+                    **params,
+                )
             except routes.RouteError as exc:
                 return jsonify({"error": str(exc), "source": "local"}), 502
         else:

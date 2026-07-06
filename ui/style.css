@@ -78,6 +78,31 @@ main {
 .hidden { display: none !important; }
 .empty { padding: 8px 2px; font-size: 13px; }
 
+/* tabs */
+.tabs {
+  display: flex;
+  gap: 4px;
+  border-bottom: 2px solid var(--border);
+  flex-wrap: wrap;
+}
+.tab {
+  background: transparent;
+  color: var(--dim);
+  border: none;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -2px;
+  padding: 9px 16px;
+  font-size: 12.5px;
+  letter-spacing: 2px;
+  cursor: pointer;
+  font-family: inherit;
+}
+.tab:hover { color: var(--text); }
+.tab.active { color: var(--orange); border-bottom-color: var(--orange); font-weight: 700; }
+.tabpane { display: flex; flex-direction: column; gap: 14px; }
+
+td.warn { color: var(--bad); font-weight: 600; }
+
 /* location card */
 .location { display: flex; justify-content: space-between; gap: 18px; flex-wrap: wrap; }
 .system-row { display: flex; align-items: center; gap: 10px; }

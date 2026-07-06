@@ -45,102 +45,118 @@
     </div>
   </section>
 
-  <section class="card">
-    <div class="card-head">
-      <div class="label">TRADE ROUTES <span class="dim">computed locally · live EDDN prices</span></div>
-    </div>
-    <form id="route-form" class="route-form">
-      <label>Type
-        <select id="rf-mode">
-          <option value="loop">Loop (2 stations)</option>
-          <option value="chain">Multi-hop chain</option>
-        </select>
-      </label>
-      <label>Capital <input type="number" id="rf-capital" min="1000" step="1000"></label>
-      <label>Cargo (t) <input type="number" id="rf-cargo" min="2"></label>
-      <label id="rf-radius-wrap">Radius (ly) <input type="number" id="rf-radius" min="5" value="100"></label>
-      <label id="rf-hop-wrap" class="hidden">Max hop (ly) <input type="number" id="rf-hop" min="1" step="0.1"></label>
-      <label id="rf-hops-wrap" class="hidden">Hops <input type="number" id="rf-hops" min="1" max="10" value="4"></label>
-      <label>Max star dist (ls) <input type="number" id="rf-lsdist" min="1" value="1000"></label>
-      <label>Price age (days) <input type="number" id="rf-age" min="1" value="30"></label>
-      <label class="check"><input type="checkbox" id="rf-largepad"> Large pad</label>
-      <button type="submit" id="rf-go" class="primary">FIND ROUTES</button>
-    </form>
-    <div id="route-status" class="dim"></div>
-    <div id="route-results"></div>
-  </section>
+  <nav class="tabs" id="tabs">
+    <button class="tab active" data-tab="trade">TRADE ROUTES</button>
+    <button class="tab" data-tab="commodities">COMMODITIES</button>
+    <button class="tab" data-tab="local">LOCAL</button>
+    <button class="tab" data-tab="database">DATABASE</button>
+  </nav>
 
-  <section class="card">
-    <div class="label">COMMODITY SEARCH <span class="dim">local database · where to buy or sell near you</span></div>
-    <form id="cs-form" class="route-form">
-      <label>Commodity
-        <input type="text" id="cs-query" list="commodity-list" placeholder="e.g. Gold" autocomplete="off">
-        <datalist id="commodity-list"></datalist>
-      </label>
-      <label>I want to
-        <select id="cs-mode">
-          <option value="sell">Sell (best price)</option>
-          <option value="buy">Buy (cheapest)</option>
-        </select>
-      </label>
-      <label>Radius (ly) <input type="number" id="cs-radius" min="1" value="50"></label>
-      <label>Min units <input type="number" id="cs-min" min="1" value="100"></label>
-      <label class="check"><input type="checkbox" id="cs-largepad"> Large pad</label>
-      <button type="submit" id="cs-go" class="primary">SEARCH</button>
-    </form>
-    <div id="cs-status" class="dim"></div>
-    <div class="table-wrap">
-      <table id="cs-table" class="hidden">
-        <thead>
-          <tr>
-            <th>Station</th><th>System</th><th class="num">Price</th><th class="num">Units</th>
-            <th class="num">Jump</th><th class="num">Star dist</th><th class="num">Updated</th><th></th>
-          </tr>
-        </thead>
-        <tbody></tbody>
-      </table>
-    </div>
-  </section>
-
-  <section class="card">
-    <div class="card-head">
-      <div class="label">MARKET DATABASE <span class="dim">local trade data · seeded from Spansh dump · live-updated by EDDN</span></div>
-      <button id="seed-btn" class="primary small">BUILD DATABASE (~3.9 GB download)</button>
-    </div>
-    <div id="db-status" class="dim">Checking…</div>
-    <div class="seedbar hidden" id="seed-bar"><div id="seed-fill"></div></div>
-  </section>
-
-  <div class="two-col">
+  <div class="tabpane" id="tab-trade">
     <section class="card">
       <div class="card-head">
-        <div class="label" id="market-title">STATION MARKET</div>
-        <input type="search" id="market-filter" placeholder="filter…">
+        <div class="label">TRADE ROUTES <span class="dim">computed locally · live EDDN prices · ranked by profit/hour</span></div>
       </div>
+      <form id="route-form" class="route-form">
+        <label>Type
+          <select id="rf-mode">
+            <option value="loop">Loop (2 stations)</option>
+            <option value="chain">Multi-hop chain</option>
+          </select>
+        </label>
+        <label>Capital <input type="number" id="rf-capital" min="0" step="any"></label>
+        <label>Cargo (t) <input type="number" id="rf-cargo" min="2"></label>
+        <label id="rf-radius-wrap">Radius (ly) <input type="number" id="rf-radius" min="5" value="100"></label>
+        <label id="rf-hop-wrap" class="hidden">Max hop (ly) <input type="number" id="rf-hop" min="1" step="any"></label>
+        <label id="rf-hops-wrap" class="hidden">Hops <input type="number" id="rf-hops" min="1" max="10" value="4"></label>
+        <label>Min units <input type="number" id="rf-minsupply" min="1" title="Ignore commodities with less stock or demand than this"></label>
+        <label>Max star dist (ls) <input type="number" id="rf-lsdist" min="1" value="1000"></label>
+        <label>Price age (days) <input type="number" id="rf-age" min="1" value="30"></label>
+        <label class="check"><input type="checkbox" id="rf-largepad"> Large pad</label>
+        <button type="submit" id="rf-go" class="primary">FIND ROUTES</button>
+      </form>
+      <div id="route-status" class="dim"></div>
+      <div id="route-results"></div>
+    </section>
+  </div>
+
+  <div class="tabpane hidden" id="tab-commodities">
+    <section class="card">
+      <div class="label">COMMODITY SEARCH <span class="dim">local database · where to buy or sell near you</span></div>
+      <form id="cs-form" class="route-form">
+        <label>Commodity
+          <input type="text" id="cs-query" list="commodity-list" placeholder="e.g. Gold" autocomplete="off">
+          <datalist id="commodity-list"></datalist>
+        </label>
+        <label>I want to
+          <select id="cs-mode">
+            <option value="sell">Sell (best price)</option>
+            <option value="buy">Buy (cheapest)</option>
+          </select>
+        </label>
+        <label>Radius (ly) <input type="number" id="cs-radius" min="1" value="50"></label>
+        <label>Min units <input type="number" id="cs-min" min="1" value="100"></label>
+        <label class="check"><input type="checkbox" id="cs-largepad"> Large pad</label>
+        <button type="submit" id="cs-go" class="primary">SEARCH</button>
+      </form>
+      <div id="cs-status" class="dim"></div>
       <div class="table-wrap">
-        <table id="market-table">
+        <table id="cs-table" class="hidden">
           <thead>
             <tr>
-              <th data-sort="name">Commodity</th>
-              <th data-sort="sell" class="num">Sell</th>
-              <th data-sort="buy" class="num">Buy</th>
-              <th data-sort="demand" class="num">Demand</th>
-              <th data-sort="stock" class="num">Stock</th>
+              <th>Station</th><th>System</th><th class="num">Price</th><th class="num">Units</th>
+              <th class="num">Jump</th><th class="num">Star dist</th><th class="num">Updated</th><th></th>
             </tr>
           </thead>
           <tbody></tbody>
         </table>
-        <div id="market-empty" class="dim empty">No market data yet — open the commodities screen at a station.</div>
       </div>
     </section>
+  </div>
 
+  <div class="tabpane hidden" id="tab-local">
+    <div class="two-col">
+      <section class="card">
+        <div class="card-head">
+          <div class="label" id="market-title">STATION MARKET</div>
+          <input type="search" id="market-filter" placeholder="filter…">
+        </div>
+        <div class="table-wrap">
+          <table id="market-table">
+            <thead>
+              <tr>
+                <th data-sort="name">Commodity</th>
+                <th data-sort="sell" class="num">Sell</th>
+                <th data-sort="buy" class="num">Buy</th>
+                <th data-sort="demand" class="num">Demand</th>
+                <th data-sort="stock" class="num">Stock</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+          <div id="market-empty" class="dim empty">No market data yet — open the commodities screen at a station.</div>
+        </div>
+      </section>
+
+      <section class="card">
+        <div class="label">JUMP HISTORY</div>
+        <ul id="jumps" class="jumps"></ul>
+        <div id="jumps-empty" class="dim empty">No jumps recorded yet this session.</div>
+        <div class="label cargo-label">CARGO HOLD</div>
+        <ul id="cargo-list" class="cargo-list"></ul>
+        <div id="cargo-empty" class="dim empty">Cargo hold is empty.</div>
+      </section>
+    </div>
+  </div>
+
+  <div class="tabpane hidden" id="tab-database">
     <section class="card">
-      <div class="label">JUMP HISTORY</div>
-      <ul id="jumps" class="jumps"></ul>
-      <div id="jumps-empty" class="dim empty">No jumps recorded yet this session.</div>
-      <div class="label cargo-label">CARGO HOLD</div>
-      <ul id="cargo-list" class="cargo-list"></ul>
-      <div id="cargo-empty" class="dim empty">Cargo hold is empty.</div>
+      <div class="card-head">
+        <div class="label">MARKET DATABASE <span class="dim">local trade data · seeded from Spansh dump · live-updated by EDDN</span></div>
+        <button id="seed-btn" class="primary small">BUILD DATABASE (~3.9 GB download)</button>
+      </div>
+      <div id="db-status" class="dim">Checking…</div>
+      <div class="seedbar hidden" id="seed-bar"><div id="seed-fill"></div></div>
     </section>
   </div>
 </main>

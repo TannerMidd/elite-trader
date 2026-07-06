@@ -251,6 +251,8 @@ function seedRouteForm() {
   if (state.credits != null && !$("rf-capital").value) $("rf-capital").value = state.credits;
   if (state.cargo_capacity != null && !$("rf-cargo").value) $("rf-cargo").value = state.cargo_capacity;
   if (state.max_jump_range != null && !$("rf-hop").value) $("rf-hop").value = state.max_jump_range.toFixed(1);
+  // Default min supply to the hold size so listed routes can actually fill it.
+  if (state.cargo_capacity && !$("rf-minsupply").value) $("rf-minsupply").value = state.cargo_capacity;
 }
 
 function esc(s) {
@@ -279,6 +281,7 @@ async function findRoutes(ev) {
         capital: Number($("rf-capital").value) || undefined,
         max_cargo: Number($("rf-cargo").value) || undefined,
         radius: Number($("rf-radius").value) || undefined,
+        min_supply: Number($("rf-minsupply").value) || undefined,
         max_hop_distance: Number($("rf-hop").value) || undefined,
         max_hops: Number($("rf-hops").value) || undefined,
         max_system_distance: Number($("rf-lsdist").value) || undefined,
@@ -292,7 +295,7 @@ async function findRoutes(ev) {
     if (data.mode === "loop") {
       renderLoops(data.loops || []);
       status.textContent = (data.loops || []).length
-        ? `Best ${data.loops.length} round-trip loops within ${$("rf-radius").value} ly of ${state.system} (local database).`
+        ? `Best ${data.loops.length} loops within ${$("rf-radius").value} ly of ${state.system}, ranked by estimated profit/hour.`
         : "No profitable loop found with those settings.";
     } else {
       renderRoutes(data.hops || []);
@@ -312,11 +315,14 @@ function commodityTableHtml(commodities) {
   const rows = (commodities || []).map((c) => {
     const unit = (c.sell_price != null && c.buy_price != null) ? c.sell_price - c.buy_price : null;
     const line = c.profit != null ? c.profit : (unit != null && c.amount != null ? unit * c.amount : null);
+    const lowStock = c.supply != null && c.amount != null && c.supply < c.amount * 2;
     return `<tr>` +
       `<td>${esc(c.name)}</td>` +
       `<td class="num">${fmtNum(c.amount)}</td>` +
       `<td class="num">${fmtNum(c.buy_price)}</td>` +
+      `<td class="num${lowStock ? " warn" : ""}">${fmtNum(c.supply)}</td>` +
       `<td class="num">${fmtNum(c.sell_price)}</td>` +
+      `<td class="num">${fmtNum(c.demand)}</td>` +
       `<td class="num">${unit != null ? "+" + fmtNum(unit) : "?"}</td>` +
       `<td class="num profit-cell">+${fmtNum(line)}</td>` +
       `</tr>`;
@@ -324,7 +330,8 @@ function commodityTableHtml(commodities) {
   if (!rows) return "";
   return `<table class="hop-table">` +
     `<thead><tr><th>Commodity</th><th class="num">Units</th><th class="num">Buy</th>` +
-    `<th class="num">Sell</th><th class="num">cr/unit</th><th class="num">Total</th></tr></thead>` +
+    `<th class="num">Stock</th><th class="num">Sell</th><th class="num">Demand</th>` +
+    `<th class="num">cr/unit</th><th class="num">Total</th></tr></thead>` +
     `<tbody>${rows}</tbody></table>`;
 }
 
@@ -341,9 +348,12 @@ function renderLoops(loops) {
       `<b>${esc(l.a.station)}</b><span class="dim">${esc(l.a.system)}</span>` +
       `<span class="arrow">⇄</span>` +
       `<b>${esc(l.b.station)}</b><span class="dim">${esc(l.b.system)}</span>` +
-      `<span class="profit">+${fmtNum(l.profit)} cr / trip</span>` +
+      `<span class="profit">${l.profit_per_hour != null ? "+" + fmtNum(l.profit_per_hour) + " cr/hr" : "+" + fmtNum(l.profit) + " cr / trip"}</span>` +
       `</div>` +
-      `<div class="commodities">${l.distance} ly apart · start ${l.a.from_player} ly from you` +
+      `<div class="commodities">` +
+      `+${fmtNum(l.profit)} cr / round trip` +
+      (l.minutes_per_trip != null ? ` · ≈${l.minutes_per_trip} min/trip` : "") +
+      ` · ${l.distance} ly apart · start ${l.a.from_player} ly from you` +
       ` · ${l.a.dist_ls != null ? fmtNum(l.a.dist_ls) : "?"} / ${l.b.dist_ls != null ? fmtNum(l.b.dist_ls) : "?"} ls to pads` +
       (tons ? ` · ${fmtNum(l.profit / tons)} cr/t moved` : "") +
       `</div>` +
@@ -392,19 +402,6 @@ function renderRoutes(hops) {
     const tons = (h.commodities || []).reduce((a, c) => a + (c.amount || 0), 0);
     const outlay = (h.commodities || []).reduce((a, c) => a + (c.amount || 0) * (c.buy_price || 0), 0);
 
-    const rows = (h.commodities || []).map((c) => {
-      const unit = (c.sell_price != null && c.buy_price != null) ? c.sell_price - c.buy_price : null;
-      const line = c.profit != null ? c.profit : (unit != null && c.amount != null ? unit * c.amount : null);
-      return `<tr>` +
-        `<td>${esc(c.name)}</td>` +
-        `<td class="num">${fmtNum(c.amount)}</td>` +
-        `<td class="num">${fmtNum(c.buy_price)}</td>` +
-        `<td class="num">${fmtNum(c.sell_price)}</td>` +
-        `<td class="num">${unit != null ? "+" + fmtNum(unit) : "?"}</td>` +
-        `<td class="num profit-cell">+${fmtNum(line)}</td>` +
-        `</tr>`;
-    }).join("");
-
     div.innerHTML =
       `<div class="route-line">` +
       `<b>${esc(h.from_station)}</b><span class="dim">${esc(h.from_system)}</span>` +
@@ -412,10 +409,7 @@ function renderRoutes(hops) {
       `<b>${esc(h.to_station)}</b><span class="dim">${esc(h.to_system)}</span>` +
       `<span class="profit">+${fmtNum(h.profit)} cr</span>` +
       `</div>` +
-      (rows ? `<table class="hop-table">` +
-        `<thead><tr><th>Commodity</th><th class="num">Units</th><th class="num">Buy</th>` +
-        `<th class="num">Sell</th><th class="num">cr/unit</th><th class="num">Total</th></tr></thead>` +
-        `<tbody>${rows}</tbody></table>` : "") +
+      commodityTableHtml(h.commodities) +
       `<div class="commodities">` +
       (h.distance != null ? `${Number(h.distance).toFixed(1)} ly jump` : "") +
       (h.to_dist_ls != null ? ` · ${fmtNum(h.to_dist_ls)} ls to station` : "") +
@@ -591,7 +585,21 @@ async function poll() {
   setTimeout(poll, 1500);
 }
 
+function initTabs() {
+  const buttons = document.querySelectorAll("#tabs .tab");
+  const activate = (name) => {
+    buttons.forEach((b) => b.classList.toggle("active", b.dataset.tab === name));
+    document.querySelectorAll(".tabpane").forEach((p) =>
+      p.classList.toggle("hidden", p.id !== "tab-" + name));
+    localStorage.setItem("activeTab", name);
+  };
+  buttons.forEach((b) => b.addEventListener("click", () => activate(b.dataset.tab)));
+  const saved = localStorage.getItem("activeTab");
+  if (saved && document.getElementById("tab-" + saved)) activate(saved);
+}
+
 document.addEventListener("DOMContentLoaded", () => {
+  initTabs();
   document.querySelector('[data-copy-target="system"]')
     .addEventListener("click", (ev) => state?.system && copyText(state.system, ev.currentTarget));
   $("station-copy")

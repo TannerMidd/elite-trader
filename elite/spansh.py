@@ -105,6 +105,8 @@ def _parse_result(result):
                 "buy_price": (c.get("source_commodity") or {}).get("buy_price"),
                 "sell_price": (c.get("destination_commodity") or {}).get("sell_price"),
                 "profit": c.get("total_profit"),
+                "supply": (c.get("source_commodity") or {}).get("supply"),
+                "demand": (c.get("destination_commodity") or {}).get("demand"),
             }
             for c in hop.get("commodities") or []
         ]
