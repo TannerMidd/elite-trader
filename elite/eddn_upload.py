@@ -15,7 +15,7 @@ from . import marketdb
 UPLOAD_URL = "https://eddn.edcd.io:4430/upload/"
 SCHEMA = "https://eddn.edcd.io/schemas/commodity/3"
 SOFTWARE_NAME = "EliteTrader"
-SOFTWARE_VERSION = "1.0.0"
+SOFTWARE_VERSION = "1.1.0"
 MAX_AGE_S = 120  # never upload stale snapshots (e.g. bootstrap replays)
 
 SKIP_CATEGORIES = {"nonmarketable"}
