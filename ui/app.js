@@ -126,6 +126,7 @@ function render() {
   renderMarket();
   renderJumps();
   renderCargo();
+  renderBio();
   seedRouteForm();
 }
 
@@ -243,6 +244,76 @@ function renderCargo() {
     const li = document.createElement("li");
     li.innerHTML = `<span>${esc(c.name)}</span><span class="count">${c.count} t</span>`;
     ul.appendChild(li);
+  }
+}
+
+function fmtRange(lo, hi) {
+  if (lo == null) return "?";
+  const m = (n) => (n / 1e6).toFixed(1).replace(/\.0$/, "") + "M";
+  return lo === hi ? m(lo) : m(lo) + "–" + m(hi);
+}
+
+function renderBio() {
+  const bio = state.bio || {};
+
+  // Sampling progress
+  const sampCard = $("bio-sampling-card");
+  const samp = bio.sampling;
+  if (samp) {
+    sampCard.classList.remove("hidden");
+    const pct = Math.round(100 * (samp.progress || 0) / 3);
+    $("bio-sampling").innerHTML =
+      `<div class="route-line"><b>${esc(samp.species)}</b>` +
+      (samp.variant ? `<span class="dim">${esc(samp.variant)}</span>` : "") +
+      `<span class="profit">${samp.value != null ? "+" + fmtNum(samp.value) + " cr" : ""}</span></div>` +
+      `<div class="commodities">sample ${samp.progress}/3` +
+      (samp.colony_m ? ` · move ≥ ${samp.colony_m} m between samples` : "") + `</div>` +
+      `<div class="seedbar"><div style="height:100%;width:${pct}%;background:var(--good)"></div></div>`;
+  } else {
+    sampCard.classList.add("hidden");
+  }
+
+  // Vault
+  const vault = bio.vault || { items: [], total: 0 };
+  $("bio-vault-total").textContent = vault.items.length ? fmtNum(vault.total) + " cr" : "";
+  $("bio-vault-empty").classList.toggle("hidden", vault.items.length > 0);
+  const ul = $("bio-vault");
+  const vsig = JSON.stringify(vault.items);
+  if (ul.dataset.sig !== vsig) {
+    ul.dataset.sig = vsig;
+    ul.innerHTML = "";
+    for (const s of vault.items) {
+      const li = document.createElement("li");
+      li.innerHTML = `<span>${esc(s.species)}${s.body ? ` <span class="sub">${esc(s.body)}</span>` : ""}</span>` +
+        `<span class="count">+${fmtNum(s.value)} cr</span>`;
+      ul.appendChild(li);
+    }
+  }
+
+  // System signals table
+  const rows = bio.system_signals || [];
+  $("bio-empty").classList.toggle("hidden", rows.length > 0);
+  const table = $("bio-table");
+  table.classList.toggle("hidden", rows.length === 0);
+  const tbody = table.querySelector("tbody");
+  const bsig = JSON.stringify(rows);
+  if (tbody.dataset.sig === bsig) return;
+  tbody.dataset.sig = bsig;
+  tbody.innerHTML = "";
+  for (const b of rows) {
+    const genuses = (b.genuses || []).map((g) =>
+      `<div>${esc(g.name)} <span class="sub">${fmtRange(g.min_value, g.max_value)}` +
+      (g.colony_m ? ` · ${g.colony_m} m` : "") + `</span></div>`
+    ).join("") || `<span class="dim">${b.count ? "not mapped yet" : ""}</span>`;
+    const tr = document.createElement("tr");
+    tr.innerHTML =
+      `<td>${esc(b.body)}${b.landable === false ? ' <span class="sub">not landable</span>' : ""}</td>` +
+      `<td class="num">${b.count || "?"}</td>` +
+      `<td>${genuses}</td>` +
+      `<td>${esc(b.planet_class || "?")}<div class="sub">${esc(b.atmosphere || "")}</div></td>` +
+      `<td class="num">${b.gravity_g != null ? b.gravity_g + " g" : "?"}</td>` +
+      `<td class="num">${b.temp_k != null ? b.temp_k + " K" : "?"}</td>`;
+    tbody.appendChild(tr);
   }
 }
 

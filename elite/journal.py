@@ -7,6 +7,10 @@ import threading
 import time
 from pathlib import Path
 
+from . import biovalues
+
+BIO_SIGNAL_TYPE = "$SAA_SignalType_Biological;"
+
 DEFAULT_JOURNAL_DIR = (
     Path.home() / "Saved Games" / "Frontier Developments" / "Elite Dangerous"
 )
@@ -64,6 +68,7 @@ class JournalWatcher:
         self._offset = 0
         self._partial = ""
         self._status_mtimes = {}
+        self._body_scans = {}  # body name -> details, current system only
 
     # ---------- event handling ----------
 
@@ -106,6 +111,9 @@ class JournalWatcher:
         )
 
     def _on_location(self, e):
+        if e.get("StarSystem") != self.state.system:
+            self._body_scans = {}
+            self.state.update(bio_signals={})
         self.state.update(
             system=e.get("StarSystem"),
             system_address=e.get("SystemAddress"),
@@ -118,6 +126,7 @@ class JournalWatcher:
         )
 
     def _on_fsdjump(self, e):
+        self._body_scans = {}
         self.state.update(
             system=e.get("StarSystem"),
             system_address=e.get("SystemAddress"),
@@ -128,10 +137,14 @@ class JournalWatcher:
             station_type=None,
             station_market_id=None,
             dist_from_star_ls=None,
+            bio_signals={},
         )
         self.state.add_jump(e.get("StarSystem"), e.get("JumpDist"), e.get("timestamp"))
 
     def _on_carrierjump(self, e):
+        if e.get("StarSystem") != self.state.system:
+            self._body_scans = {}
+            self.state.update(bio_signals={})
         self.state.update(
             system=e.get("StarSystem"),
             system_address=e.get("SystemAddress"),
@@ -158,6 +171,88 @@ class JournalWatcher:
             station_market_id=None,
             dist_from_star_ls=None,
         )
+
+    # ---------- exobiology ----------
+
+    @staticmethod
+    def _bio_count(e):
+        for sig in e.get("Signals") or []:
+            if sig.get("Type") == BIO_SIGNAL_TYPE:
+                return sig.get("Count") or 0
+        return 0
+
+    def _update_bio_body(self, body_name, count=None, genuses=None):
+        if not body_name:
+            return
+        signals = dict(self.state.bio_signals)
+        entry = dict(signals.get(body_name) or {"body": body_name, "count": 0, "genuses": []})
+        if count:
+            entry["count"] = count
+        if genuses is not None:
+            entry["genuses"] = genuses
+        entry.update(self._body_scans.get(body_name) or {})
+        signals[body_name] = entry
+        self.state.update(bio_signals=signals)
+
+    def _on_fssbodysignals(self, e):
+        count = self._bio_count(e)
+        if count:
+            self._update_bio_body(e.get("BodyName"), count=count)
+
+    def _on_saasignalsfound(self, e):
+        count = self._bio_count(e)
+        genuses = [
+            biovalues.genus_info(g.get("Genus_Localised") or _clean_name(g.get("Genus")))
+            for g in e.get("Genuses") or []
+        ]
+        if count or genuses:
+            self._update_bio_body(e.get("BodyName"), count=count or None, genuses=genuses or None)
+
+    def _on_scan(self, e):
+        body = e.get("BodyName")
+        if not body or e.get("PlanetClass") is None:
+            return
+        gravity = e.get("SurfaceGravity")
+        details = {
+            "planet_class": e.get("PlanetClass"),
+            "atmosphere": e.get("Atmosphere") or e.get("AtmosphereType") or "",
+            "gravity_g": round(gravity / 9.80665, 2) if gravity is not None else None,
+            "temp_k": round(e.get("SurfaceTemperature")) if e.get("SurfaceTemperature") else None,
+            "landable": bool(e.get("Landable")),
+        }
+        self._body_scans[body] = details
+        if body in self.state.bio_signals:
+            self._update_bio_body(body)
+
+    def _on_scanorganic(self, e):
+        species = e.get("Species_Localised") or _clean_name(e.get("Species"))
+        genus = e.get("Genus_Localised") or _clean_name(e.get("Genus"))
+        variant = e.get("Variant_Localised")
+        scan_type = e.get("ScanType")
+        if scan_type in ("Log", "Sample"):
+            prev = self.state.bio_sampling or {}
+            same = prev.get("species") == species
+            progress = 1 if scan_type == "Log" else (min(3, (prev.get("progress") or 1) + 1) if same else 2)
+            self.state.update(bio_sampling={
+                "genus": genus, "species": species, "variant": variant,
+                "progress": progress,
+                "colony_m": biovalues.GENUS_COLONY_M.get(genus),
+                "value": biovalues.species_value(species),
+            })
+        elif scan_type == "Analyse":
+            value = biovalues.species_value(species) or biovalues.genus_info(genus).get("min_value") or 0
+            vault = list(self.state.bio_vault)
+            vault.append({
+                "species": species, "genus": genus, "variant": variant,
+                "value": value, "body": self.state.body,
+            })
+            self.state.update(bio_vault=vault, bio_sampling=None)
+
+    def _on_sellorganicdata(self, e):
+        self.state.update(bio_vault=[], bio_sampling=None)
+
+    def _on_died(self, e):
+        self.state.update(bio_vault=[], bio_sampling=None)  # exobio data is lost on death
 
     # ---------- status json files ----------
 

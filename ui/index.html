@@ -48,6 +48,7 @@
   <nav class="tabs" id="tabs">
     <button class="tab active" data-tab="trade">TRADE ROUTES</button>
     <button class="tab" data-tab="commodities">COMMODITIES</button>
+    <button class="tab" data-tab="bio">BIO</button>
     <button class="tab" data-tab="local">LOCAL</button>
     <button class="tab" data-tab="database">DATABASE</button>
   </nav>
@@ -113,6 +114,38 @@
           </thead>
           <tbody></tbody>
         </table>
+      </div>
+    </section>
+  </div>
+
+  <div class="tabpane hidden" id="tab-bio">
+    <section class="card hidden" id="bio-sampling-card">
+      <div class="label">SAMPLING IN PROGRESS</div>
+      <div id="bio-sampling"></div>
+    </section>
+
+    <section class="card">
+      <div class="card-head">
+        <div class="label">UNSOLD SAMPLES <span class="dim">estimated Vista Genomics value · first footfall pays 5×</span></div>
+        <div class="value orange" id="bio-vault-total"></div>
+      </div>
+      <ul id="bio-vault" class="cargo-list"></ul>
+      <div id="bio-vault-empty" class="dim empty">No completed samples on board.</div>
+    </section>
+
+    <section class="card">
+      <div class="label">BIO SIGNALS — CURRENT SYSTEM <span class="dim">map a body (DSS) to reveal genuses · values are community estimates</span></div>
+      <div class="table-wrap">
+        <table id="bio-table" class="hidden">
+          <thead>
+            <tr>
+              <th>Body</th><th class="num">Signals</th><th>Genuses (value · sample spacing)</th>
+              <th>Body type</th><th class="num">Gravity</th><th class="num">Temp</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+        <div id="bio-empty" class="dim empty">No biological signals detected in this system yet — honk (FSS discovery scan) and scan bodies to populate this.</div>
       </div>
     </section>
   </div>

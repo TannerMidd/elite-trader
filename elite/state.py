@@ -41,6 +41,11 @@ class AppState:
         self.cargo_inventory = []
         self.market = None  # {"market_id", "station", "system", "timestamp", "items": [...]}
 
+        # Exobiology (current system signals; vault persists until sold/death)
+        self.bio_signals = {}   # body name -> {count, genuses:[...], body details}
+        self.bio_sampling = None  # {"genus","species","variant","progress"}
+        self.bio_vault = []     # [{"species","genus","variant","value","body"}]
+
         self.last_journal_event = None  # timestamp string of most recent event seen
         self.journal_dir_found = True
 
@@ -87,6 +92,16 @@ class AppState:
                 "jump_history": list(self.jump_history),
                 "cargo_inventory": list(self.cargo_inventory),
                 "market": market,
+                "bio": {
+                    "system_signals": sorted(
+                        self.bio_signals.values(), key=lambda b: -(b.get("count") or 0)
+                    ),
+                    "sampling": self.bio_sampling,
+                    "vault": {
+                        "items": list(self.bio_vault),
+                        "total": sum(i.get("value") or 0 for i in self.bio_vault),
+                    },
+                },
                 "last_journal_event": self.last_journal_event,
                 "journal_dir_found": self.journal_dir_found,
             }

@@ -41,7 +41,10 @@
       "PowerShell(\\(Get-Command chromium-cli -ErrorAction SilentlyContinue\\).Source; \\(Get-Command playwright -ErrorAction SilentlyContinue\\).Source; Test-Path \"$env:ProgramFiles \\(x86\\)\\\\Microsoft\\\\Edge\\\\Application\\\\msedge.exe\"; Test-Path \"$env:ProgramFiles\\\\Google\\\\Chrome\\\\Application\\\\chrome.exe\")",
       "PowerShell(.venv\\\\Scripts\\\\python -m pip install --quiet playwright)",
       "PowerShell(.venv\\\\Scripts\\\\python -c \"import playwright; print\\('playwright ok'\\)\")",
-      "PowerShell(.venv\\\\Scripts\\\\python \"C:\\\\Users\\\\Tanner\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\f--Development-elite-trader\\\\d59487b9-6b0b-40c2-815b-b3f2527203ef\\\\scratchpad\\\\shots.py\")"
+      "PowerShell(.venv\\\\Scripts\\\\python \"C:\\\\Users\\\\Tanner\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\f--Development-elite-trader\\\\d59487b9-6b0b-40c2-815b-b3f2527203ef\\\\scratchpad\\\\shots.py\")",
+      "PowerShell(.venv\\\\Scripts\\\\python \"C:\\\\Users\\\\Tanner\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\f--Development-elite-trader\\\\d59487b9-6b0b-40c2-815b-b3f2527203ef\\\\scratchpad\\\\bio_test.py\")",
+      "PowerShell(New-Item -ItemType Directory -Force \"f:\\\\Development\\\\elite-trader\\\\tests\")",
+      "PowerShell(Copy-Item \"C:\\\\Users\\\\Tanner\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\f--Development-elite-trader\\\\d59487b9-6b0b-40c2-815b-b3f2527203ef\\\\scratchpad\\\\bio_test.py\" \"f:\\\\Development\\\\elite-trader\\\\tests\\\\test_bio.py\")"
     ]
   }
 }

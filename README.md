@@ -52,6 +52,15 @@ galaxy docks, your database knows the new prices within seconds.
 
 <div align="center"><img src="docs/screenshots/database.png" alt="Market database status" width="900"></div>
 
+### 🧬 Exobiology
+
+The **Bio** tab tracks your exobiology run: biological signals on every scanned
+body in the current system (with genus value ranges and the **sample-spacing
+distance** you must travel between the three samples), your live sampling
+progress, and the unsold samples you're carrying with their estimated Vista
+Genomics payout — so you always know how many credits are riding on not
+crashing. First footfall pays 5× on top.
+
 ### 🚀 Live ship & local data
 
 Current system, station, credits, fuel, cargo and legal state ~2 s behind the
