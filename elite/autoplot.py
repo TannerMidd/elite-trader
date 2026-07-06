@@ -20,11 +20,13 @@ GUI_FOCUS_GALAXY_MAP = 6
 NEEDED_ACTIONS = ["GalaxyMapOpen", "UI_Up", "UI_Right", "UI_Select"]
 
 # Timing (seconds) - tweak here if the sequence outruns the game on your PC.
-MAP_LOAD_DELAY = 2.0        # galaxy map opening animation
+MAP_LOAD_DELAY = 3.0        # galaxy map opening animation
+SEARCH_READY_DELAY = 1.0    # search box entering edit mode after selecting it
 AFTER_SEARCH_DELAY = 4.0    # camera flying to the searched system
-STEP_DELAY = 0.35           # small pause between UI keypresses
+STEP_DELAY = 0.4            # small pause between UI keypresses
 PLOT_HOLD = 0.9             # holding UI_Select on a system = "plot route"
 MAP_OPEN_TIMEOUT = 12.0
+CLEAR_BACKSPACES = 40       # wipe leftover text in the search box before typing
 
 # Characters that need shift on a US layout (rare in system names).
 SHIFTED = {"+": "=", "_": "-", ":": ";", '"': "'", "?": "/", "!": "1", "*": "8", "(": "9", ")": "0"}
@@ -123,7 +125,8 @@ def plot_route(system, dry_run=False, close_map=True):
     steps = [
         f"focus '{ED_WINDOW_TITLE}'",
         f"open galaxy map ({_desc(binds['GalaxyMapOpen'])})",
-        f"focus search box ({_desc(binds['UI_Up'])})",
+        f"focus search box ({_desc(binds['UI_Up'])} then {_desc(binds['UI_Select'])})",
+        f"clear search box ({CLEAR_BACKSPACES}x backspace)",
         f"type '{system}' + enter",
         f"select result ({_desc(binds['UI_Right'])})",
         f"hold {_desc(binds['UI_Select'])} {PLOT_HOLD}s to plot",
@@ -150,6 +153,11 @@ def plot_route(system, dry_run=False, close_map=True):
             time.sleep(MAP_LOAD_DELAY)
 
         _press(pdi, binds["UI_Up"]["key"], binds["UI_Up"]["mods"])  # focus the search field
+        time.sleep(STEP_DELAY)
+        # Explicitly enter edit mode; typing too early swallows leading characters.
+        _press(pdi, binds["UI_Select"]["key"], binds["UI_Select"]["mods"])
+        time.sleep(SEARCH_READY_DELAY)
+        pdi.press("backspace", presses=CLEAR_BACKSPACES, interval=0.01)  # clear leftovers
         time.sleep(STEP_DELAY)
         _type_text(pdi, system)
         time.sleep(STEP_DELAY)
