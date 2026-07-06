@@ -60,6 +60,28 @@ def create_app(state):
             finally:
                 conn.close()
 
+        mode = body.get("mode") or "loop"
+        if mode == "loop":
+            if source != "local":
+                return jsonify({
+                    "error": "Loop routes need the local market database - build it from the Market Database panel.",
+                    "source": source,
+                }), 502
+            try:
+                loops = routes.plan_loops(
+                    system=params["system"],
+                    star_pos=snap.get("star_pos"),
+                    capital=params["capital"],
+                    max_cargo=params["max_cargo"],
+                    radius=num("radius", 100.0),
+                    max_price_age_days=params["max_price_age_days"],
+                    max_system_distance=params["max_system_distance"],
+                    requires_large_pad=params["requires_large_pad"],
+                )
+            except routes.RouteError as exc:
+                return jsonify({"error": str(exc), "source": "local"}), 502
+            return jsonify({"loops": loops, "source": "local", "mode": "loop"})
+
         if source == "local":
             try:
                 hops = routes.plan_route_local(star_pos=snap.get("star_pos"), **params)
@@ -74,7 +96,7 @@ def create_app(state):
                 )
             except spansh.SpanshError as exc:
                 return jsonify({"error": str(exc), "source": "spansh"}), 502
-        return jsonify({"hops": hops, "source": source})
+        return jsonify({"hops": hops, "source": source, "mode": "chain"})
 
     @app.get("/api/commodities")
     def api_commodities():

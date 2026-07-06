@@ -50,10 +50,17 @@
       <div class="label">TRADE ROUTES <span class="dim">computed locally · live EDDN prices</span></div>
     </div>
     <form id="route-form" class="route-form">
+      <label>Type
+        <select id="rf-mode">
+          <option value="loop">Loop (2 stations)</option>
+          <option value="chain">Multi-hop chain</option>
+        </select>
+      </label>
       <label>Capital <input type="number" id="rf-capital" min="1000" step="1000"></label>
       <label>Cargo (t) <input type="number" id="rf-cargo" min="2"></label>
-      <label>Max hop (ly) <input type="number" id="rf-hop" min="1" step="0.1"></label>
-      <label>Hops <input type="number" id="rf-hops" min="1" max="10" value="4"></label>
+      <label id="rf-radius-wrap">Radius (ly) <input type="number" id="rf-radius" min="5" value="100"></label>
+      <label id="rf-hop-wrap" class="hidden">Max hop (ly) <input type="number" id="rf-hop" min="1" step="0.1"></label>
+      <label id="rf-hops-wrap" class="hidden">Hops <input type="number" id="rf-hops" min="1" max="10" value="4"></label>
       <label>Max star dist (ls) <input type="number" id="rf-lsdist" min="1" value="1000"></label>
       <label>Price age (days) <input type="number" id="rf-age" min="1" value="30"></label>
       <label class="check"><input type="checkbox" id="rf-largepad"> Large pad</label>

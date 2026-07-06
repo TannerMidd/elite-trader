@@ -243,6 +243,8 @@ button.primary.small { padding: 6px 12px; font-size: 12px; }
 .hop-table td, .hop-table th { padding: 3px 12px 3px 0; border-bottom: 1px solid var(--border); }
 .hop-table tbody tr:last-child td { border-bottom: none; }
 .hop-table .profit-cell { color: var(--good); font-weight: 600; }
+.leg-label { font-size: 11px; letter-spacing: 2px; color: var(--dim); margin-top: 8px; }
+.leg-label .profit-cell { color: var(--good); font-weight: 700; letter-spacing: 0; }
 
 /* tables */
 .two-col { display: grid; grid-template-columns: 3fr 2fr; gap: 14px; align-items: start; }

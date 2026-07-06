@@ -270,12 +270,15 @@ async function findRoutes(ev) {
   status.textContent = "Asking Spansh for routes… (can take ~10-30s)";
   results.innerHTML = "";
   try {
+    const mode = $("rf-mode").value;
     const resp = await fetch("/api/trade-route", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
+        mode,
         capital: Number($("rf-capital").value) || undefined,
         max_cargo: Number($("rf-cargo").value) || undefined,
+        radius: Number($("rf-radius").value) || undefined,
         max_hop_distance: Number($("rf-hop").value) || undefined,
         max_hops: Number($("rf-hops").value) || undefined,
         max_system_distance: Number($("rf-lsdist").value) || undefined,
@@ -285,17 +288,76 @@ async function findRoutes(ev) {
     });
     const data = await resp.json();
     if (!resp.ok) throw new Error(data.error || "Route request failed");
-    renderRoutes(data.hops || []);
     const src = data.source === "local" ? "local database" : "Spansh API (local DB not built yet)";
-    status.textContent = data.hops && data.hops.length
-      ? `Route found (${data.hops.length} hop${data.hops.length > 1 ? "s" : ""}) from ${state.system} via ${src}.`
-      : `No profitable route for those settings (via ${src}).`;
+    if (data.mode === "loop") {
+      renderLoops(data.loops || []);
+      status.textContent = (data.loops || []).length
+        ? `Best ${data.loops.length} round-trip loops within ${$("rf-radius").value} ly of ${state.system} (local database).`
+        : "No profitable loop found with those settings.";
+    } else {
+      renderRoutes(data.hops || []);
+      status.textContent = data.hops && data.hops.length
+        ? `Route found (${data.hops.length} hop${data.hops.length > 1 ? "s" : ""}) from ${state.system} via ${src}.`
+        : `No profitable route for those settings (via ${src}).`;
+    }
   } catch (err) {
     status.classList.add("error");
     status.textContent = String(err.message || err);
   } finally {
     go.disabled = false;
   }
+}
+
+function commodityTableHtml(commodities) {
+  const rows = (commodities || []).map((c) => {
+    const unit = (c.sell_price != null && c.buy_price != null) ? c.sell_price - c.buy_price : null;
+    const line = c.profit != null ? c.profit : (unit != null && c.amount != null ? unit * c.amount : null);
+    return `<tr>` +
+      `<td>${esc(c.name)}</td>` +
+      `<td class="num">${fmtNum(c.amount)}</td>` +
+      `<td class="num">${fmtNum(c.buy_price)}</td>` +
+      `<td class="num">${fmtNum(c.sell_price)}</td>` +
+      `<td class="num">${unit != null ? "+" + fmtNum(unit) : "?"}</td>` +
+      `<td class="num profit-cell">+${fmtNum(line)}</td>` +
+      `</tr>`;
+  }).join("");
+  if (!rows) return "";
+  return `<table class="hop-table">` +
+    `<thead><tr><th>Commodity</th><th class="num">Units</th><th class="num">Buy</th>` +
+    `<th class="num">Sell</th><th class="num">cr/unit</th><th class="num">Total</th></tr></thead>` +
+    `<tbody>${rows}</tbody></table>`;
+}
+
+function renderLoops(loops) {
+  const results = $("route-results");
+  results.innerHTML = "";
+  loops.forEach((l, i) => {
+    const div = document.createElement("div");
+    div.className = "hop";
+    const tons = [...l.outbound.commodities, ...l.inbound.commodities].reduce((a, c) => a + (c.amount || 0), 0);
+    div.innerHTML =
+      `<div class="route-line">` +
+      `<span class="dim">#${i + 1}</span>` +
+      `<b>${esc(l.a.station)}</b><span class="dim">${esc(l.a.system)}</span>` +
+      `<span class="arrow">⇄</span>` +
+      `<b>${esc(l.b.station)}</b><span class="dim">${esc(l.b.system)}</span>` +
+      `<span class="profit">+${fmtNum(l.profit)} cr / trip</span>` +
+      `</div>` +
+      `<div class="commodities">${l.distance} ly apart · start ${l.a.from_player} ly from you` +
+      ` · ${l.a.dist_ls != null ? fmtNum(l.a.dist_ls) : "?"} / ${l.b.dist_ls != null ? fmtNum(l.b.dist_ls) : "?"} ls to pads` +
+      (tons ? ` · ${fmtNum(l.profit / tons)} cr/t moved` : "") +
+      `</div>` +
+      `<div class="leg-label">OUTBOUND <span class="profit-cell">+${fmtNum(l.outbound.profit)}</span></div>` +
+      commodityTableHtml(l.outbound.commodities) +
+      `<div class="leg-label">RETURN <span class="profit-cell">${l.inbound.commodities.length ? "+" + fmtNum(l.inbound.profit) : "fly back empty"}</span></div>` +
+      commodityTableHtml(l.inbound.commodities);
+    const line = div.querySelector(".route-line");
+    const btnA = plotButton(l.a.system);
+    const btnB = plotButton(l.b.system);
+    line.insertBefore(btnA, line.querySelector(".profit"));
+    line.insertBefore(btnB, line.querySelector(".profit"));
+    results.appendChild(div);
+  });
 }
 
 function renderRoutes(hops) {
@@ -537,6 +599,12 @@ document.addEventListener("DOMContentLoaded", () => {
 
   $("route-form").addEventListener("submit", findRoutes);
   $("route-form").addEventListener("input", () => { routeFormTouched = true; });
+  $("rf-mode").addEventListener("change", () => {
+    const loop = $("rf-mode").value === "loop";
+    $("rf-radius-wrap").classList.toggle("hidden", !loop);
+    $("rf-hop-wrap").classList.toggle("hidden", loop);
+    $("rf-hops-wrap").classList.toggle("hidden", loop);
+  });
 
   $("plot-form").addEventListener("submit", (ev) => {
     ev.preventDefault();

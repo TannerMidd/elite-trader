@@ -13,8 +13,13 @@ from . import marketdb
 BEAM_WIDTH = 6
 DESTS_PER_HOP = 5
 MAX_COMMODITIES_PER_HOP = 3
-MAX_SOURCE_CANDIDATES = 25
+MAX_SOURCE_CANDIDATES = 60
 PAIR_QUERY_LIMIT = 600
+
+LOOP_STATION_CAP = 900       # nearest stations considered in loop mode
+LOOP_FLOW_LIMIT = 30000      # top commodity flows pulled from SQL
+LOOP_FLOWS_PER_PAIR = 12
+LOOP_RESULTS = 8
 
 
 class RouteError(Exception):
@@ -177,6 +182,144 @@ def _fill_cargo(flows, max_cargo, capital):
         if len(load) >= MAX_COMMODITIES_PER_HOP:
             break
     return load
+
+
+def plan_loops(
+    system,
+    station=None,
+    star_pos=None,
+    capital=100000,
+    max_cargo=8,
+    radius=100.0,
+    max_price_age_days=30,
+    max_system_distance=1000,
+    requires_large_pad=False,
+    top_n=LOOP_RESULTS,
+):
+    """Inara-style 2-station round trips near the player: fill the hold A->B,
+    refill B->A, rank by total round-trip profit. Legs may span several jumps."""
+    conn = marketdb.connect()
+    try:
+        if not marketdb.status(conn)["ready"]:
+            raise RouteError("Local market database is empty - build it from the Market Database panel first.")
+        start = _resolve_start(conn, system, star_pos)
+
+        stations = marketdb.stations_near(
+            conn, start["x"], start["y"], start["z"], float(radius),
+            min_updated=marketdb.now_epoch() - int(max_price_age_days) * 86400,
+            require_large_pad=bool(requires_large_pad),
+            max_dist_ls=float(max_system_distance) if max_system_distance else None,
+        )
+        if len(stations) < 2:
+            raise RouteError("Fewer than two market stations in range - increase the radius or price age.")
+        stations.sort(key=lambda s: _dist(s, start))
+        stations = stations[:LOOP_STATION_CAP]
+        by_id = {s["market_id"]: s for s in stations}
+
+        conn.execute("DROP TABLE IF EXISTS temp.near_buy")
+        conn.execute("DROP TABLE IF EXISTS temp.near_sell")
+        conn.execute("CREATE TEMP TABLE near_buy(market_id INTEGER, symbol TEXT, buy INTEGER, supply INTEGER)")
+        conn.execute("CREATE TEMP TABLE near_sell(market_id INTEGER, symbol TEXT, sell INTEGER, demand INTEGER)")
+        marks = ",".join("?" for _ in by_id)
+        ids = list(by_id.keys())
+        conn.execute(
+            f"INSERT INTO temp.near_buy SELECT market_id, symbol, buy_price, supply"
+            f" FROM commodities WHERE market_id IN ({marks}) AND supply > 0 AND buy_price > 0",
+            ids,
+        )
+        conn.execute(
+            f"INSERT INTO temp.near_sell SELECT market_id, symbol, sell_price, demand"
+            f" FROM commodities WHERE market_id IN ({marks}) AND demand > 0 AND sell_price > 0",
+            ids,
+        )
+        conn.execute("CREATE INDEX temp.idx_nearsell_sym ON near_sell(symbol)")
+
+        flows = conn.execute(
+            f"""SELECT a.market_id, b.market_id, a.symbol, a.buy, b.sell, a.supply, b.demand
+                FROM near_buy a JOIN near_sell b ON b.symbol = a.symbol
+                WHERE a.market_id != b.market_id AND b.sell > a.buy
+                ORDER BY (b.sell - a.buy) DESC LIMIT {LOOP_FLOW_LIMIT}"""
+        ).fetchall()
+
+        # Flows per directed pair, best-first (SQL already sorted them).
+        directed = {}
+        for a, b, sym, buy, sell, supply, demand in flows:
+            lst = directed.setdefault((a, b), [])
+            if len(lst) < LOOP_FLOWS_PER_PAIR:
+                lst.append((sym, buy, sell, supply, demand))
+
+        capital = int(capital)
+        max_cargo = int(max_cargo)
+        seen_pairs = set()
+        loops = []
+        for (a, b) in directed:
+            key = frozenset((a, b))
+            if key in seen_pairs:
+                continue
+            seen_pairs.add(key)
+            # Radius also caps the leg length; both-near-me-but-opposite-sides
+            # pairs would otherwise sneak in at up to 2x radius apart.
+            if _dist(by_id[a], by_id[b]) > float(radius):
+                continue
+            out = _fill_cargo(directed.get((a, b), []), max_cargo, capital)
+            back = _fill_cargo(directed.get((b, a), []), max_cargo, capital)
+            out_p = sum(c["profit"] for c in out)
+            back_p = sum(c["profit"] for c in back)
+            if out_p + back_p <= 0:
+                continue
+            # Present the more profitable leg as the outbound one.
+            if back_p > out_p:
+                a, b, out, back, out_p, back_p = b, a, back, out, back_p, out_p
+            loops.append(
+                {"a": by_id[a], "b": by_id[b], "out": out, "back": back,
+                 "profit": out_p + back_p, "out_profit": out_p, "back_profit": back_p}
+            )
+        loops.sort(key=lambda l: l["profit"], reverse=True)
+        loops = loops[:top_n]
+        if not loops:
+            raise RouteError("No profitable loop found with those settings.")
+        return _format_loops(conn, loops, start)
+    finally:
+        conn.close()
+
+
+def _format_loops(conn, loops, start):
+    symbols = {c["symbol"] for l in loops for c in l["out"] + l["back"]}
+    names = marketdb.commodity_display_names(conn, symbols)
+
+    def leg(commodities):
+        return [
+            {
+                "name": names.get(c["symbol"], c["symbol"].title()),
+                "amount": c["amount"],
+                "buy_price": c["buy_price"],
+                "sell_price": c["sell_price"],
+                "profit": c["profit"],
+            }
+            for c in commodities
+        ]
+
+    def endpoint(st):
+        return {
+            "station": st["station"],
+            "system": st["system"],
+            "dist_ls": st["dist_ls"],
+            "large_pad": st["large_pad"],
+            "updated_at": st["updated_at"],
+            "from_player": round(_dist(st, start), 1),
+        }
+
+    return [
+        {
+            "a": endpoint(l["a"]),
+            "b": endpoint(l["b"]),
+            "distance": round(_dist(l["a"], l["b"]), 1),
+            "profit": l["profit"],
+            "outbound": {"profit": l["out_profit"], "commodities": leg(l["out"])},
+            "inbound": {"profit": l["back_profit"], "commodities": leg(l["back"])},
+        }
+        for l in loops
+    ]
 
 
 def _dist(a, b):
