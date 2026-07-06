@@ -49,6 +49,7 @@
     <button class="tab active" data-tab="trade">TRADE ROUTES</button>
     <button class="tab" data-tab="commodities">COMMODITIES</button>
     <button class="tab" data-tab="bio">BIO</button>
+    <button class="tab" data-tab="guides">GUIDES</button>
     <button class="tab" data-tab="local">LOCAL</button>
     <button class="tab" data-tab="database">DATABASE</button>
   </nav>
@@ -150,6 +151,39 @@
     </section>
   </div>
 
+  <div class="tabpane hidden" id="tab-guides">
+    <section class="card">
+      <div class="label">ROAD TO RICHES <span class="dim">high-value scan/mapping targets near you · via Spansh</span></div>
+      <form id="rr-form" class="route-form">
+        <label>Jump range (ly) <input type="number" id="rr-range" min="1" step="any"></label>
+        <label>Radius (ly) <input type="number" id="rr-radius" min="5" value="50"></label>
+        <label>Min value <input type="number" id="rr-minvalue" min="0" value="300000" step="any"></label>
+        <label>Systems <input type="number" id="rr-max" min="1" max="100" value="25"></label>
+        <label class="check"><input type="checkbox" id="rr-loop" checked> Loop back</label>
+        <button type="submit" id="rr-go" class="primary">PLAN ROUTE</button>
+      </form>
+      <div id="rr-status" class="dim"></div>
+      <div id="rr-results"></div>
+    </section>
+
+    <section class="card">
+      <div class="label">NEUTRON PLOTTER <span class="dim">long-range travel via neutron highway · via Spansh</span></div>
+      <form id="nr-form" class="route-form">
+        <label>Destination <input type="text" id="nr-to" placeholder="e.g. Colonia" autocomplete="off"></label>
+        <label>Jump range (ly) <input type="number" id="nr-range" min="1" step="any"></label>
+        <label>Efficiency % <input type="number" id="nr-eff" min="1" max="100" value="60"></label>
+        <button type="submit" id="nr-go" class="primary">PLOT</button>
+      </form>
+      <div id="nr-status" class="dim"></div>
+      <div class="table-wrap">
+        <table id="nr-table" class="hidden">
+          <thead><tr><th>#</th><th>Waypoint</th><th class="num">Jump (ly)</th><th class="num">Remaining (ly)</th><th class="num">Jumps</th><th></th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </section>
+  </div>
+
   <div class="tabpane hidden" id="tab-local">
     <div class="two-col">
       <section class="card">
@@ -178,9 +212,14 @@
         <div class="label">JUMP HISTORY</div>
         <ul id="jumps" class="jumps"></ul>
         <div id="jumps-empty" class="dim empty">No jumps recorded yet this session.</div>
-        <div class="label cargo-label">CARGO HOLD</div>
+        <div class="card-head cargo-label">
+          <div class="label">CARGO HOLD</div>
+          <button id="cargo-sell-btn" class="primary small">WHERE TO SELL?</button>
+        </div>
         <ul id="cargo-list" class="cargo-list"></ul>
         <div id="cargo-empty" class="dim empty">Cargo hold is empty.</div>
+        <div id="cargo-sell-status" class="dim"></div>
+        <div id="cargo-sell-results"></div>
       </section>
     </div>
   </div>

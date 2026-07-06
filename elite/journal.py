@@ -302,6 +302,7 @@ class JournalWatcher:
         inventory = [
             {
                 "name": item.get("Name_Localised") or (item.get("Name") or "").title(),
+                "symbol": (item.get("Name") or "").lower(),
                 "count": item.get("Count", 0),
                 "stolen": item.get("Stolen", 0),
             }

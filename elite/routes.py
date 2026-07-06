@@ -448,6 +448,72 @@ def search_commodity(
         conn.close()
 
 
+def sell_cargo(
+    items,  # [{"symbol", "name", "count"}]
+    system=None,
+    star_pos=None,
+    radius=50.0,
+    max_price_age_days=30,
+    requires_large_pad=False,
+    limit=10,
+):
+    """Best places to sell the CURRENT cargo hold: stations ranked by total
+    payout for everything they can absorb (capped by their demand)."""
+    items = [i for i in items if i.get("symbol") and (i.get("count") or 0) > 0]
+    if not items:
+        raise RouteError("Cargo hold is empty.")
+    conn = marketdb.connect()
+    try:
+        if not marketdb.status(conn)["ready"]:
+            raise RouteError("Local market database is empty - build it from the Database tab first.")
+        start = _resolve_start(conn, system, star_pos)
+        stations = marketdb.stations_near(
+            conn, start["x"], start["y"], start["z"], float(radius),
+            min_updated=marketdb.now_epoch() - int(max_price_age_days) * 86400,
+            require_large_pad=bool(requires_large_pad),
+        )
+        by_id = {s["market_id"]: s for s in stations}
+        if not by_id:
+            return []
+        counts = {i["symbol"]: i["count"] for i in items}
+        names = {i["symbol"]: i.get("name") or i["symbol"].title() for i in items}
+        marks_m = ",".join("?" for _ in by_id)
+        marks_s = ",".join("?" for _ in counts)
+        rows = conn.execute(
+            f"""SELECT market_id, symbol, sell_price, demand FROM commodities
+                WHERE market_id IN ({marks_m}) AND symbol IN ({marks_s})
+                  AND sell_price > 0 AND demand > 0""",
+            [*by_id.keys(), *counts.keys()],
+        ).fetchall()
+
+        per_station = {}
+        for market_id, symbol, sell, demand in rows:
+            units = min(counts[symbol], demand)
+            if units <= 0:
+                continue
+            entry = per_station.setdefault(market_id, {"total": 0, "items": []})
+            entry["total"] += units * sell
+            entry["items"].append(
+                {"name": names[symbol], "units": units, "sell_price": sell,
+                 "demand": demand, "payout": units * sell,
+                 "partial": units < counts[symbol]}
+            )
+        results = []
+        for market_id, entry in per_station.items():
+            st = by_id[market_id]
+            entry["items"].sort(key=lambda i: -i["payout"])
+            results.append(
+                {"station": st["station"], "system": st["system"],
+                 "distance": round(_dist(start, st), 1), "dist_ls": st["dist_ls"],
+                 "large_pad": st["large_pad"], "updated_at": st["updated_at"],
+                 "total": entry["total"], "items": entry["items"]}
+            )
+        results.sort(key=lambda r: -r["total"])
+        return results[:limit]
+    finally:
+        conn.close()
+
+
 def _resolve_commodity(conn, query):
     q = (query or "").strip()
     if not q:

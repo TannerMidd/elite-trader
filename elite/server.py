@@ -136,6 +136,81 @@ def create_app(state):
             return jsonify({"error": str(exc)}), 400
         return jsonify(result)
 
+    @app.post("/api/riches")
+    def api_riches():
+        snap = state.snapshot()
+        body = request.get_json(silent=True) or {}
+
+        def num(key, default, cast=float):
+            try:
+                return cast(body.get(key, default))
+            except (TypeError, ValueError):
+                return default
+
+        try:
+            systems = spansh.riches_route(
+                from_system=body.get("from") or snap.get("system"),
+                to_system=body.get("to") or None,
+                jump_range=num("jump_range", snap.get("max_jump_range") or 30.0),
+                radius=num("radius", 50, int),
+                max_results=num("max_results", 30, int),
+                max_distance=num("max_distance", 1000, int),
+                min_value=num("min_value", 300000, int),
+                loop=bool(body.get("loop", True)),
+            )
+        except spansh.SpanshError as exc:
+            return jsonify({"error": str(exc)}), 502
+        return jsonify({"systems": systems})
+
+    @app.post("/api/neutron")
+    def api_neutron():
+        snap = state.snapshot()
+        body = request.get_json(silent=True) or {}
+        to_system = (body.get("to") or "").strip()
+        if not to_system:
+            return jsonify({"error": "No destination system given."}), 400
+
+        def num(key, default, cast=float):
+            try:
+                return cast(body.get(key, default))
+            except (TypeError, ValueError):
+                return default
+
+        try:
+            route = spansh.neutron_route(
+                from_system=body.get("from") or snap.get("system"),
+                to_system=to_system,
+                jump_range=num("jump_range", snap.get("max_jump_range") or 30.0),
+                efficiency=num("efficiency", 60, int),
+            )
+        except spansh.SpanshError as exc:
+            return jsonify({"error": str(exc)}), 502
+        return jsonify(route)
+
+    @app.get("/api/cargo-sell")
+    def api_cargo_sell():
+        snap = state.snapshot()
+        args = request.args
+
+        def num(key, default, cast=float):
+            try:
+                return cast(args.get(key, default))
+            except (TypeError, ValueError):
+                return default
+
+        try:
+            results = routes.sell_cargo(
+                items=snap.get("cargo_inventory") or [],
+                system=snap.get("system"),
+                star_pos=snap.get("star_pos"),
+                radius=num("radius", 50.0),
+                max_price_age_days=num("max_price_age_days", 30, int),
+                requires_large_pad=args.get("large_pad") == "1",
+            )
+        except routes.RouteError as exc:
+            return jsonify({"error": str(exc)}), 400
+        return jsonify({"results": results})
+
     @app.get("/api/marketdb/status")
     def api_marketdb_status():
         conn = marketdb.connect()

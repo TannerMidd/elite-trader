@@ -132,11 +132,16 @@ function render() {
 
 function renderBanner() {
   const banner = $("banner");
+  const lowFuel = state.fuel_main != null && state.fuel_capacity > 0 &&
+    !state.docked && state.fuel_main / state.fuel_capacity < 0.25;
   if (state.journal_dir_found === false) {
     banner.textContent = "Elite Dangerous journal folder not found - set the ED_JOURNAL_DIR environment variable.";
     banner.classList.remove("hidden");
   } else if (!state.system) {
     banner.textContent = "Waiting for journal data - start Elite Dangerous (or play a bit) and this will fill in.";
+    banner.classList.remove("hidden");
+  } else if (lowFuel) {
+    banner.textContent = `⚠ LOW FUEL: ${state.fuel_main.toFixed(1)} / ${state.fuel_capacity.toFixed(0)} t — find a scoopable star (K G B F O A M) or a station soon.`;
     banner.classList.remove("hidden");
   } else {
     banner.classList.add("hidden");
@@ -323,6 +328,8 @@ function seedRouteForm() {
   if (state.cargo_capacity != null && !$("rf-cargo").value) $("rf-cargo").value = state.cargo_capacity;
   if (state.max_jump_range != null && !$("rf-hop").value) $("rf-hop").value = state.max_jump_range.toFixed(1);
   if (state.max_jump_range != null && !$("rf-jumprange").value) $("rf-jumprange").value = state.max_jump_range.toFixed(1);
+  if (state.max_jump_range != null && !$("rr-range").value) $("rr-range").value = state.max_jump_range.toFixed(1);
+  if (state.max_jump_range != null && !$("nr-range").value) $("nr-range").value = state.max_jump_range.toFixed(1);
   // Default min supply to the hold size so listed routes can actually fill it.
   if (state.cargo_capacity && !$("rf-minsupply").value) $("rf-minsupply").value = state.cargo_capacity;
 }
@@ -578,6 +585,150 @@ async function searchCommodity(ev) {
   }
 }
 
+/* ---------- guides: road to riches + neutron ---------- */
+
+async function planRiches(ev) {
+  ev.preventDefault();
+  const status = $("rr-status");
+  const out = $("rr-results");
+  const go = $("rr-go");
+  go.disabled = true;
+  status.classList.remove("error");
+  status.textContent = "Asking Spansh for high-value bodies… (~10-30s)";
+  out.innerHTML = "";
+  try {
+    const resp = await fetch("/api/riches", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        jump_range: Number($("rr-range").value) || undefined,
+        radius: Number($("rr-radius").value) || undefined,
+        min_value: Number($("rr-minvalue").value) || undefined,
+        max_results: Number($("rr-max").value) || undefined,
+        loop: $("rr-loop").checked,
+      }),
+    });
+    const data = await resp.json();
+    if (!resp.ok) throw new Error(data.error || "Request failed");
+    const systems = (data.systems || []).filter((s) => (s.bodies || []).length);
+    const total = systems.reduce((a, s) => a + (s.total_value || 0), 0);
+    status.textContent = systems.length
+      ? `${systems.length} systems in visit order · ≈${fmtNum(total)} cr if you map everything (first discovery/footfall pays more).`
+      : "Nothing above the value threshold nearby — lower Min value or raise Radius.";
+    systems.forEach((s, i) => {
+      const div = document.createElement("div");
+      div.className = "hop";
+      const bodies = (s.bodies || []).map((b) =>
+        `<div>${esc(b.name)} <span class="sub">${esc(b.type || "?")}${b.terraformable ? " · terraformable" : ""}` +
+        ` · ${b.dist_ls != null ? fmtNum(b.dist_ls) + " ls" : "?"} · ≈${fmtNum(b.map_value || b.scan_value)} cr</span></div>`
+      ).join("");
+      div.innerHTML =
+        `<div class="route-line"><span class="dim">#${i + 1}</span><b>${esc(s.system)}</b>` +
+        `<span class="profit">≈${fmtNum(s.total_value)} cr</span></div>` +
+        `<div class="commodities">${bodies}</div>`;
+      const line = div.querySelector(".route-line");
+      const copyBtn = document.createElement("button");
+      copyBtn.className = "copy"; copyBtn.textContent = "⧉"; copyBtn.title = "Copy system name";
+      copyBtn.addEventListener("click", () => copyText(s.system, copyBtn));
+      line.insertBefore(copyBtn, line.querySelector(".profit"));
+      line.insertBefore(plotButton(s.system), line.querySelector(".profit"));
+      out.appendChild(div);
+    });
+  } catch (err) {
+    status.classList.add("error");
+    status.textContent = String(err.message || err);
+  } finally {
+    go.disabled = false;
+  }
+}
+
+async function planNeutron(ev) {
+  ev.preventDefault();
+  const status = $("nr-status");
+  const table = $("nr-table");
+  const tbody = table.querySelector("tbody");
+  const go = $("nr-go");
+  go.disabled = true;
+  status.classList.remove("error");
+  status.textContent = "Plotting neutron route… (~10-30s)";
+  try {
+    const resp = await fetch("/api/neutron", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        to: $("nr-to").value.trim(),
+        jump_range: Number($("nr-range").value) || undefined,
+        efficiency: Number($("nr-eff").value) || undefined,
+      }),
+    });
+    const data = await resp.json();
+    if (!resp.ok) throw new Error(data.error || "Request failed");
+    const wps = data.waypoints || [];
+    status.textContent = `${data.total_jumps} jumps total across ${wps.length} waypoints — plot each waypoint as you reach the previous one.`;
+    tbody.innerHTML = "";
+    wps.forEach((w, i) => {
+      const tr = document.createElement("tr");
+      tr.innerHTML =
+        `<td>${i + 1}</td>` +
+        `<td>${esc(w.system)}${w.neutron ? ' <span class="orange">☄ neutron</span>' : ""}</td>` +
+        `<td class="num">${w.distance_jumped != null ? Number(w.distance_jumped).toFixed(1) : ""}</td>` +
+        `<td class="num">${w.distance_left != null ? Number(w.distance_left).toFixed(0) : ""}</td>` +
+        `<td class="num">${w.jumps ?? ""}</td>`;
+      const td = document.createElement("td");
+      const copyBtn = document.createElement("button");
+      copyBtn.className = "copy"; copyBtn.textContent = "⧉"; copyBtn.title = "Copy system name";
+      copyBtn.addEventListener("click", () => copyText(w.system, copyBtn));
+      td.appendChild(copyBtn);
+      td.appendChild(plotButton(w.system));
+      tr.appendChild(td);
+      tbody.appendChild(tr);
+    });
+    table.classList.toggle("hidden", wps.length === 0);
+  } catch (err) {
+    status.classList.add("error");
+    status.textContent = String(err.message || err);
+  } finally {
+    go.disabled = false;
+  }
+}
+
+/* ---------- best sell for current cargo ---------- */
+
+async function findCargoSell() {
+  const status = $("cargo-sell-status");
+  const out = $("cargo-sell-results");
+  status.classList.remove("error");
+  status.textContent = "Finding the best buyers for your hold…";
+  out.innerHTML = "";
+  try {
+    const resp = await fetch("/api/cargo-sell?radius=50");
+    const data = await resp.json();
+    if (!resp.ok) throw new Error(data.error || "Search failed");
+    const results = data.results || [];
+    status.textContent = results.length
+      ? `Top ${results.length} buyers for your cargo within 50 ly:`
+      : "Nobody nearby is buying what you're carrying — try after the next EDDN update or widen the net.";
+    for (const r of results.slice(0, 5)) {
+      const div = document.createElement("div");
+      div.className = "hop";
+      const items = r.items.map((i) =>
+        `${esc(i.name)} ×${fmtNum(i.units)} @ ${fmtNum(i.sell_price)}${i.partial ? " (demand-capped)" : ""}`
+      ).join(" · ");
+      div.innerHTML =
+        `<div class="route-line"><b>${esc(r.station)}</b><span class="dim">${esc(r.system)}</span>` +
+        `<span class="profit">+${fmtNum(r.total)} cr</span></div>` +
+        `<div class="commodities">${r.distance} ly · ${r.dist_ls != null ? fmtNum(r.dist_ls) + " ls" : "?"}` +
+        `${r.large_pad ? "" : " · no L pad"} · ${items}</div>`;
+      const line = div.querySelector(".route-line");
+      line.insertBefore(plotButton(r.system), line.querySelector(".profit"));
+      out.appendChild(div);
+    }
+  } catch (err) {
+    status.classList.add("error");
+    status.textContent = String(err.message || err);
+  }
+}
+
 /* ---------- market database panel ---------- */
 
 async function seedDb() {
@@ -743,6 +894,9 @@ document.addEventListener("DOMContentLoaded", () => {
   $("market-filter").addEventListener("input", renderMarket);
   $("seed-btn").addEventListener("click", seedDb);
   $("cs-form").addEventListener("submit", searchCommodity);
+  $("cargo-sell-btn").addEventListener("click", findCargoSell);
+  $("rr-form").addEventListener("submit", planRiches);
+  $("nr-form").addEventListener("submit", planNeutron);
 
   poll();
   pollDbStatus();
