@@ -7,6 +7,7 @@ opened via Status.json GuiFocus before typing anything."""
 
 import ctypes
 import json
+import os
 import threading
 import time
 
@@ -185,6 +186,7 @@ def plot_route(system, dry_run=False, close_map=True):
         # (e.g. Enter pressed before the autocomplete was ready) or the holds
         # don't take, redo the search from scratch.
         baseline = _navroute_mtime()
+        plot_keys = _plot_hold_keys(binds)
         plotted = False
         for rnd in range(SEARCH_ROUNDS):
             if gui_focus() != GUI_FOCUS_GALAXY_MAP:
@@ -207,16 +209,20 @@ def plot_route(system, dry_run=False, close_map=True):
             time.sleep(AFTER_SEARCH_DELAY)  # camera flies to the system
 
             # After search the system is selected with the "hold to plot"
-            # prompt already focused, so the first attempt is a bare hold with
-            # no navigation to move focus off it; later attempts nudge focus
-            # in case the prompt wasn't where expected.
+            # prompt (usually) already focused. Try each candidate plot key
+            # with no navigation first, then nudge focus for later attempts.
+            # Every hold is verified against NavRoute.json, so trying several
+            # keys/positions is safe.
             for attempt_keys in ((), ("UI_Right",), ("UI_Back", "UI_Right")):
                 for action in attempt_keys:
                     _press(pdi, binds[action]["key"], binds[action]["mods"])
                     time.sleep(STEP_DELAY)
-                _press(pdi, binds["UI_Select"]["key"], binds["UI_Select"]["mods"], hold=PLOT_HOLD)
-                if _route_plotted_since(baseline):
-                    plotted = True
+                for pk in plot_keys:
+                    _press(pdi, pk["key"], pk["mods"], hold=PLOT_HOLD)
+                    if _route_plotted_since(baseline):
+                        plotted = True
+                        break
+                if plotted:
                     break
             if plotted:
                 break
@@ -232,6 +238,22 @@ def plot_route(system, dry_run=False, close_map=True):
         return steps
     finally:
         _plot_lock.release()
+
+
+def _plot_hold_keys(binds):
+    """Keys to try holding on the PLOT ROUTE button, each verified via
+    NavRoute.json. Override with ED_PLOT_KEY (comma-separated pydirectinput
+    names) if your galaxy map uses a different control."""
+    override = os.environ.get("ED_PLOT_KEY")
+    if override:
+        return [{"key": k.strip(), "mods": []} for k in override.split(",") if k.strip()]
+    candidates = [{"key": "enter", "mods": []}, binds["UI_Select"]]
+    seen, out = set(), []
+    for k in candidates:
+        if k["key"] not in seen:
+            seen.add(k["key"])
+            out.append(k)
+    return out
 
 
 def _desc(bind):
