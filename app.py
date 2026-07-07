@@ -7,7 +7,9 @@ Run `python app.py --headless` for server-only mode (view from any browser).
 import argparse
 import os
 import socket
+import sys
 import time
+import urllib.request
 import webbrowser
 
 from elite.journal import JournalWatcher
@@ -24,6 +26,17 @@ def lan_ip():
             return s.getsockname()[0]
     except OSError:
         return "127.0.0.1"
+
+
+def instance_already_running(port):
+    """True if an Elite Trader server is already answering on this port. Prevents
+    a second launch from double-binding the port (SO_REUSEADDR would otherwise
+    let two servers coexist and fight over requests — the zombie-process trap)."""
+    try:
+        with urllib.request.urlopen(f"http://127.0.0.1:{port}/api/state", timeout=1.5) as r:
+            return r.status == 200
+    except Exception:
+        return False
 
 
 class WindowApi:
@@ -53,6 +66,20 @@ def main():
 
     UPDATER.cleanup_leftovers()  # remove any staging files from a prior update
 
+    local_url = f"http://127.0.0.1:{args.port}"
+
+    # Single-instance guard: if we're already running, just show the window that
+    # points at the existing server instead of starting a second, conflicting one.
+    if instance_already_running(args.port):
+        print(f"Elite Trader is already running on {local_url} — opening a window to it.")
+        if not args.headless:
+            import webview
+
+            webview.create_window("Elite Trader", local_url, js_api=WindowApi(),
+                                  width=1060, height=800, min_size=(760, 560))
+            webview.start()
+        return
+
     state = AppState()
     JournalWatcher(state).start()
 
@@ -63,31 +90,35 @@ def main():
     server = ServerThread(state, port=args.port)
     server.start()
 
-    local_url = f"http://127.0.0.1:{args.port}"
     print(f"Elite Trader running:")
     print(f"  this machine:  {local_url}")
     print(f"  on your LAN:   http://{lan_ip()}:{args.port}")
 
-    if args.headless:
-        try:
+    # Whatever happens (window closed, error, Ctrl+C), stop the server so no
+    # thread or socket is left behind holding the port.
+    try:
+        if args.headless:
             while True:
                 time.sleep(3600)
-        except KeyboardInterrupt:
+        else:
+            import webview
+
+            webview.create_window(
+                "Elite Trader",
+                local_url,
+                js_api=WindowApi(),
+                width=1060,
+                height=800,
+                min_size=(760, 560),
+            )
+            webview.start()
+    except KeyboardInterrupt:
+        pass
+    finally:
+        try:
+            server.shutdown()
+        except Exception:
             pass
-    else:
-        import webview
-
-        webview.create_window(
-            "Elite Trader",
-            local_url,
-            js_api=WindowApi(),
-            width=1060,
-            height=800,
-            min_size=(760, 560),
-        )
-        webview.start()
-
-    server.shutdown()
 
 
 if __name__ == "__main__":
