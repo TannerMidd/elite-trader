@@ -78,11 +78,39 @@ async function plotSystem(system) {
     const data = await resp.json();
     if (!resp.ok) throw new Error(data.error || "Plot failed");
     setPlotStatus(`Sent plot sequence for ${system} — check the game.`, false);
+    speak("Route plotted to " + system);
   } catch (err) {
     setPlotStatus(String(err.message || err), true);
   } finally {
     plotBusy = false;
   }
+}
+
+/* ---------- voice callouts (F8) ---------- */
+
+let voiceOn = localStorage.getItem("voice") === "1";
+
+function speak(text, force) {
+  if ((!voiceOn && !force) || !("speechSynthesis" in window) || !text) return;
+  try {
+    const u = new SpeechSynthesisUtterance(text);
+    u.rate = 1.05;
+    u.pitch = 1;
+    window.speechSynthesis.cancel();  // don't queue stale callouts
+    window.speechSynthesis.speak(u);
+  } catch (e) { /* speech is a nicety */ }
+}
+
+function setVoice(on, announce) {
+  voiceOn = on;
+  localStorage.setItem("voice", on ? "1" : "0");
+  const btn = $("fp-voice");
+  if (btn) {
+    btn.setAttribute("aria-pressed", on ? "true" : "false");
+    btn.classList.toggle("on", on);
+    btn.textContent = on ? "🔊 VOICE" : "🔈 VOICE";
+  }
+  if (on && announce) speak("Voice callouts on.", true);
 }
 
 /* ---------- flight panel mode ---------- */
@@ -254,6 +282,58 @@ function plotButton(system) {
   return btn;
 }
 
+/* One-tap "best loop from here" for the flight panel (F8). Uses the trade-route
+   endpoint's built-in defaults (100 ly radius, ship jump range, current system). */
+async function findBestLoop() {
+  const btn = $("fp-bestloop");
+  const status = $("fp-loop-status");
+  const out = $("fp-loop-results");
+  btn.disabled = true;
+  status.classList.remove("error");
+  status.textContent = "Finding the best loop from here… (~3–10s)";
+  out.innerHTML = "";
+  try {
+    const resp = await fetch("/api/trade-route", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        mode: "loop",
+        results: 3,
+        min_supply: state && state.cargo_capacity ? state.cargo_capacity : undefined,
+      }),
+    });
+    const data = await resp.json();
+    if (!resp.ok) throw new Error(data.error || "Search failed");
+    const loops = data.loops || [];
+    if (!loops.length) {
+      status.textContent = "No profitable loop found near you right now — try the Trade tab for wider settings.";
+      return;
+    }
+    status.textContent = `Top ${loops.length} loop${loops.length > 1 ? "s" : ""} within 100 ly, best profit/hour:`;
+    loops.forEach((l) => {
+      const div = document.createElement("div");
+      div.className = "fp-loop";
+      div.innerHTML =
+        `<div class="fp-loop-line"><b>${esc(l.a.station)}</b> <span class="dim">${esc(l.a.system)}</span>` +
+        `<span class="fp-loop-arrow">⇄</span>` +
+        `<b>${esc(l.b.station)}</b> <span class="dim">${esc(l.b.system)}</span></div>` +
+        `<div class="fp-loop-sub">` +
+        (l.profit_per_hour != null ? `<b class="good">+${fmtNum(l.profit_per_hour)} cr/hr</b>` : `<b class="good">+${fmtNum(l.profit)} cr/trip</b>`) +
+        ` · +${fmtNum(l.profit)} cr/trip · ${l.distance} ly apart · start ${l.a.from_player} ly away</div>`;
+      const line = div.querySelector(".fp-loop-line");
+      line.appendChild(plotButton(l.a.system));
+      line.appendChild(plotButton(l.b.system));
+      out.appendChild(div);
+    });
+    speak(`Best loop found. ${loops[0].a.station} to ${loops[0].b.station}.`);
+  } catch (err) {
+    status.classList.add("error");
+    status.textContent = String(err.message || err);
+  } finally {
+    btn.disabled = false;
+  }
+}
+
 /* ---------- route progress tracking (F3) ---------- */
 
 function sysEq(a, b) {
@@ -300,6 +380,9 @@ function syncRouteToPosition() {
   });
   if (reached >= 0 && reached + 1 > activeRoute.index) {
     activeRoute.index = reached + 1;
+    const total = activeRoute.waypoints.length;
+    if (activeRoute.index >= total) speak("Route complete.");
+    else speak(`Waypoint ${activeRoute.index} of ${total} reached. Next, ${activeRoute.waypoints[activeRoute.index].system}.`);
     return true;
   }
   return false;
@@ -596,10 +679,14 @@ function renderMaterials(mats) {
   }
 }
 
+let lowFuelSpoken = false;
+
 function renderBanner() {
   const banner = $("banner");
   const lowFuel = state.fuel_main != null && state.fuel_capacity > 0 &&
     !state.docked && state.fuel_main / state.fuel_capacity < 0.25;
+  if (lowFuel && !lowFuelSpoken) { speak("Warning. Low fuel."); lowFuelSpoken = true; }
+  if (!lowFuel) lowFuelSpoken = false;
   if (state.journal_dir_found === false) {
     banner.textContent = "Elite Dangerous journal folder not found - set the ED_JOURNAL_DIR environment variable.";
     banner.classList.remove("hidden");
@@ -1762,6 +1849,9 @@ document.addEventListener("DOMContentLoaded", () => {
     const name = $("fp-plot-input").value.trim();
     if (name) plotSystem(name);
   });
+  $("fp-bestloop").addEventListener("click", findBestLoop);
+  $("fp-voice").addEventListener("click", () => setVoice(!voiceOn, true));
+  setVoice(voiceOn);  // reflect persisted state on the toggle (no speech yet)
   if (localStorage.getItem("panelMode") === "1") setPanelMode(true);
 
   // "open in app" toggle: only meaningful inside the desktop (pywebview) window.

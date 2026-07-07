@@ -29,6 +29,7 @@
   <div class="fp-head">
     <span class="fp-brand">ELITE <b>TRADER</b> · FLIGHT PANEL</span>
     <span class="fp-cmdr" id="fp-cmdr"></span>
+    <button id="fp-voice" class="fp-btn fp-btn-small fp-btn-ghost" aria-pressed="false" title="Speak callouts (low fuel, route plotted, waypoints)">🔊 VOICE</button>
     <button id="panel-exit" class="fp-btn fp-btn-small">EXIT</button>
   </div>
   <div class="fp-system-label">CURRENT SYSTEM</div>
@@ -72,6 +73,10 @@
     <button type="submit" class="fp-btn">PLOT</button>
   </form>
   <div id="fp-plot-status" class="fp-sub fp-status"></div>
+
+  <button id="fp-bestloop" class="fp-btn fp-bestloop-btn">◈ BEST LOOP FROM HERE</button>
+  <div id="fp-loop-status" class="fp-sub fp-status"></div>
+  <div id="fp-loop-results" class="fp-loops"></div>
 </div>
 
 <nav id="fp-nav" aria-label="Flight panel pages">
