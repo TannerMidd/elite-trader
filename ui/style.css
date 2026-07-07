@@ -575,6 +575,30 @@ td .sub { color: var(--dim); font-size: 11px; }
 .kind-combat, .kind-piracy { color: var(--bad); border-color: #6b3535; }
 .kind-passenger, .kind-rescue { color: #3fb6a8; border-color: #305b56; }
 
+/* mining advisor */
+.mine-method {
+  font-size: 10px;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  white-space: nowrap;
+}
+.mine-core { color: var(--orange); border-color: #6b4a1f; background: rgba(255, 113, 0, .08); }
+.mine-laser { color: #5aa9e6; border-color: #35506b; background: rgba(90, 169, 230, .08); }
+.hotspot-row > td { background: rgba(255, 255, 255, .025); padding: 10px 10px; }
+.hotspots-title { margin-bottom: 7px; font-size: 12.5px; }
+.hotspot-list { display: flex; flex-direction: column; gap: 6px; }
+.hotspot-item { display: flex; align-items: center; gap: 8px; font-size: 13px; }
+.hotspot-item .hs-count {
+  color: var(--orange);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  min-width: 28px;
+}
+.hotspot-item .plotbtn { margin-left: auto; }
+
 /* engineering materials */
 .materials { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 14px; margin-top: 6px; }
 .mat-group .label { margin-bottom: 6px; }

@@ -51,6 +51,15 @@ any module ("6A Fuel Scoop") or ship.
 
 <div align="center"><img src="docs/screenshots/commodity-search.png" alt="Commodity search" width="900"></div>
 
+### ⛏️ Mining advisor
+
+What's actually worth mining right now, from *your* live market data: every
+mineable commodity ranked by the best sell price near you, tagged core or laser,
+with the closest buyer and its demand. Tap ◇ on any mineral and it finds the
+**nearest ring hotspots** for it (community-mapped via Spansh) — count, distance,
+station-distance and reserve level — one tap from plotting there. The full loop
+in one place: what to mine, where to mine it, and where to sell it.
+
 ### 🧭 Guides
 
 **Road to Riches** — high-value scan/mapping targets near you in visit order with

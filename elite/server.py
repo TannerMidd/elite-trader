@@ -136,6 +136,43 @@ def create_app(state):
             return jsonify({"error": str(exc)}), 400
         return jsonify(result)
 
+    @app.get("/api/mining")
+    def api_mining():
+        snap = state.snapshot()
+        args = request.args
+
+        def num(key, default, cast=float):
+            try:
+                return cast(args.get(key, default))
+            except (TypeError, ValueError):
+                return default
+
+        try:
+            result = routes.mining_advisor(
+                system=args.get("system") or snap.get("system"),
+                star_pos=snap.get("star_pos"),
+                radius=num("radius", 50.0),
+                min_price=num("min_price", 0, int),
+                max_price_age_days=num("max_price_age_days", 30, int),
+                requires_large_pad=args.get("large_pad") == "1",
+            )
+        except routes.RouteError as exc:
+            return jsonify({"error": str(exc)}), 400
+        return jsonify(result)
+
+    @app.get("/api/mining/hotspots")
+    def api_mining_hotspots():
+        snap = state.snapshot()
+        mineral = (request.args.get("mineral") or "").strip()
+        if not mineral:
+            return jsonify({"error": "No mineral given."}), 400
+        ref = request.args.get("system") or snap.get("system")
+        try:
+            hotspots = spansh.mining_hotspots(ref, mineral, size=15)
+        except spansh.SpanshError as exc:
+            return jsonify({"error": str(exc)}), 502
+        return jsonify({"mineral": mineral, "reference": ref, "hotspots": hotspots})
+
     @app.post("/api/riches")
     def api_riches():
         snap = state.snapshot()

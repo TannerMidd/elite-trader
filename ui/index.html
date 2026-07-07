@@ -162,6 +162,29 @@
   </div>
 
   <div class="tabpane hidden" id="tab-commodities">
+    <section class="card" id="mining-card">
+      <div class="label">MINING <span class="dim">what's worth mining near you now · best sell price from live data · tap ◇ for nearest hotspots</span></div>
+      <form id="mining-form" class="route-form">
+        <label>Radius (ly) <input type="number" id="mn-radius" min="1" value="50"></label>
+        <label>Min price (cr) <input type="number" id="mn-minprice" min="0" value="50000" title="Hide minerals selling below this"></label>
+        <label>Price age (days) <input type="number" id="mn-age" min="1" value="30"></label>
+        <label class="check"><input type="checkbox" id="mn-largepad"> Large pad</label>
+        <button type="submit" id="mn-go" class="primary">FIND</button>
+      </form>
+      <div id="mining-status" class="dim"></div>
+      <div class="table-wrap">
+        <table id="mining-table" class="hidden">
+          <thead>
+            <tr>
+              <th>Mineral</th><th>Method</th><th class="num">Sell</th>
+              <th>Best buyer near you</th><th class="num">Jump</th><th class="num">Demand</th><th></th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </section>
+
     <section class="card">
       <div class="label">COMMODITY SEARCH <span class="dim">local database · where to buy or sell near you</span></div>
       <form id="cs-form" class="route-form">

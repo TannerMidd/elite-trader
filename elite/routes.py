@@ -516,6 +516,85 @@ def sell_cargo(
         conn.close()
 
 
+# Commodities you can mine, with the method that yields them. "core" = deep-core
+# (seismic charges; high value per unit, slow), "laser" = surface laser mining
+# (bulk, fast). Symbols are verified against the local DB's commodity_names.
+MINEABLES = {
+    "opal": "core", "lowtemperaturediamond": "core", "alexandrite": "core",
+    "grandidierite": "core", "monazite": "core", "musgravite": "core",
+    "serendibite": "core", "benitoite": "core", "rhodplumsite": "core",
+    "bromellite": "core",
+    "painite": "laser", "platinum": "laser", "osmium": "laser", "palladium": "laser",
+    "gold": "laser", "silver": "laser", "tritium": "laser", "bertrandite": "laser",
+    "indite": "laser", "gallite": "laser", "coltan": "laser", "samarium": "laser",
+    "cobalt": "laser",
+}
+
+
+def mining_advisor(
+    system=None,
+    star_pos=None,
+    radius=50.0,
+    min_price=0,
+    requires_large_pad=False,
+    max_price_age_days=30,
+    max_system_distance=None,
+    limit=25,
+):
+    """What's worth mining right now near you: for each mineable commodity, the
+    best-paying station within range, ranked by sell price. Answers both 'what
+    should I go mine' and 'where do I sell it'."""
+    conn = marketdb.connect()
+    try:
+        if not marketdb.status(conn)["ready"]:
+            raise RouteError("Local market database is empty - build it from the Database tab first.")
+        start = _resolve_start(conn, system, star_pos)
+        stations = marketdb.stations_near(
+            conn, start["x"], start["y"], start["z"], float(radius),
+            min_updated=marketdb.now_epoch() - int(max_price_age_days) * 86400,
+            require_large_pad=bool(requires_large_pad),
+            max_dist_ls=float(max_system_distance) if max_system_distance else None,
+        )
+        by_id = {s["market_id"]: s for s in stations}
+        if not by_id:
+            return {"results": [], "start": start["system"]}
+
+        marks_m = ",".join("?" for _ in by_id)
+        marks_s = ",".join("?" for _ in MINEABLES)
+        rows = conn.execute(
+            f"""SELECT market_id, symbol, sell_price, demand FROM commodities
+                WHERE market_id IN ({marks_m}) AND symbol IN ({marks_s})
+                  AND sell_price > 0 AND demand > 0""",
+            [*by_id.keys(), *MINEABLES.keys()],
+        ).fetchall()
+        names = marketdb.commodity_display_names(conn, list(MINEABLES.keys()))
+
+        best = {}  # symbol -> best-paying station near you
+        for market_id, symbol, sell, demand in rows:
+            if sell < int(min_price):
+                continue
+            cur = best.get(symbol)
+            if cur is None or sell > cur["sell_price"]:
+                st = by_id[market_id]
+                best[symbol] = {
+                    "symbol": symbol,
+                    "name": names.get(symbol, symbol.title()),
+                    "method": MINEABLES[symbol],
+                    "sell_price": sell,
+                    "demand": demand,
+                    "station": st["station"],
+                    "system": st["system"],
+                    "distance": round(_dist(start, st), 1),
+                    "dist_ls": st["dist_ls"],
+                    "large_pad": st["large_pad"],
+                    "updated_at": st["updated_at"],
+                }
+        results = sorted(best.values(), key=lambda r: -r["sell_price"])
+        return {"results": results[:limit], "start": start["system"]}
+    finally:
+        conn.close()
+
+
 def _resolve_commodity(conn, query):
     q = (query or "").strip()
     if not q:

@@ -1288,6 +1288,107 @@ async function searchCommodity(ev) {
   }
 }
 
+/* ---------- mining advisor ---------- */
+
+async function searchMining(ev) {
+  ev.preventDefault();
+  const status = $("mining-status");
+  const table = $("mining-table");
+  const tbody = table.querySelector("tbody");
+  const go = $("mn-go");
+  go.disabled = true;
+  status.classList.remove("error");
+  status.textContent = "Checking live prices…";
+  try {
+    const params = new URLSearchParams({
+      radius: $("mn-radius").value || "50",
+      min_price: $("mn-minprice").value || "0",
+      max_price_age_days: $("mn-age").value || "30",
+      large_pad: $("mn-largepad").checked ? "1" : "0",
+    });
+    const resp = await fetch("/api/mining?" + params);
+    const data = await resp.json();
+    if (!resp.ok) throw new Error(data.error || "Search failed");
+    const results = data.results || [];
+    tbody.innerHTML = "";
+    for (const r of results) {
+      const tr = document.createElement("tr");
+      tr.innerHTML =
+        `<td><b>${esc(r.name)}</b></td>` +
+        `<td><span class="mine-method mine-${esc(r.method)}">${esc(r.method)}</span></td>` +
+        `<td class="num orange">${fmtNum(r.sell_price)}</td>` +
+        `<td>${esc(r.station)}${r.large_pad ? "" : ' <span class="sub">no L pad</span>'}<div class="sub">${esc(r.system)}</div></td>` +
+        `<td class="num">${r.distance} ly</td>` +
+        `<td class="num">${fmtNum(r.demand)}</td>`;
+      const td = document.createElement("td");
+      const hs = document.createElement("button");
+      hs.className = "plotbtn";
+      hs.textContent = "◇ hotspots";
+      hs.title = "Find the nearest ring hotspots for " + r.name;
+      hs.addEventListener("click", () => showHotspots(r.name, hs, tr));
+      td.appendChild(hs);
+      td.appendChild(plotButton(r.system));
+      tr.appendChild(td);
+      tbody.appendChild(tr);
+    }
+    table.classList.toggle("hidden", !results.length);
+    status.textContent = results.length
+      ? `${results.length} mineable commodities with buyers within ${$("mn-radius").value} ly, best price first. ◇ finds where to mine each.`
+      : "Nothing mineable selling nearby with those filters — widen the radius or lower Min price.";
+  } catch (err) {
+    table.classList.add("hidden");
+    status.classList.add("error");
+    status.textContent = String(err.message || err);
+  } finally {
+    go.disabled = false;
+  }
+}
+
+async function showHotspots(mineral, btn, afterRow) {
+  const next = afterRow.nextSibling;
+  if (next && next.classList && next.classList.contains("hotspot-row")) {
+    next.remove();  // toggle off
+    return;
+  }
+  btn.disabled = true;
+  const detail = document.createElement("tr");
+  detail.className = "hotspot-row";
+  const cell = document.createElement("td");
+  cell.colSpan = 7;
+  cell.innerHTML = `<span class="dim">Finding nearest ${esc(mineral)} hotspots via Spansh…</span>`;
+  detail.appendChild(cell);
+  afterRow.after(detail);
+  try {
+    const resp = await fetch("/api/mining/hotspots?mineral=" + encodeURIComponent(mineral));
+    const data = await resp.json();
+    if (!resp.ok) throw new Error(data.error || "Search failed");
+    const hs = data.hotspots || [];
+    if (!hs.length) {
+      cell.innerHTML = `<span class="dim">No community-mapped ${esc(mineral)} hotspots found nearby.</span>`;
+      return;
+    }
+    cell.innerHTML = `<div class="hotspots-title">Nearest <b>${esc(mineral)}</b> hotspots <span class="dim">· community-mapped · higher count = richer overlap</span></div>`;
+    const list = document.createElement("div");
+    list.className = "hotspot-list";
+    for (const h of hs.slice(0, 10)) {
+      const item = document.createElement("div");
+      item.className = "hotspot-item";
+      item.innerHTML =
+        `<span class="hs-count">${h.count}×</span>` +
+        `<b>${esc(h.ring)}</b> <span class="dim">${esc(h.system)} · ${h.distance} ly` +
+        `${h.dist_ls != null ? " · " + fmtNum(Math.round(h.dist_ls)) + " ls" : ""}` +
+        `${h.reserve ? " · " + esc(h.reserve) : ""}</span>`;
+      item.appendChild(plotButton(h.system));
+      list.appendChild(item);
+    }
+    cell.appendChild(list);
+  } catch (err) {
+    cell.innerHTML = `<span style="color:var(--bad)">${esc(String(err.message || err))}</span>`;
+  } finally {
+    btn.disabled = false;
+  }
+}
+
 /* ---------- guides: road to riches + neutron ---------- */
 
 async function planRiches(ev) {
@@ -1969,6 +2070,7 @@ document.addEventListener("DOMContentLoaded", () => {
   $("market-filter").addEventListener("input", renderMarket);
   $("seed-btn").addEventListener("click", seedDb);
   $("cs-form").addEventListener("submit", searchCommodity);
+  $("mining-form").addEventListener("submit", searchMining);
   $("os-form").addEventListener("submit", searchStations);
   $("cargo-sell-btn").addEventListener("click", findCargoSell);
   $("rr-form").addEventListener("submit", planRiches);

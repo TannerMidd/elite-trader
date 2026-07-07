@@ -246,6 +246,51 @@ def neutron_route(from_system, to_system, jump_range, efficiency=60):
     }
 
 
+def mining_hotspots(reference_system, mineral, size=15):
+    """Nearest ring hotspots for a mineral, via Spansh's bodies search. `mineral`
+    is the in-game display name (e.g. 'Void Opal', 'Low Temperature Diamonds')."""
+    if not reference_system:
+        raise SpanshError("No reference system known yet - is the game running?")
+    if not mineral:
+        raise SpanshError("No mineral given.")
+    body = {
+        "filters": {"ring_signals": [{"name": mineral, "value": [1, 50]}]},
+        "sort": [{"distance": {"direction": "asc"}}],
+        "size": int(size),
+        "page": 0,
+        "reference_system": reference_system,
+    }
+    try:
+        resp = requests.post(f"{BASE}/bodies/search", json=body, headers=HEADERS, timeout=SUBMIT_TIMEOUT)
+    except requests.RequestException as exc:
+        raise SpanshError(f"Could not reach Spansh: {exc}") from exc
+    if resp.status_code >= 400:
+        raise SpanshError(_error_text(resp))
+    results = resp.json().get("results") or []
+    target = mineral.lower()
+    out = []
+    for b in results:
+        for ring in b.get("rings") or []:
+            sig = ring.get("signals")
+            signals = sig.get("signals") if isinstance(sig, dict) else sig
+            hit = next((s for s in (signals or [])
+                        if (s.get("name") or "").lower() == target), None)
+            if not hit:
+                continue
+            out.append({
+                "system": b.get("system_name"),
+                "body": b.get("name"),
+                "ring": ring.get("name"),
+                "ring_type": ring.get("type"),
+                "count": hit.get("count"),
+                "distance": round(b.get("distance") or 0, 1),
+                "dist_ls": b.get("distance_to_arrival"),
+                "reserve": b.get("reserve_level"),
+            })
+    out.sort(key=lambda r: (r["distance"], -(r["count"] or 0)))
+    return out
+
+
 def _error_text(resp):
     try:
         detail = resp.json().get("error")
