@@ -575,6 +575,30 @@ td .sub { color: var(--dim); font-size: 11px; }
 .kind-combat, .kind-piracy { color: var(--bad); border-color: #6b3535; }
 .kind-passenger, .kind-rescue { color: #3fb6a8; border-color: #305b56; }
 
+/* guides tab */
+.guides-intro { font-size: 13px; margin: 2px 2px 2px; }
+.exo-genuses { color: var(--orange-soft); margin-top: 2px; }
+.guide-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px; margin-top: 6px; }
+.guide-item {
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.guide-item b { font-size: 14px; }
+.guide-item p { margin: 0; font-size: 12.5px; color: var(--dim); flex: 1; }
+.guide-item .extlink {
+  color: var(--orange-soft);
+  text-decoration: none;
+  font-size: 12.5px;
+  font-weight: 600;
+  align-self: flex-start;
+}
+.guide-item .extlink:hover { color: var(--orange); }
+
 /* settings */
 .settings-list { display: flex; flex-direction: column; gap: 4px; margin-top: 6px; }
 .setting {

@@ -173,6 +173,29 @@ def create_app(state):
             return jsonify({"error": str(exc)}), 502
         return jsonify({"mineral": mineral, "reference": ref, "hotspots": hotspots})
 
+    @app.get("/api/exobio-route")
+    def api_exobio_route():
+        snap = state.snapshot()
+        args = request.args
+
+        def num(key, default, cast=float):
+            try:
+                return cast(args.get(key, default))
+            except (TypeError, ValueError):
+                return default
+
+        ref = args.get("system") or snap.get("system")
+        try:
+            systems = spansh.exobio_bodies(
+                ref,
+                max_gravity=num("max_gravity", 0.5),
+                min_value=num("min_value", 1_000_000, int),
+            )
+        except spansh.SpanshError as exc:
+            return jsonify({"error": str(exc)}), 502
+        total = sum(s["value"] for s in systems)
+        return jsonify({"reference": ref, "systems": systems, "total_value": total})
+
     @app.post("/api/riches")
     def api_riches():
         snap = state.snapshot()

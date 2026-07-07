@@ -62,11 +62,23 @@ in one place: what to mine, where to mine it, and where to sell it.
 
 ### 🧭 Guides
 
-**Road to Riches** — high-value scan/mapping targets near you in visit order with
-estimated payouts — and a **neutron highway plotter** for long-range travel, each
-waypoint one click from the in-game galaxy map.
+A curated hub of routes, planners and references:
 
-<div align="center"><img src="docs/screenshots/guides.png" alt="Road to Riches and neutron plotter" width="900"></div>
+- **Exobiology Route** — the live "Billionaire's Boulevard": the nearest
+  landable, low-gravity worlds packed with high-value biology (Stratum
+  Tectonicas and friends), ranked by distance with an estimated payout, the
+  genera on each body, and one-tap plot + route tracking. Location-aware, so it
+  works from wherever you are — not a fixed list.
+- **Road to Riches** — high-value scan/mapping targets near you in visit order.
+- **Neutron highway plotter** for long-range travel.
+- **Reference guides** — quick pointers to engineering unlocks, material traders,
+  Guardian sites and tech-broker modules.
+- **Ship builds** — starting points by role (exploration, exobiology, mining,
+  trading, combat), open straight in EDSY / Coriolis.
+
+Every route waypoint is one click from the in-game galaxy map.
+
+<div align="center"><img src="docs/screenshots/guides.png" alt="Guides: exobiology route, Road to Riches and neutron plotter" width="900"></div>
 
 ### 📈 Profit analytics & live session
 

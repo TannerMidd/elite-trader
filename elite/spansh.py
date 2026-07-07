@@ -291,6 +291,62 @@ def mining_hotspots(reference_system, mineral, size=15):
     return out
 
 
+def exobio_bodies(reference_system, max_gravity=0.5, min_value=1_000_000, size=75, max_systems=25):
+    """The live 'Billionaire's Boulevard': nearby landable, low-gravity bodies
+    with high-value biological signals, grouped by system and ordered by
+    distance. Spansh's `landmark_value` is the estimated exobio payout per body;
+    `genuses` are the genera present. One search call yields the whole route."""
+    if not reference_system:
+        raise SpanshError("No reference system known yet - is the game running?")
+    payload = {
+        "filters": {
+            "signals": [{"name": "Biological", "value": [1, 40]}],
+            "is_landable": {"value": True},
+        },
+        "sort": [{"distance": {"direction": "asc"}}],
+        "size": int(size),
+        "page": 0,
+        "reference_system": reference_system,
+    }
+    try:
+        resp = requests.post(f"{BASE}/bodies/search", json=payload, headers=HEADERS, timeout=SUBMIT_TIMEOUT)
+    except requests.RequestException as exc:
+        raise SpanshError(f"Could not reach Spansh: {exc}") from exc
+    if resp.status_code >= 400:
+        raise SpanshError(_error_text(resp))
+
+    systems = {}
+    for b in resp.json().get("results") or []:
+        grav = b.get("gravity") or 0
+        value = b.get("landmark_value") or 0
+        if grav > max_gravity or value < min_value:
+            continue
+        genuses = []
+        for g in b.get("genuses") or []:
+            nm = biovalues.codex_genus_name(g.get("name") if isinstance(g, dict) else g)
+            if nm and nm not in genuses:
+                genuses.append(nm)
+        name = b.get("system_name")
+        entry = systems.setdefault(name, {
+            "system": name,
+            "distance": round(b.get("distance") or 0, 1),
+            "bodies": [],
+            "value": 0,
+        })
+        entry["bodies"].append({
+            "body": b.get("name"),
+            "gravity": round(grav, 2),
+            "dist_ls": b.get("distance_to_arrival"),
+            "value": value,
+            "subtype": b.get("subtype"),
+            "genuses": genuses,
+        })
+        entry["value"] += value
+    for s in systems.values():
+        s["bodies"].sort(key=lambda x: -x["value"])
+    return sorted(systems.values(), key=lambda s: s["distance"])[:max_systems]
+
+
 def _error_text(resp):
     try:
         detail = resp.json().get("error")

@@ -1389,6 +1389,74 @@ async function showHotspots(mineral, btn, afterRow) {
   }
 }
 
+/* ---------- guides: exobiology route (Billionaire's Boulevard) ---------- */
+
+async function searchExobio(ev) {
+  ev.preventDefault();
+  const status = $("exo-status");
+  const out = $("exo-results");
+  const go = $("exo-go");
+  go.disabled = true;
+  status.classList.remove("error");
+  status.textContent = "Searching Spansh for nearby bio-rich worlds… (~5–15s)";
+  out.innerHTML = "";
+  try {
+    const params = new URLSearchParams({
+      max_gravity: $("exo-grav").value || "0.5",
+      min_value: $("exo-minvalue").value || "1000000",
+    });
+    const resp = await fetch("/api/exobio-route?" + params);
+    const data = await resp.json();
+    if (!resp.ok) throw new Error(data.error || "Search failed");
+    const systems = data.systems || [];
+    if (!systems.length) {
+      status.textContent = "No landable low-gravity bio worlds found nearby with those filters — lower Min value or raise Max gravity.";
+      return;
+    }
+    status.textContent = `${systems.length} systems in visit order · ≈${fmtNum(data.total_value)} cr of exobiology if you sample it all (first footfall pays up to 5× more).`;
+
+    const summary = document.createElement("div");
+    summary.className = "route-summary";
+    summary.innerHTML =
+      `<span class="profit">≈${fmtNum(data.total_value)} cr</span>` +
+      `<span>${systems.length} systems</span>` +
+      `<span>${systems[0].distance}–${systems[systems.length - 1].distance} ly out</span>`;
+    summary.appendChild(trackButton("exobio", "Exobiology route",
+      () => systems.map((s) => ({ system: s.system, note: "≈" + fmtNum(s.value) + " cr" }))));
+    out.appendChild(summary);
+
+    systems.forEach((s, i) => {
+      const div = document.createElement("div");
+      div.className = "hop";
+      div.style.setProperty("--i", i);
+      const bodies = s.bodies.map((b) =>
+        `<div>${esc(b.body)} <span class="sub">${esc(b.subtype || "")} · ${b.gravity} g · ` +
+        `${b.dist_ls != null ? fmtNum(Math.round(b.dist_ls)) + " ls" : "?"} · ≈${fmtNum(b.value)} cr</span>` +
+        (b.genuses && b.genuses.length
+          ? `<div class="sub exo-genuses">${b.genuses.map(esc).join(" · ")}</div>` : "") +
+        `</div>`
+      ).join("");
+      div.innerHTML =
+        `<div class="route-line"><span class="dim">#${i + 1}</span><b>${esc(s.system)}</b>` +
+        `<span class="dim">${s.distance} ly</span>` +
+        `<span class="profit">≈${fmtNum(s.value)} cr</span></div>` +
+        `<div class="commodities">${bodies}</div>`;
+      const line = div.querySelector(".route-line");
+      const copyBtn = document.createElement("button");
+      copyBtn.className = "copy"; copyBtn.textContent = "⧉"; copyBtn.title = "Copy system name";
+      copyBtn.addEventListener("click", () => copyText(s.system, copyBtn));
+      line.insertBefore(copyBtn, line.querySelector(".profit"));
+      line.insertBefore(plotButton(s.system), line.querySelector(".profit"));
+      out.appendChild(div);
+    });
+  } catch (err) {
+    status.classList.add("error");
+    status.textContent = String(err.message || err);
+  } finally {
+    go.disabled = false;
+  }
+}
+
 /* ---------- guides: road to riches + neutron ---------- */
 
 async function planRiches(ev) {
@@ -2178,8 +2246,15 @@ document.addEventListener("DOMContentLoaded", () => {
   $("mining-form").addEventListener("submit", searchMining);
   $("os-form").addEventListener("submit", searchStations);
   $("cargo-sell-btn").addEventListener("click", findCargoSell);
+  $("exo-form").addEventListener("submit", searchExobio);
   $("rr-form").addEventListener("submit", planRiches);
   $("nr-form").addEventListener("submit", planNeutron);
+
+  // Static guide links open in the real browser when inside the desktop window.
+  document.addEventListener("click", (ev) => {
+    const a = ev.target.closest("a.extlink");
+    if (a && openExternal(a.href, a.textContent)) ev.preventDefault();
+  });
   $("an-days").addEventListener("change", loadAnalytics);
 
   renderRouteProgress();  // show a persisted route immediately, before first poll
