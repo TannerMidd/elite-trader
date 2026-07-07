@@ -4,11 +4,45 @@ import time
 
 import requests
 
+from . import biovalues
+
 BASE = "https://spansh.co.uk/api"
 HEADERS = {"User-Agent": "EliteTrader/1.0 (personal ED companion app)"}
 SUBMIT_TIMEOUT = 20
 POLL_TIMEOUT = 20
 MAX_WAIT_SECONDS = 90
+BIO_SIGNAL = "$SAA_SignalType_Biological;"
+
+
+def system_genuses(id64):
+    """Community-mapped biological signals for a system, by id64, from the
+    Spansh galaxy dump (GET /api/dump/<id64>). Returns
+    {body_name: {"count": N, "genuses": [genus_info, ...]}} for bodies with a
+    biological signal. Best-effort: returns {} on any failure."""
+    if not id64:
+        return {}
+    try:
+        resp = requests.get(f"{BASE}/dump/{int(id64)}", headers=HEADERS, timeout=SUBMIT_TIMEOUT)
+        if resp.status_code != 200:
+            return {}
+        bodies = (resp.json().get("system") or {}).get("bodies") or []
+    except (requests.RequestException, ValueError, TypeError):
+        return {}
+    out = {}
+    for b in bodies:
+        sig = b.get("signals") or {}
+        count = (sig.get("signals") or {}).get(BIO_SIGNAL)
+        raw = sig.get("genuses") or []
+        if not count and not raw:
+            continue
+        genuses = []
+        for g in raw:
+            codex = g.get("name") if isinstance(g, dict) else g
+            name = biovalues.codex_genus_name(codex)
+            if name:
+                genuses.append(biovalues.genus_info(name))
+        out[b.get("name")] = {"count": count, "genuses": genuses}
+    return out
 
 
 class SpanshError(Exception):

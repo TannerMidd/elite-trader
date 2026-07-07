@@ -125,6 +125,30 @@ def predict_genera(planet_class, atmosphere, temp_k, gravity_g, volcanism):
     return out
 
 
+# Spansh/codex genus stems ($Codex_Ent_<stem>_Genus_Name;) -> in-game genus
+# display name. The codex stems deliberately don't match the display names.
+CODEX_GENUS = {
+    "aleoids": "Aleoida", "bacterial": "Bacterium", "cactoid": "Cactoida",
+    "clypeus": "Clypeus", "conchas": "Concha", "electricae": "Electricae",
+    "fonticulus": "Fonticulua", "shrubs": "Frutexa", "fumerolas": "Fumerola",
+    "fungoids": "Fungoida", "osseus": "Osseus", "recepta": "Recepta",
+    "stratum": "Stratum", "tubus": "Tubus", "tussocks": "Tussock",
+    # Space / Horizons-era organics
+    "sphere": "Anemone", "vents": "Amphora Plant", "cone": "Bark Mounds",
+    "brancae": "Brain Tree", "tube": "Sinuous Tubers",
+}
+
+
+def codex_genus_name(codex):
+    """'$Codex_Ent_Stratum_Genus_Name;' -> 'Stratum'. Falls back to a cleaned
+    stem for genera not in the table so unknown ones still show a name."""
+    if not codex:
+        return None
+    stem = codex.strip("$;").lower()
+    stem = stem.replace("codex_ent_", "").replace("_genus_name", "").replace("_name", "")
+    return CODEX_GENUS.get(stem) or stem.replace("_", " ").title()
+
+
 def species_value(species_localised):
     return SPECIES_VALUES.get(species_localised)
 

@@ -893,14 +893,22 @@ function renderBio() {
       `<div>${esc(g.name)} <span class="sub">${fmtRange(g.min_value, g.max_value)}` +
       (g.colony_m ? ` · ${g.colony_m} m` : "") + `</span></div>`
     ).join("");
-    const predicted = !known && (b.predicted || []).length
+    // Community-mapped genuses (Spansh) for bodies you haven't DSS'd yourself.
+    const community = !known && (b.community_genuses || []).length
+      ? b.community_genuses.map((g) =>
+          `<div class="community">◇ ${esc(g.name)} <span class="sub">${fmtRange(g.min_value, g.max_value)}` +
+          (g.colony_m ? ` · ${g.colony_m} m` : "") + ` · community</span></div>`
+        ).join("")
+      : "";
+    const predicted = !known && !community && (b.predicted || []).length
       ? `<div class="sub">predicted: ${(b.predicted).map((g) =>
           `${esc(g.name)} (${fmtRange(g.min_value, g.max_value)})`).join(", ")}</div>`
       : "";
-    const genuses = known || predicted || `<span class="dim">${b.count ? "not mapped yet" : ""}</span>`;
+    const genuses = known || community || predicted || `<span class="dim">${b.count ? "not mapped yet" : ""}</span>`;
     const tr = document.createElement("tr");
     tr.innerHTML =
-      `<td>${esc(b.body)}${b.landable === false ? ' <span class="sub">not landable</span>' : ""}</td>` +
+      `<td>${esc(b.body)}${b.landable === false ? ' <span class="sub">not landable</span>' : ""}` +
+      `${b.source === "community" ? ' <span class="sub">◇ community</span>' : ""}</td>` +
       `<td class="num">${b.count || "?"}</td>` +
       `<td>${genuses}</td>` +
       `<td>${esc(b.planet_class || "?")}<div class="sub">${esc(b.atmosphere || "")}</div></td>` +

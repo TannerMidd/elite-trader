@@ -72,6 +72,7 @@ class JournalWatcher:
         self._body_scans = {}  # body name -> details, current system only
         self._live = False  # False during bootstrap replay, True while tailing
         self._last_logged_balance = None
+        self._bio_fetched = set()  # id64s we've queried Spansh for this session
 
     # ---------- event handling ----------
 
@@ -135,6 +136,7 @@ class JournalWatcher:
             station_type=e.get("StationType") if e.get("Docked") else None,
             station_market_id=e.get("MarketID") if e.get("Docked") else None,
         )
+        self._fetch_community_bio(e.get("SystemAddress"), e.get("StarSystem"))
 
     def _on_fsdjump(self, e):
         self._body_scans = {}
@@ -151,6 +153,7 @@ class JournalWatcher:
             bio_signals={},
         )
         self.state.add_jump(e.get("StarSystem"), e.get("JumpDist"), e.get("timestamp"))
+        self._fetch_community_bio(e.get("SystemAddress"), e.get("StarSystem"))
 
     def _on_carrierjump(self, e):
         if e.get("StarSystem") != self.state.system:
@@ -162,6 +165,7 @@ class JournalWatcher:
             star_pos=e.get("StarPos"),
             body=e.get("Body"),
         )
+        self._fetch_community_bio(e.get("SystemAddress"), e.get("StarSystem"))
 
     def _on_docked(self, e):
         self.state.update(
@@ -184,6 +188,29 @@ class JournalWatcher:
         )
 
     # ---------- exobiology ----------
+
+    def _fetch_community_bio(self, id64, system):
+        """Pull community-mapped genuses for a system from Spansh in the
+        background, so they show on arrival before you FSS/DSS anything. Live
+        only (never during bootstrap replay), fetched at most once per session."""
+        if not self._live or not id64 or id64 in self._bio_fetched:
+            return
+        self._bio_fetched.add(id64)
+
+        def work():
+            try:
+                from . import spansh
+
+                bodies = spansh.system_genuses(id64)
+            except Exception:
+                return
+            # Apply only if the player is still in that system.
+            if self.state.system_address == id64:
+                self.state.update(
+                    bio_community={"id64": id64, "system": system, "bodies": bodies}
+                )
+
+        threading.Thread(target=work, name="bio-community", daemon=True).start()
 
     @staticmethod
     def _bio_count(e):
@@ -783,6 +810,9 @@ class JournalWatcher:
         except Exception:
             pass
         self._live = True
+        # Bootstrap set the current system without a live event, so fetch its
+        # community bio data now.
+        self._fetch_community_bio(self.state.system_address, self.state.system)
         while True:
             try:
                 self._poll_journal()

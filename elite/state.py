@@ -45,6 +45,8 @@ class AppState:
         self.bio_signals = {}   # body name -> {count, genuses:[...], body details}
         self.bio_sampling = None  # {"genus","species","variant","progress"}
         self.bio_vault = []     # [{"species","genus","variant","value","body"}]
+        # Community-mapped genuses for the current system (Spansh galaxy dump)
+        self.bio_community = {}  # {"id64", "system", "bodies": {body: {count, genuses}}}
 
         # Colonization construction depots (latest event per MarketID)
         self.colonisation = {}  # market_id -> {progress, resources, station, ...}
@@ -151,9 +153,7 @@ class AppState:
                 "cargo_inventory": list(self.cargo_inventory),
                 "market": market,
                 "bio": {
-                    "system_signals": sorted(
-                        self.bio_signals.values(), key=lambda b: -(b.get("count") or 0)
-                    ),
+                    "system_signals": self._bio_signals_snapshot(),
                     "sampling": self.bio_sampling,
                     "vault": {
                         "items": list(self.bio_vault),
@@ -172,6 +172,34 @@ class AppState:
                 "last_journal_event": self.last_journal_event,
                 "journal_dir_found": self.journal_dir_found,
             }
+
+    def _bio_signals_snapshot(self):
+        """Your own scanned signals, enriched with community-mapped genuses
+        (Spansh) for bodies you haven't DSS-mapped yourself, plus community-known
+        bodies you haven't even FSS'd yet."""
+        community = (
+            self.bio_community.get("bodies") or {}
+            if self.bio_community.get("id64") == self.system_address
+            else {}
+        )
+        merged = {}
+        for name, entry in self.bio_signals.items():
+            e = dict(entry)
+            cg = community.get(name)
+            if cg and not e.get("genuses"):
+                e["community_genuses"] = cg.get("genuses") or []
+            merged[name] = e
+        for name, cg in community.items():
+            if name in merged:
+                continue
+            merged[name] = {
+                "body": name,
+                "count": cg.get("count"),
+                "genuses": [],
+                "community_genuses": cg.get("genuses") or [],
+                "source": "community",
+            }
+        return sorted(merged.values(), key=lambda b: -(b.get("count") or 0))
 
     def _materials_snapshot(self):
         out = {}
