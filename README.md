@@ -59,13 +59,32 @@ waypoint one click from the in-game galaxy map.
 
 <div align="center"><img src="docs/screenshots/guides.png" alt="Road to Riches and neutron plotter" width="900"></div>
 
-### 📈 Profit analytics
+### 📈 Profit analytics & live session
 
 Every buy/sell from your entire journal history feeds an analytics tab: profit
 today / this week / this period, credits-over-time curve, daily profit bars and
-your top commodities by profit.
+your top commodities by profit. A **live session tracker** (also on the flight
+panel) shows what you've earned since you launched the game — net credits,
+**credits per hour**, jumps, distance and tons hauled, updating in real time. An
+**earnings-by-source** breakdown unifies every income stream — trade profit
+alongside missions, bounties, exploration and exobiology sales — so you can see
+where your money actually comes from.
 
 <div align="center"><img src="docs/screenshots/analytics.png" alt="Profit analytics" width="900"></div>
+
+### 🎫 Mission board & materials
+
+Active missions from your journal in one place: kind, faction, destination
+(one-click plot), reward, a **live expiry countdown**, and a **cargo-match
+warning** when you're not carrying what a delivery needs. Your engineering
+**materials** inventory (raw / manufactured / encoded) is tracked too.
+
+### 🗺️ Route progress tracking
+
+Hit **◈ TRACK** on any neutron plot, Road to Riches route or multi-hop trade
+chain and a progress banner follows you as you fly it — current waypoint, a
+progress bar, and one-tap plot for the next hop. It **auto-advances as you jump**
+and survives reloads, so you always know where you are in a long route.
 
 ### 🏗️ Colonization helper
 
@@ -106,18 +125,24 @@ Tap **◈ PANEL** and the whole UI transforms into a touch-first, Elite-themed
 cockpit display for a tablet mounted at your flight station: glowing system
 readout, fuel and cargo gauges, credits/legal/exploration tiles, recent jumps as
 big tap-to-replot buttons and a one-line route plotter. **Everything from the
-standard mode is still there** — a fixed bottom touch bar (or swiping left/right)
-moves between Status, Trade, Market, Explore, Guides, Stats, Local and Database
-pages, all rescaled for fingers. Goes fullscreen where the browser allows;
-remembers the mode and page per device.
+standard mode is still there** — a fixed bottom touch bar (or swiping left/right,
+with the page sliding under your finger) moves between Status, Trade, Market,
+Explore, Guides, Stats, Local and Database pages, all rescaled for fingers. A
+**one-tap "best loop from here"** finds the top trade loops around you without
+touching a single form field, and optional **voice callouts** speak low-fuel
+warnings, route confirmations and waypoint arrivals for a display you're not
+looking at. Goes fullscreen where the browser allows; remembers the mode and
+page per device.
 
 <div align="center"><img src="docs/screenshots/flight-panel.png" alt="Flight panel mode on a tablet" width="700"></div>
 
 ### 🚀 Live ship & local data
 
 Current system, station, credits, fuel, cargo and legal state ~2 s behind the
-game; the docked station's full market table; jump history and cargo hold — plus
-copy buttons everywhere and pre-filled Inara/EDSM/Spansh links in the footer.
+game; the docked station's full market table — with **▲/▼ price-trend arrows**
+showing how each price has moved since the community last reported it — plus
+jump history and cargo hold, copy buttons everywhere and pre-filled
+Inara/EDSM/Spansh links in the footer.
 
 <div align="center"><img src="docs/screenshots/local-data.png" alt="Station market and jump history" width="900"></div>
 
