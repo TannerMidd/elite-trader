@@ -1,46 +1,50 @@
-## Elite Trader v1.1.0 — the all-in-one update
+## Elite Trader v1.2.0 — the pilot's-companion update
 
-Everything since v1.0.0, built and play-tested against a live commander session.
+Everything since v1.1.0, built and play-tested against a live commander session.
+This release turns journal data the app was already reading into a set of
+at-a-glance companion tools, and gives the whole UI a polish pass.
 
-### 🖥️ Flight panel mode
-Tap **◈ PANEL** and a tablet becomes an Elite-themed cockpit display: glowing
-system readout, fuel/cargo gauges, credit & legal tiles, tap-to-replot jump
-buttons — and **the entire app is still reachable** through a bottom touch bar
-or by swiping between pages, all rescaled for fingers.
+### 📈 Live session tracker
+See what this play session is actually worth: net credits, **credits per hour**,
+jumps, distance flown and tons hauled since you launched the game — live on both
+the Analytics tab and the flight panel.
 
-### 🔔 Live route alerts
-WATCH any trade loop and every incoming EDDN update is checked against it:
-sell-price drops, buy-price rises, or demand/stock draining below your load
-raise an alert (and a browser notification) before you waste a trip.
+### 💰 Earnings by source
+Analytics no longer counts trade alone. A unified breakdown shows every income
+stream — **trade, missions, bounties, exploration and exobiology** — so you can
+see where your money really comes from. Past earnings are backfilled from your
+journal history.
 
-### 📈 Profit analytics
-Your full journal history feeds a new Analytics tab: profit today / week /
-period, a credits-over-time curve, daily profit bars and top commodities.
+### 🎫 Mission board & materials
+Active missions in one place: kind, faction, destination (one-click plot),
+reward, a **live expiry countdown**, and a **cargo-match warning** when you're
+not carrying what a delivery needs. Your engineering **materials** inventory
+(raw / manufactured / encoded) is tracked too.
 
-### 🧭 Guides
-Road to Riches (high-value scan/mapping targets in visit order) and a neutron
-highway plotter — every waypoint one tap from the in-game galaxy map.
+### 🗺️ Route progress tracking
+Hit **◈ TRACK** on any neutron plot, Road to Riches route or multi-hop trade
+chain and a progress banner follows you as you fly it — current waypoint, a
+progress bar, one-tap plot for the next hop. It **auto-advances as you jump** and
+survives reloads.
 
-### 🧬 Explore tab
-Unsold cartographic data estimates (first-discovery and mapping bonuses) plus
-exobiology upgrades: predicted genus candidates for unmapped bodies from
-atmosphere/temperature/gravity rules.
+### 🧬 Community-mapped bio signals
+Arrive in a system and the genuses other commanders have already mapped appear
+immediately (◇, from Spansh) — so you know what's worth landing for before you
+even honk. Your own DSS scans always win; heuristic predictions fill the gaps.
 
-### 🏗️ Colonization helper
-Construction depots you've visited show remaining needs, delivery payouts, and
-the cheapest nearby source for each commodity.
+### 📊 Price-trend arrows
+The station market table shows **▲/▼ arrows** on prices that have moved since the
+community last reported them — a quick read on whether to sell here now.
 
-### 🔍 More trading tools
-- **WHERE TO SELL?** ranks the best buyers for your current cargo hold
-- Outfitting & shipyard search — nearest station selling any module or ship
-- Low-fuel warning banner
-- **EDDN uploading**: markets you visit are contributed back to the community
-  network (`ET_EDDN_UPLOAD=0` opts out)
+### 🖥️ Flight-panel quick wins
+A **one-tap "best loop from here"** finds the top trade loops around you without
+touching a single form field, and optional **voice callouts** speak low-fuel
+warnings, route confirmations and waypoint arrivals for a mounted display.
 
-### 🎯 Autoplot — now confirmed working
-The in-game route plotting sequence was rebuilt against EDAPGui's real source:
-wait for search autocomplete, commit the selection with a tap, zoom, then hold —
-verified against `NavRoute.json` with automatic retries and honest errors.
+### ✨ UI polish
+A full motion and interaction pass: page-slide animations and drag-to-follow
+swipe gestures in panel mode, hover/pressed/focus states throughout, themed
+scrollbars, tabular-aligned numbers, and `prefers-reduced-motion` support.
 
 ---
 

@@ -111,11 +111,14 @@ galaxy docks, your database knows the new prices within seconds.
 
 The **Explore** tab tracks your unsold cartographic data (per-body value
 estimates with first-discovery and mapping bonuses) and your exobiology run:
-biological signals on every scanned body (with genus value ranges, **predicted
-genus candidates** for unmapped bodies from atmosphere/temperature/gravity, and
-the sample-spacing distance), live sampling progress, and the unsold samples
-you're carrying with their estimated Vista Genomics payout. First footfall pays
-5× on top.
+biological signals on every scanned body (with genus value ranges and the
+sample-spacing distance), live sampling progress, and the unsold samples you're
+carrying with their estimated Vista Genomics payout. First footfall pays 5× on
+top. When you arrive in a system, **genuses other commanders have already
+mapped** are pulled from Spansh and shown immediately (◇) — so you know what's
+worth landing for before you honk — with **predicted genus candidates** from
+atmosphere/temperature/gravity as a fallback where nobody's mapped yet. Your own
+DSS scans always take precedence.
 
 <div align="center"><img src="docs/screenshots/explore.png" alt="Exploration data and exobiology" width="900"></div>
 
