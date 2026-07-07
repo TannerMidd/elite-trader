@@ -76,6 +76,11 @@ def updater_script(exe_path, new_path):
         "ping -n 2 127.0.0.1 >nul\r\n"
         "goto retry\r\n"
         ":launch\r\n"
+        # Wait before relaunching: the old onefile process is still tearing down
+        # its temp extraction dir, and starting the new exe immediately makes its
+        # own extraction race that and fail ("Failed to load Python DLL"). ~6 s of
+        # settle time is invisible during an update and reliably avoids the race.
+        "ping -n 7 127.0.0.1 >nul\r\n"
         f'start "" "{exe_path}"\r\n'
         ":cleanup\r\n"
         'del "%~f0" >nul 2>&1\r\n'
@@ -250,6 +255,16 @@ class Updater:
         """Write a helper batch that swaps in the new exe and relaunches, then
         quit so it can do its work."""
         exe = Path(sys.executable).resolve()
+        # Back up the current, working exe so a bad launch of the new one is
+        # recoverable: if the new exe fails to start, cleanup_leftovers never
+        # runs, so EliteTrader.old.exe survives for the user to rename back.
+        # Reading a running exe is allowed on Windows.
+        try:
+            import shutil
+
+            shutil.copy2(exe, _exe_dir() / "EliteTrader.old.exe")
+        except OSError:
+            pass
         bat = _exe_dir() / "_et_update.bat"
         bat.write_text(updater_script(exe, new_path), encoding="ascii")
         # CREATE_NO_WINDOW (not DETACHED_PROCESS) keeps a console so the batch's
