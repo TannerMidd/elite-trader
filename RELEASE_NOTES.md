@@ -1,24 +1,27 @@
-## Elite Trader v1.4.1 — reliable auto-update
+## Elite Trader v1.5.0 — the Guides hub
 
-### 🔧 Auto-update now actually installs
-The in-app updater in v1.3.0/v1.4.0 could download the new version, close the
-app, and then fail to swap it in or relaunch — leaving `EliteTrader.new.exe`
-behind. That's fixed: the installer now retries the swap until the old exe is
-fully released and relaunches reliably, and update checks are more robust (they
-re-check every 30 minutes instead of every 6 hours, retry on transient errors,
-and there's a **"Check for updates now"** button in Settings).
+The Guides tab is now a proper hub of curated routes, planners and references,
+led by a new flagship.
 
-> **One-time manual step:** because the broken installer is baked into
-> v1.3.0/v1.4.0, updating *from* those versions in-app will still hit the old
-> bug. Please **download this `EliteTrader.exe` manually one more time** and
-> replace your copy. From v1.4.1 onward, updates install themselves in place.
+### ⬡ Exobiology Route — the live "Billionaire's Boulevard"
+Finds the **nearest landable, low-gravity worlds packed with high-value biology**
+(Stratum Tectonicas and friends) from wherever you are, ranked by distance with
+an estimated exobiology payout, the genera on each body, and one-tap plot plus
+route tracking. Because it's built from live Spansh data around *your* position,
+it beats a fixed system list — it works anywhere in the galaxy. Adjustable max
+gravity and minimum value.
 
-### 🧹 No leftover processes
-Launching a second copy no longer starts a competing server that fights over the
-port, and the app now always shuts its server down cleanly on close or error —
-so nothing is left running in the background.
+### 📚 Reference guides & ship builds
+Quick pointers to the community's best resources — engineering unlocks, material
+traders, Guardian sites, tech-broker modules — plus **ship-build starting points
+by role** (exploration, exobiology, mining, trading, combat) that open straight
+in EDSY / Coriolis.
+
+Road to Riches and the neutron plotter are still there, alongside the new
+additions.
 
 ---
 
 Run from source (`run.bat` / `run.sh`) or grab the attached `EliteTrader.exe`
-(no Python needed). First run: build the market database from the Database tab.
+(no Python needed). On the packaged app, updates install in place — click
+**Update & restart** when it appears.
