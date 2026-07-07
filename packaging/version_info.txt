@@ -1,0 +1,27 @@
+VSVersionInfo(
+  ffi=FixedFileInfo(
+    filevers=(@FILEVERS@),
+    prodvers=(@FILEVERS@),
+    mask=0x3f,
+    flags=0x0,
+    OS=0x40004,
+    fileType=0x1,
+    subtype=0x0,
+    date=(0, 0)
+  ),
+  kids=[
+    StringFileInfo([
+      StringTable('040904B0', [
+        StringStruct('CompanyName', 'Tanner Middleton'),
+        StringStruct('FileDescription', 'Elite Trader - Elite Dangerous companion'),
+        StringStruct('FileVersion', '@VERSION@'),
+        StringStruct('InternalName', 'EliteTrader'),
+        StringStruct('LegalCopyright', 'MIT License'),
+        StringStruct('OriginalFilename', 'EliteTrader.exe'),
+        StringStruct('ProductName', 'Elite Trader'),
+        StringStruct('ProductVersion', '@VERSION@')
+      ])
+    ]),
+    VarFileInfo([VarStruct('Translation', [1033, 1200])])
+  ]
+)

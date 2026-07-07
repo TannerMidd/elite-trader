@@ -27,11 +27,18 @@ jobs:
         run: |
           $v = "${{ github.ref_name }}".TrimStart('v')
           "VERSION = `"$v`"" | Out-File -FilePath elite/_version.py -Encoding ascii
-          Write-Host "Stamped version $v"
+          $fvers = (($v.Split('.') + @('0','0','0','0'))[0..3]) -join ','
+          (Get-Content packaging/version_info.txt -Raw).Replace('@FILEVERS@', $fvers).Replace('@VERSION@', $v) |
+            Out-File -FilePath version_info.rendered.txt -Encoding ascii
+          Write-Host "Stamped version $v (filevers $fvers)"
 
+      # A proper Windows version resource (ProductName/version/etc.) lowers the
+      # antivirus heuristic score for the unsigned exe. It is not a full fix -
+      # code signing is - but it is a free, safe improvement.
       - name: Build EliteTrader.exe
         run: >
           pyinstaller --noconfirm --onefile --windowed --name EliteTrader
+          --version-file version_info.rendered.txt
           --add-data "ui;ui"
           --hidden-import webview.platforms.winforms
           --hidden-import webview.platforms.edgechromium
