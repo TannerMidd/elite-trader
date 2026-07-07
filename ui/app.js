@@ -669,12 +669,21 @@ function renderMarket() {
     const tr = document.createElement("tr");
     tr.innerHTML =
       `<td>${esc(i.name)}<div class="sub">${esc(i.category)}</div></td>` +
-      `<td class="num">${i.sell ? i.sell.toLocaleString() : "—"}</td>` +
-      `<td class="num">${i.buy ? i.buy.toLocaleString() : "—"}</td>` +
+      `<td class="num">${i.sell ? i.sell.toLocaleString() : "—"}${trendArrow(i.sell, i.prev_sell)}</td>` +
+      `<td class="num">${i.buy ? i.buy.toLocaleString() : "—"}${trendArrow(i.buy, i.prev_buy)}</td>` +
       `<td class="num">${i.demand ? i.demand.toLocaleString() : "—"}</td>` +
       `<td class="num">${i.stock ? i.stock.toLocaleString() : "—"}</td>`;
     tbody.appendChild(tr);
   }
+}
+
+/* Up/down arrow comparing a live price to the last price the DB recorded. */
+function trendArrow(cur, prev) {
+  if (prev == null || !cur || cur === prev) return "";
+  const up = cur > prev;
+  const pct = prev ? Math.round((Math.abs(cur - prev) / prev) * 100) : 0;
+  const title = `was ${prev.toLocaleString()} (${up ? "+" : "−"}${pct}% since last report)`;
+  return ` <span class="trend ${up ? "up" : "down"}" title="${title}">${up ? "▲" : "▼"}</span>`;
 }
 
 function renderJumps() {

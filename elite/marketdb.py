@@ -226,6 +226,22 @@ def stations_near(conn, x, y, z, radius, min_updated=0, require_large_pad=False,
     return out
 
 
+def station_prices(market_id):
+    """Last-known sell/buy per commodity symbol for one station, from the local
+    DB (seed + EDDN). Used to show price trend vs the live station market."""
+    if not market_id:
+        return {}
+    conn = connect()
+    try:
+        rows = conn.execute(
+            "SELECT symbol, sell_price, buy_price FROM commodities WHERE market_id = ?",
+            (market_id,),
+        ).fetchall()
+    finally:
+        conn.close()
+    return {sym: (sell, buy) for sym, sell, buy in rows}
+
+
 def commodity_display_names(conn, symbols):
     if not symbols:
         return {}

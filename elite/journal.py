@@ -573,6 +573,11 @@ class JournalWatcher:
             UPLOADER.maybe_publish(data, self.state.commander)
         except Exception:
             pass  # uploading is best-effort; never break market parsing
+        # Last-known DB prices for this station, to show a live-vs-recorded trend.
+        try:
+            prev_prices = marketdb.station_prices(data.get("MarketID"))
+        except Exception:
+            prev_prices = {}
         items = []
         for item in data.get("Items", []):
             stock = item.get("Stock", 0)
@@ -581,14 +586,19 @@ class JournalWatcher:
             sell = item.get("SellPrice", 0)
             if not (stock or demand or buy or sell):
                 continue
+            symbol = (item.get("Name") or "").strip("$;").removesuffix("_name").lower()
+            prev = prev_prices.get(symbol)
             items.append(
                 {
                     "name": item.get("Name_Localised") or _clean_name(item.get("Name")),
                     "category": item.get("Category_Localised") or "",
+                    "symbol": symbol,
                     "buy": buy,
                     "sell": sell,
                     "stock": stock,
                     "demand": demand,
+                    "prev_sell": prev[0] if prev else None,
+                    "prev_buy": prev[1] if prev else None,
                 }
             )
         self.state.update(

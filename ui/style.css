@@ -372,6 +372,9 @@ th.sorted { color: var(--orange); }
 .num { text-align: right; }
 td.num { font-variant-numeric: tabular-nums; }
 td .sub { color: var(--dim); font-size: 11px; }
+.trend { font-size: 9px; vertical-align: middle; }
+.trend.up { color: var(--good); }
+.trend.down { color: var(--bad); }
 
 #market-filter {
   background: var(--panel-2);
