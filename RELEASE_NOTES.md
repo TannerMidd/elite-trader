@@ -1,35 +1,24 @@
-## Elite Trader v1.4.0 — mining & settings
+## Elite Trader v1.4.1 — reliable auto-update
 
-### ⛏️ Mining advisor
-A new Mining card (Commodities tab) covers the whole loop from your own live
-data plus Spansh's ring maps:
+### 🔧 Auto-update now actually installs
+The in-app updater in v1.3.0/v1.4.0 could download the new version, close the
+app, and then fail to swap it in or relaunch — leaving `EliteTrader.new.exe`
+behind. That's fixed: the installer now retries the swap until the old exe is
+fully released and relaunches reliably, and update checks are more robust (they
+re-check every 30 minutes instead of every 6 hours, retry on transient errors,
+and there's a **"Check for updates now"** button in Settings).
 
-- **What to mine** — every mineable commodity ranked by the best sell price near
-  you right now, tagged **core** or **laser**, with the closest buyer and its
-  demand.
-- **Where to mine it** — tap ◇ on any mineral to find the **nearest ring
-  hotspots** (overlap count, distance, arrival ls, reserve level), each one tap
-  from plotting there.
-- **Where to sell it** — the best buyer is right in the row.
+> **One-time manual step:** because the broken installer is baked into
+> v1.3.0/v1.4.0, updating *from* those versions in-app will still hit the old
+> bug. Please **download this `EliteTrader.exe` manually one more time** and
+> replace your copy. From v1.4.1 onward, updates install themselves in place.
 
-### ⚙️ Settings panel
-No more hunting for environment-variable flags — a new Settings card (Database
-tab) with toggles that take effect immediately:
-
-- **Exclude surface stations** — hide planetary outposts, ports and settlements
-  from trade routes, searches and mining, for orbital-only pilots.
-- **Exclude fleet carriers** from route and market results.
-- **Contribute market data (EDDN)** and **automatic updates**, previously only
-  settable via flags.
-
-### 🛡️ Fewer antivirus false positives
-The packaged exe now carries a proper Windows version resource, which lowers the
-heuristic score some antivirus/SmartScreen checks apply to unsigned binaries.
-(Code signing remains the definitive fix.)
+### 🧹 No leftover processes
+Launching a second copy no longer starts a competing server that fights over the
+port, and the app now always shuts its server down cleanly on close or error —
+so nothing is left running in the background.
 
 ---
 
 Run from source (`run.bat` / `run.sh`) or grab the attached `EliteTrader.exe`
 (no Python needed). First run: build the market database from the Database tab.
-On the packaged app, updates from here install in place — just click
-**Update & restart** when it appears.
