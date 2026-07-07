@@ -7,6 +7,10 @@ let state = null;
 let marketSort = { key: "sell", dir: -1 };
 let routeFormTouched = false;
 
+/* Active route being flown (persisted): { kind, label, waypoints:[{system,note}], index } */
+let activeRoute = null;
+try { activeRoute = JSON.parse(localStorage.getItem("activeRoute") || "null"); } catch (e) {}
+
 /* ---------- helpers ---------- */
 
 function fmtCr(n) {
@@ -250,6 +254,122 @@ function plotButton(system) {
   return btn;
 }
 
+/* ---------- route progress tracking (F3) ---------- */
+
+function sysEq(a, b) {
+  return (a || "").trim().toLowerCase() === (b || "").trim().toLowerCase();
+}
+
+function saveActiveRoute() {
+  if (activeRoute) localStorage.setItem("activeRoute", JSON.stringify(activeRoute));
+  else localStorage.removeItem("activeRoute");
+}
+
+function trackRoute(kind, label, waypoints) {
+  waypoints = (waypoints || []).filter((w) => w && w.system);
+  if (!waypoints.length) return;
+  activeRoute = { kind, label, waypoints, index: 0 };
+  // If we're already sitting at an early waypoint, start from there.
+  syncRouteToPosition();
+  saveActiveRoute();
+  renderRouteProgress();
+  const wrap = $("route-progress");
+  if (wrap) wrap.scrollIntoView({ behavior: "smooth", block: "nearest" });
+}
+
+function advanceRoute(delta) {
+  if (!activeRoute) return;
+  activeRoute.index = Math.max(0, Math.min(activeRoute.waypoints.length, activeRoute.index + delta));
+  saveActiveRoute();
+  renderRouteProgress();
+}
+
+function stopRoute() {
+  activeRoute = null;
+  saveActiveRoute();
+  renderRouteProgress();
+}
+
+/* Advance the cursor past any waypoint whose system matches where we are now.
+   Returns true if the index moved. */
+function syncRouteToPosition() {
+  if (!activeRoute || !state || !state.system) return false;
+  let reached = -1;
+  activeRoute.waypoints.forEach((w, i) => {
+    if (i >= activeRoute.index && sysEq(w.system, state.system)) reached = i;
+  });
+  if (reached >= 0 && reached + 1 > activeRoute.index) {
+    activeRoute.index = reached + 1;
+    return true;
+  }
+  return false;
+}
+
+function renderRouteProgress() {
+  const wrap = $("route-progress");
+  if (!wrap) return;
+  if (!activeRoute) {
+    wrap.classList.add("hidden");
+    wrap.innerHTML = "";
+    return;
+  }
+  const wps = activeRoute.waypoints;
+  const total = wps.length;
+  const done = Math.min(activeRoute.index, total);
+  const complete = done >= total;
+  const target = complete ? null : wps[done];
+  const pct = total ? Math.round((done / total) * 100) : 0;
+
+  wrap.classList.remove("hidden");
+  wrap.innerHTML =
+    `<div class="rp-main">` +
+    `<span class="rp-badge">◈ ROUTE</span>` +
+    `<span class="rp-label">${esc(activeRoute.label)}</span>` +
+    `<span class="rp-count">${done}/${total}${complete ? " · done" : ""}</span>` +
+    (target
+      ? `<span class="rp-next">NEXT <b>${esc(target.system)}</b>${target.note ? ` <span class="dim">${esc(target.note)}</span>` : ""}</span>`
+      : `<span class="rp-next rp-done">Arrived — route complete 🎉</span>`) +
+    `</div>` +
+    `<div class="rp-bar"><div style="width:${pct}%"></div></div>`;
+
+  const main = wrap.querySelector(".rp-main");
+  if (target) {
+    main.insertBefore(plotButton(target.system), main.querySelector(".rp-next").nextSibling);
+    const skip = document.createElement("button");
+    skip.className = "plotbtn rp-skip";
+    skip.textContent = "✓ done";
+    skip.title = "Mark this waypoint reached";
+    skip.addEventListener("click", () => advanceRoute(1));
+    main.appendChild(skip);
+  }
+  if (done > 0 && !complete) {
+    const back = document.createElement("button");
+    back.className = "plotbtn rp-back";
+    back.textContent = "↩";
+    back.title = "Step back one waypoint";
+    back.addEventListener("click", () => advanceRoute(-1));
+    main.appendChild(back);
+  }
+  const stop = document.createElement("button");
+  stop.className = "copy rp-stop";
+  stop.textContent = "✕";
+  stop.title = "Stop tracking this route";
+  stop.setAttribute("aria-label", "Stop tracking route");
+  stop.addEventListener("click", stopRoute);
+  main.appendChild(stop);
+}
+
+/* A small "track this route" button for a list of waypoint systems. */
+function trackButton(kind, label, waypointsFn) {
+  const btn = document.createElement("button");
+  btn.className = "plotbtn trackbtn";
+  btn.type = "button";
+  btn.textContent = "◈ TRACK";
+  btn.title = "Follow this route step by step (marks your progress as you jump)";
+  btn.addEventListener("click", () => trackRoute(kind, label, waypointsFn()));
+  return btn;
+}
+
 /* ---------- rendering ---------- */
 
 function render() {
@@ -296,6 +416,8 @@ function render() {
   renderSession(state.session);
   renderMissions(state.missions);
   renderMaterials(state.materials);
+  if (syncRouteToPosition()) saveActiveRoute();
+  renderRouteProgress();
   renderPanel();
   seedRouteForm();
 }
@@ -944,6 +1066,14 @@ function renderRoutes(hops) {
     `<span>${fmtNum(totalTons)} t moved</span>` +
     (totalTons ? `<span>${fmtNum(totalProfit / totalTons)} cr/t avg</span>` : "") +
     (firstOutlay ? `<span>needs ~${fmtNum(firstOutlay)} cr up front</span>` : "");
+  if (hops.length > 1) {
+    summary.appendChild(trackButton("chain", "Trade chain", () => {
+      const wp = [];
+      if (hops[0].from_system) wp.push({ system: hops[0].from_system, note: hops[0].from_station });
+      for (const h of hops) if (h.to_system) wp.push({ system: h.to_system, note: h.to_station });
+      return wp;
+    }));
+  }
   results.appendChild(summary);
 
   hops.forEach((h, i) => {
@@ -1084,6 +1214,11 @@ async function planRiches(ev) {
     status.textContent = systems.length
       ? `${systems.length} systems in visit order · ≈${fmtNum(total)} cr if you map everything (first discovery/footfall pays more).`
       : "Nothing above the value threshold nearby — lower Min value or raise Radius.";
+    if (systems.length) {
+      status.append(" ");
+      status.appendChild(trackButton("riches", "Road to Riches",
+        () => systems.map((s) => ({ system: s.system, note: "≈" + fmtNum(s.total_value) + " cr" }))));
+    }
     systems.forEach((s, i) => {
       const div = document.createElement("div");
       div.className = "hop";
@@ -1135,6 +1270,11 @@ async function planNeutron(ev) {
     if (!resp.ok) throw new Error(data.error || "Request failed");
     const wps = data.waypoints || [];
     status.textContent = `${data.total_jumps} jumps total across ${wps.length} waypoints — plot each waypoint as you reach the previous one.`;
+    if (wps.length) {
+      status.append(" ");
+      status.appendChild(trackButton("neutron", "Neutron: " + ($("nr-to").value.trim() || "route"),
+        () => wps.map((w) => ({ system: w.system, note: w.neutron ? "☄ neutron" : "" }))));
+    }
     tbody.innerHTML = "";
     wps.forEach((w, i) => {
       const tr = document.createElement("tr");
@@ -1641,6 +1781,7 @@ document.addEventListener("DOMContentLoaded", () => {
   $("nr-form").addEventListener("submit", planNeutron);
   $("an-days").addEventListener("change", loadAnalytics);
 
+  renderRouteProgress();  // show a persisted route immediately, before first poll
   poll();
   pollDbStatus();
   pollAlerts();

@@ -399,6 +399,44 @@ td .sub { color: var(--dim); font-size: 11px; }
 .cargo-list .count { margin-left: auto; color: var(--orange-soft); font-variant-numeric: tabular-nums; }
 .cargo-label { margin-top: 16px; }
 
+/* route progress banner (F3) */
+.route-progress {
+  background: linear-gradient(180deg, #1a1400, #14110a);
+  border-bottom: 1px solid var(--orange);
+  padding: 8px 18px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  animation: drop-in .25s var(--ease);
+}
+.rp-main { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; font-size: 13.5px; }
+.rp-badge {
+  color: var(--orange);
+  font-weight: 800;
+  letter-spacing: 2px;
+  font-size: 11px;
+  white-space: nowrap;
+}
+.rp-label { color: var(--text); font-weight: 600; }
+.rp-count {
+  color: var(--dim);
+  font-variant-numeric: tabular-nums;
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 1px 9px;
+  font-size: 12px;
+}
+.rp-next { color: var(--dim); }
+.rp-next b { color: var(--orange-soft); }
+.rp-next.rp-done { color: var(--good); }
+.rp-stop { margin-left: auto; }
+.rp-skip, .rp-back { color: var(--good); }
+.rp-bar { height: 4px; background: var(--panel-2); border-radius: 999px; overflow: hidden; }
+.rp-bar > div { height: 100%; background: var(--orange); border-radius: 999px; transition: width .4s var(--ease); }
+.trackbtn { color: var(--orange-soft); font-weight: 700; letter-spacing: 1px; }
+.trackbtn:hover { color: var(--orange); }
+
 /* route alerts */
 .alert-strip {
   background: #3d1414;
