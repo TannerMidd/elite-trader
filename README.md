@@ -169,7 +169,9 @@ Allow the Windows Firewall prompt on **Private networks** if you want LAN access
 
 Prefer no Python at all? Grab **`EliteTrader.exe`** from the
 [Releases](../../releases) page, or build it yourself with `build_exe.bat`.
-The exe keeps its database in a `data\` folder next to itself.
+The exe keeps its database in a `data\` folder next to itself, and **updates
+itself** — when a new release ships it offers a one-click "Update & restart"
+(checksum-verified; set `ET_AUTO_UPDATE=0` to opt out).
 
 ## Quick start (Linux / Steam Deck)
 
