@@ -55,6 +55,7 @@ function openExternal(url, label) {
 /* ---------- autoplot ---------- */
 
 let plotBusy = false;
+let plotCancelling = false;
 
 function setPlotStatus(text, isError) {
   for (const id of ["plot-status", "fp-plot-status"]) {
@@ -65,10 +66,34 @@ function setPlotStatus(text, isError) {
   }
 }
 
+// While a plot is running the PLOT button turns into a CANCEL button, so the
+// same control that started it can stop it (the sequence types into the game
+// for several seconds — an accidental plot is easy to abort).
+function setPlotBusy(on) {
+  plotBusy = on;
+  for (const id of ["plot-btn", "fp-plot-btn"]) {
+    const btn = $(id);
+    if (!btn) continue;
+    btn.textContent = on ? "CANCEL" : "PLOT";
+    btn.classList.toggle("danger", on);
+  }
+}
+
+async function cancelPlot() {
+  if (!plotBusy || plotCancelling) return;
+  plotCancelling = true;
+  setPlotStatus("Cancelling — releasing keys…", false);
+  try {
+    await fetch("/api/plot/cancel", { method: "POST" });
+  } catch (err) {
+    /* the in-flight plot request will still report the outcome */
+  }
+}
+
 async function plotSystem(system) {
   if (!system || plotBusy) return;
-  plotBusy = true;
-  setPlotStatus(`Plotting route to ${system} — leave the game window alone for ~10s…`, false);
+  setPlotBusy(true);
+  setPlotStatus(`Plotting route to ${system} — leave the game window alone. Tap CANCEL to stop.`, false);
   try {
     const resp = await fetch("/api/plot", {
       method: "POST",
@@ -76,13 +101,18 @@ async function plotSystem(system) {
       body: JSON.stringify({ system }),
     });
     const data = await resp.json();
+    if (data.cancelled) {
+      setPlotStatus("Plot cancelled.", false);
+      return;
+    }
     if (!resp.ok) throw new Error(data.error || "Plot failed");
     setPlotStatus(`Sent plot sequence for ${system} — check the game.`, false);
     speak("Route plotted to " + system);
   } catch (err) {
     setPlotStatus(String(err.message || err), true);
   } finally {
-    plotBusy = false;
+    setPlotBusy(false);
+    plotCancelling = false;
   }
 }
 
@@ -2209,6 +2239,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
   $("plot-form").addEventListener("submit", (ev) => {
     ev.preventDefault();
+    if (plotBusy) { cancelPlot(); return; }
     const name = $("plot-input").value.trim();
     if (name) plotSystem(name);
   });
@@ -2219,6 +2250,7 @@ document.addEventListener("DOMContentLoaded", () => {
   $("panel-exit").addEventListener("click", () => setPanelMode(false));
   $("fp-plot-form").addEventListener("submit", (ev) => {
     ev.preventDefault();
+    if (plotBusy) { cancelPlot(); return; }
     const name = $("fp-plot-input").value.trim();
     if (name) plotSystem(name);
   });

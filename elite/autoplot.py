@@ -39,6 +39,7 @@ SHIFTED = {"+": "=", "_": "-", ":": ";", '"': "'", "?": "/", "!": "1", "*": "8",
 IS_WINDOWS = sys.platform == "win32"
 
 _plot_lock = threading.Lock()
+_cancel_event = threading.Event()
 user32 = ctypes.windll.user32 if IS_WINDOWS else None
 
 # Raw SendInput scancodes for keys pydirectinput cannot send (numpad).
@@ -79,6 +80,44 @@ class AutoplotError(Exception):
     pass
 
 
+class AutoplotCancelled(AutoplotError):
+    """Raised inside the plot sequence when the user asks to cancel a plot in
+    progress. Subclasses AutoplotError so existing handlers still catch it, but
+    the server distinguishes it to report a friendly 'cancelled' instead of an
+    error."""
+
+    def __init__(self, msg="Plot cancelled."):
+        super().__init__(msg)
+
+
+def _check_cancel():
+    if _cancel_event.is_set():
+        raise AutoplotCancelled()
+
+
+def _sleep(seconds):
+    """Like time.sleep, but aborts promptly (raising AutoplotCancelled) if a
+    cancel was requested. Used for every wait in the plot sequence so a cancel
+    takes effect within ~50ms instead of after the current multi-second delay."""
+    deadline = time.monotonic() + seconds
+    while True:
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            return
+        if _cancel_event.is_set():
+            raise AutoplotCancelled()
+        time.sleep(min(0.05, remaining))
+
+
+def cancel_plot():
+    """Ask an in-progress plot to abort at its next checkpoint. Returns True if a
+    plot was actually running (so the caller can tell the user)."""
+    if _plot_lock.locked():
+        _cancel_event.set()
+        return True
+    return False
+
+
 def _pydirectinput():
     import pydirectinput
 
@@ -108,7 +147,7 @@ def _route_plotted_since(baseline, timeout=PLOT_CONFIRM_WAIT):
     while time.monotonic() < deadline:
         if _navroute_mtime() > baseline:
             return True
-        time.sleep(0.3)
+        _sleep(0.3)
     return False
 
 
@@ -133,21 +172,28 @@ def _focus_ed_window(hwnd):
 def _press(pdi, key, mods=(), hold=0.0):
     for m in mods:
         pdi.keyDown(m)
-    if hold:
-        # One clean continuous hold. Do NOT re-assert the keydown in a loop:
-        # repeated keydown events read as auto-repeat and reset Elite's
-        # hold-to-plot timer, so the circle never starts filling.
-        pdi.keyDown(key, _pause=False)
-        time.sleep(hold)
-        pdi.keyUp(key, _pause=False)
-    else:
-        pdi.press(key)
-    for m in reversed(mods):
-        pdi.keyUp(m)
+    try:
+        if hold:
+            # One clean continuous hold. Do NOT re-assert the keydown in a loop:
+            # repeated keydown events read as auto-repeat and reset Elite's
+            # hold-to-plot timer, so the circle never starts filling.
+            pdi.keyDown(key, _pause=False)
+            try:
+                _sleep(hold)  # interruptible: a cancel here still releases the key
+            finally:
+                pdi.keyUp(key, _pause=False)
+        else:
+            pdi.press(key)
+    finally:
+        # Always release modifiers, even if a cancel interrupted the hold, so we
+        # never leave a key stuck down in the game.
+        for m in reversed(mods):
+            pdi.keyUp(m)
 
 
 def _type_text(pdi, text):
     for ch in text.lower():
+        _check_cancel()
         if ch == " ":
             pdi.press("space")
         elif ch in SHIFTED:
@@ -162,7 +208,7 @@ def _wait_for_map(timeout=MAP_OPEN_TIMEOUT):
     while time.monotonic() < deadline:
         if gui_focus() == GUI_FOCUS_GALAXY_MAP:
             return True
-        time.sleep(0.4)
+        _sleep(0.4)
     return False
 
 
@@ -205,6 +251,7 @@ def plot_route(system, dry_run=False, close_map=True):
 
     if not _plot_lock.acquire(blocking=False):
         raise AutoplotError("A plot is already in progress - wait for it to finish.")
+    _cancel_event.clear()  # fresh run; discard any stale cancel request
     try:
         pdi = _pydirectinput()
         _focus_ed_window(hwnd)
@@ -217,7 +264,7 @@ def plot_route(system, dry_run=False, close_map=True):
                     "Galaxy map did not open (GuiFocus never changed). "
                     "Are you in a menu, or is the game not accepting keyboard input?"
                 )
-            time.sleep(MAP_LOAD_DELAY)
+            _sleep(MAP_LOAD_DELAY)
 
         # NavRoute.json updating is the only reliable proof the plot happened,
         # so search + plot runs in verified rounds: if a round never navigates
@@ -227,24 +274,25 @@ def plot_route(system, dry_run=False, close_map=True):
         plot_keys = _plot_hold_keys(binds)
         plotted = False
         for rnd in range(SEARCH_ROUNDS):
+            _check_cancel()
             if gui_focus() != GUI_FOCUS_GALAXY_MAP:
                 raise AutoplotError("The galaxy map closed unexpectedly mid-sequence.")
             if rnd > 0:
                 # Whatever state the failed round left: exit any edit mode,
                 # then walk back up to the search row.
                 _press(pdi, binds["UI_Back"]["key"], binds["UI_Back"]["mods"])
-                time.sleep(STEP_DELAY)
+                _sleep(STEP_DELAY)
             _press(pdi, binds["UI_Up"]["key"], binds["UI_Up"]["mods"])  # focus the search field
-            time.sleep(STEP_DELAY)
+            _sleep(STEP_DELAY)
             # Explicitly enter edit mode; typing too early swallows characters.
             _press(pdi, binds["UI_Select"]["key"], binds["UI_Select"]["mods"])
-            time.sleep(SEARCH_READY_DELAY)
+            _sleep(SEARCH_READY_DELAY)
             pdi.press("backspace", presses=CLEAR_BACKSPACES, interval=0.02)  # clear leftovers
-            time.sleep(STEP_DELAY)
+            _sleep(STEP_DELAY)
             _type_text(pdi, system)
-            time.sleep(TYPE_TO_ENTER_DELAY)  # let the autocomplete populate
+            _sleep(TYPE_TO_ENTER_DELAY)  # let the autocomplete populate
             pdi.press("enter")
-            time.sleep(AFTER_SEARCH_DELAY)  # camera flies to the system
+            _sleep(AFTER_SEARCH_DELAY)  # camera flies to the system
 
             # EDAPGui's field-proven post-search sequence: refocus the panel
             # (UI_Down/UI_Up), UI_Right onto the result, TAP select once to
@@ -254,15 +302,16 @@ def plot_route(system, dry_run=False, close_map=True):
             # Every hold is verified against NavRoute.json, so trying several
             # variants is safe.
             def _attempt(pre, tap_select, zoom):
+                _check_cancel()
                 for action in pre:
                     _press(pdi, binds[action]["key"], binds[action]["mods"])
-                    time.sleep(STEP_DELAY)
+                    _sleep(STEP_DELAY)
                 if tap_select:
                     _press(pdi, binds["UI_Select"]["key"], binds["UI_Select"]["mods"])
-                    time.sleep(0.6)
+                    _sleep(0.6)
                 if zoom:
                     _cam_zoom_in(pdi)
-                    time.sleep(0.5)
+                    _sleep(0.5)
                 for pk in plot_keys:
                     _press(pdi, pk["key"], pk["mods"], hold=PLOT_HOLD)
                     if _route_plotted_since(baseline):

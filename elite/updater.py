@@ -58,15 +58,34 @@ def _exe_dir():
 def updater_script(exe_path, new_path):
     """The helper batch that installs a downloaded update.
 
-    PyInstaller's onefile app is a bootloader parent plus a child, and both hold
-    EliteTrader.exe locked for a moment after the app exits — so the move is
-    retried until the file is actually free rather than attempted a fixed number
-    of times. `ping` provides the delay because `timeout` needs a console this
-    windowless helper process does not have (the original bug: the app closed but
-    never swapped or relaunched, leaving EliteTrader.new.exe behind)."""
+    Two things make the relaunch reliable:
+
+    1. The move is *retried* until it succeeds. On Windows you cannot overwrite a
+       running exe, so `move /y` only lands once our process has fully exited and
+       released the lock — the retry loop is therefore an implicit, race-free
+       "wait until the old app is really gone" gate (no need to poll for the PID).
+       `ping` provides the small inter-try delay because `timeout` needs a console
+       this windowless helper process does not have.
+
+    2. The PyInstaller onefile bootloader vars (`_MEIPASS2` et al.) are cleared
+       before relaunch. A onefile exe is a bootloader that, on launch, sets
+       `_MEIPASS2` to its temp extraction dir and hands off to a child. If the
+       relaunched exe *inherits* `_MEIPASS2` from our dying process, its bootloader
+       skips extraction and tries to load python312.dll from the OLD (now-deleted)
+       `_MEIxxxxx` dir — the "Failed to load Python DLL" failure. Double-clicking
+       works precisely because Explorer launches with a clean environment; this is
+       the real cause the earlier settle-delay never fixed. We pass a scrubbed
+       environment from Python (see _stage_and_restart); clearing them here too is
+       belt-and-suspenders."""
     return (
         "@echo off\r\n"
         "setlocal\r\n"
+        # Belt-and-suspenders: ensure the relaunched exe never inherits the
+        # onefile bootloader hand-off vars (see docstring).
+        'set "_MEIPASS2="\r\n'
+        'set "_MEIPASS="\r\n'
+        'set "_PYI_ARCHIVE_INDEX="\r\n'
+        'set "_PYI_APPLICATION_HOME_DIR="\r\n'
         "set n=0\r\n"
         ":retry\r\n"
         f'move /y "{new_path}" "{exe_path}" >nul 2>&1\r\n'
@@ -76,15 +95,25 @@ def updater_script(exe_path, new_path):
         "ping -n 2 127.0.0.1 >nul\r\n"
         "goto retry\r\n"
         ":launch\r\n"
-        # Wait before relaunching: the old onefile process is still tearing down
-        # its temp extraction dir, and starting the new exe immediately makes its
-        # own extraction race that and fail ("Failed to load Python DLL"). ~6 s of
-        # settle time is invisible during an update and reliably avoids the race.
-        "ping -n 7 127.0.0.1 >nul\r\n"
+        # Small settle margin (freshly-written exe; lets any AV on-write scan
+        # finish). Not the fix — the clean environment above is — just courtesy.
+        "ping -n 4 127.0.0.1 >nul\r\n"
         f'start "" "{exe_path}"\r\n'
         ":cleanup\r\n"
         'del "%~f0" >nul 2>&1\r\n'
     )
+
+
+def _clean_child_env():
+    """A copy of the current environment with the PyInstaller onefile bootloader
+    variables removed, so a relaunched onefile exe extracts fresh instead of
+    inheriting our dying process's temp dir. Stripping the whole `_MEI*` / `_PYI*`
+    namespace covers current and future bootloader vars; nothing legitimate uses
+    those prefixes."""
+    return {
+        k: v for k, v in os.environ.items()
+        if not (k.startswith("_MEI") or k.startswith("_PYI"))
+    }
 
 
 class Updater:
@@ -271,7 +300,10 @@ class Updater:
         # delays work, but shows no window; the new group lets it outlive us.
         flags = getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0) \
             | getattr(subprocess, "CREATE_NO_WINDOW", 0)
-        subprocess.Popen(["cmd", "/c", str(bat)], creationflags=flags, close_fds=True)
+        # Pass a scrubbed environment so cmd -> batch -> the relaunched exe never
+        # inherit `_MEIPASS2` (the onefile relaunch bug — see updater_script).
+        subprocess.Popen(["cmd", "/c", str(bat)], creationflags=flags,
+                         close_fds=True, env=_clean_child_env())
         time.sleep(0.3)  # let the helper start, then exit so the exe unlocks
         os._exit(0)
 

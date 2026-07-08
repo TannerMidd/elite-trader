@@ -1,16 +1,21 @@
-## Elite Trader v1.6.0 — logo, app icon & smarter exobio routes
+## Elite Trader v1.6.1 — cancel a plot in progress & a real auto-update relaunch fix
 
-### 🎨 A proper logo and app icon
-Elite Trader now has a real brand mark — an Elite-style HUD hexagon with an
-ascending trade-route glyph — so the app gets a proper taskbar/window icon and a
-matching logo and favicon.
+### ⏹ Cancel a plot in progress
+Accidentally hit PLOT? While a route is being plotted the **PLOT button turns
+into a CANCEL button** (in both the main view and the tablet flight panel).
+Tapping it stops the sequence within a moment and cleanly releases any keys it
+was holding, so a mis-tap no longer types into the galaxy map for ~10 seconds.
 
-### 🧬 Exobiology route: closest results, however far — never empty
-The Guides tab's exobiology route finder no longer stops at a small radius. It
-now searches outward as far as needed to find the nearest qualifying worlds, so a
-route can span well beyond the old ~20 ly reach. And if nothing nearby meets your
-value/gravity filters, it relaxes them and shows the closest bio worlds anyway
-(with a note) instead of returning no results.
+### 🔄 Auto-update now relaunches itself
+Fixed the long-standing issue where an update installed correctly but the app
+didn't reopen on its own. Root cause: the relaunched onefile exe was inheriting
+the old process's PyInstaller bootloader environment (`_MEIPASS2`), so it tried
+to load Python from a temp folder that no longer existed. The updater now
+relaunches with a clean environment, which resolves it.
+
+> Note: because the *installed* app is what runs an update, this one update
+> (from an older build to v1.6.1) may still need you to reopen `EliteTrader.exe`
+> once. Every update **from v1.6.1 onward** will relaunch on its own.
 
 ---
 

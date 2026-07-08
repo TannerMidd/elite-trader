@@ -508,9 +508,19 @@ def create_app(state):
                 dry_run=bool(body.get("dry_run", False)),
                 close_map=bool(body.get("close_map", True)),
             )
+        except autoplot.AutoplotCancelled:
+            return jsonify({"cancelled": True, "system": system}), 200
         except autoplot.AutoplotError as exc:
             return jsonify({"error": str(exc)}), 409
         return jsonify({"ok": True, "system": system, "steps": steps})
+
+    @app.post("/api/plot/cancel")
+    def api_plot_cancel():
+        # Imported lazily so an input-emulation problem can't take the server down.
+        from . import autoplot
+
+        running = autoplot.cancel_plot()
+        return jsonify({"ok": True, "cancelling": bool(running)})
 
     return app
 
