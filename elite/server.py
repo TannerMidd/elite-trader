@@ -186,7 +186,7 @@ def create_app(state):
 
         ref = args.get("system") or snap.get("system")
         try:
-            systems = spansh.exobio_bodies(
+            systems, relaxed = spansh.exobio_bodies(
                 ref,
                 max_gravity=num("max_gravity", 0.5),
                 min_value=num("min_value", 1_000_000, int),
@@ -194,7 +194,8 @@ def create_app(state):
         except spansh.SpanshError as exc:
             return jsonify({"error": str(exc)}), 502
         total = sum(s["value"] for s in systems)
-        return jsonify({"reference": ref, "systems": systems, "total_value": total})
+        return jsonify({"reference": ref, "systems": systems,
+                        "total_value": total, "relaxed": relaxed})
 
     @app.post("/api/riches")
     def api_riches():

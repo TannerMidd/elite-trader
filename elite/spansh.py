@@ -291,21 +291,19 @@ def mining_hotspots(reference_system, mineral, size=15):
     return out
 
 
-def exobio_bodies(reference_system, max_gravity=0.5, min_value=1_000_000, size=75, max_systems=25):
-    """The live 'Billionaire's Boulevard': nearby landable, low-gravity bodies
-    with high-value biological signals, grouped by system and ordered by
-    distance. Spansh's `landmark_value` is the estimated exobio payout per body;
-    `genuses` are the genera present. One search call yields the whole route."""
-    if not reference_system:
-        raise SpanshError("No reference system known yet - is the game running?")
+EXOBIO_PAGE = 75
+EXOBIO_MAX_PAGES = 8  # ~600 nearest bio bodies; pages out well past a 20 ly cap
+
+
+def _exobio_page(reference_system, page):
     payload = {
         "filters": {
             "signals": [{"name": "Biological", "value": [1, 40]}],
             "is_landable": {"value": True},
         },
         "sort": [{"distance": {"direction": "asc"}}],
-        "size": int(size),
-        "page": 0,
+        "size": EXOBIO_PAGE,
+        "page": page,
         "reference_system": reference_system,
     }
     try:
@@ -314,37 +312,77 @@ def exobio_bodies(reference_system, max_gravity=0.5, min_value=1_000_000, size=7
         raise SpanshError(f"Could not reach Spansh: {exc}") from exc
     if resp.status_code >= 400:
         raise SpanshError(_error_text(resp))
+    return resp.json().get("results") or []
 
+
+def exobio_bodies(reference_system, max_gravity=0.5, min_value=1_000_000, max_systems=25):
+    """The live 'Billionaire's Boulevard': landable, low-gravity bodies with
+    high-value biological signals, grouped by system and ordered by distance.
+
+    Pages outward from the reference system as far as needed to gather enough
+    matches, so it is not capped to a small radius, and always returns the
+    nearest results — relaxing the value (then gravity) filter as a last resort
+    so it never comes back empty when any landable bio exists nearby. Returns
+    (systems, relaxed) where `relaxed` names any filter that had to be dropped."""
+    if not reference_system:
+        raise SpanshError("No reference system known yet - is the game running?")
+
+    # Collect every fetched landable-bio body, grouped by system, keeping all
+    # bodies so we can re-filter at different strictness without re-querying.
     systems = {}
-    for b in resp.json().get("results") or []:
-        grav = b.get("gravity") or 0
-        value = b.get("landmark_value") or 0
-        if grav > max_gravity or value < min_value:
-            continue
-        genuses = []
-        for g in b.get("genuses") or []:
-            nm = biovalues.codex_genus_name(g.get("name") if isinstance(g, dict) else g)
-            if nm and nm not in genuses:
-                genuses.append(nm)
-        name = b.get("system_name")
-        entry = systems.setdefault(name, {
-            "system": name,
-            "distance": round(b.get("distance") or 0, 1),
-            "bodies": [],
-            "value": 0,
-        })
-        entry["bodies"].append({
-            "body": b.get("name"),
-            "gravity": round(grav, 2),
-            "dist_ls": b.get("distance_to_arrival"),
-            "value": value,
-            "subtype": b.get("subtype"),
-            "genuses": genuses,
-        })
-        entry["value"] += value
-    for s in systems.values():
-        s["bodies"].sort(key=lambda x: -x["value"])
-    return sorted(systems.values(), key=lambda s: s["distance"])[:max_systems]
+
+    def qualifying_count():
+        return sum(
+            1 for s in systems.values()
+            if any(b["value"] >= min_value and b["gravity"] <= max_gravity for b in s["bodies"])
+        )
+
+    for page in range(EXOBIO_MAX_PAGES):
+        results = _exobio_page(reference_system, page)
+        if not results:
+            break
+        for b in results:
+            grav = round(b.get("gravity") or 0, 2)
+            value = b.get("landmark_value") or 0
+            genuses = []
+            for g in b.get("genuses") or []:
+                nm = biovalues.codex_genus_name(g.get("name") if isinstance(g, dict) else g)
+                if nm and nm not in genuses:
+                    genuses.append(nm)
+            name = b.get("system_name")
+            entry = systems.setdefault(name, {
+                "system": name,
+                "distance": round(b.get("distance") or 0, 1),
+                "bodies": [],
+            })
+            entry["bodies"].append({
+                "body": b.get("name"), "gravity": grav,
+                "dist_ls": b.get("distance_to_arrival"), "value": value,
+                "subtype": b.get("subtype"), "genuses": genuses,
+            })
+        if qualifying_count() >= max_systems:
+            break
+
+    def build(min_v, max_g):
+        out = []
+        for s in systems.values():
+            bodies = [b for b in s["bodies"] if b["value"] >= min_v and b["gravity"] <= max_g]
+            if not bodies:
+                continue
+            bodies.sort(key=lambda x: -x["value"])
+            out.append({"system": s["system"], "distance": s["distance"],
+                        "bodies": bodies, "value": sum(b["value"] for b in bodies)})
+        return sorted(out, key=lambda s: s["distance"])[:max_systems]
+
+    result = build(min_value, max_gravity)
+    if result:
+        return result, None
+    # Nothing cleared the filters even paging out — relax so the pilot still
+    # gets the closest bio worlds rather than an empty result.
+    result = build(0, max_gravity)
+    if result:
+        return result, "value"
+    return build(0, 9e9), "value and gravity"
 
 
 def _error_text(resp):

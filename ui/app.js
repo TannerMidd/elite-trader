@@ -1410,10 +1410,14 @@ async function searchExobio(ev) {
     if (!resp.ok) throw new Error(data.error || "Search failed");
     const systems = data.systems || [];
     if (!systems.length) {
-      status.textContent = "No landable low-gravity bio worlds found nearby with those filters — lower Min value or raise Max gravity.";
+      status.textContent = "No landable bodies with biological signals found near you at all — you may be in truly deep space.";
       return;
     }
-    status.textContent = `${systems.length} systems in visit order · ≈${fmtNum(data.total_value)} cr of exobiology if you sample it all (first footfall pays up to 5× more).`;
+    const relaxNote = data.relaxed
+      ? `Nothing cleared your ${esc(data.relaxed)} filter nearby, so here are the closest bio worlds regardless. `
+      : "";
+    status.textContent = relaxNote +
+      `${systems.length} systems in visit order · ≈${fmtNum(data.total_value)} cr of exobiology if you sample it all (first footfall pays up to 5× more).`;
 
     const summary = document.createElement("div");
     summary.className = "route-summary";
