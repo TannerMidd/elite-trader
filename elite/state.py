@@ -41,6 +41,13 @@ class AppState:
         self.cargo_inventory = []
         self.market = None  # {"market_id", "station", "system", "timestamp", "items": [...]}
 
+        # Flight safety: plotted route (for fuel-scoop callouts) and a queue of
+        # one-shot voice alerts (interdiction, hull damage, first discovery).
+        self.nav_route = []            # [{"system","address","star_class"}, ...]
+        self.fuel_used_samples = deque(maxlen=5)  # recent FSDJump FuelUsed values
+        self.alerts = deque(maxlen=8)  # [{"id","level","code","say","text","ts"}]
+        self._alert_seq = 0
+
         # Exobiology (current system signals; vault persists until sold/death)
         self.bio_signals = {}   # body name -> {count, genuses:[...], body details}
         self.bio_sampling = None  # {"genus","species","variant","progress"}
@@ -80,6 +87,46 @@ class AppState:
             self.session_jumps += 1
             if dist:
                 self.session_ly += dist
+
+    def push_alert(self, level, code, say, text):
+        """Queue a one-shot voice alert. The UI speaks any alert whose id is
+        newer than the last it announced, so each fires exactly once."""
+        with self._lock:
+            self._alert_seq += 1
+            self.alerts.append({
+                "id": self._alert_seq, "level": level, "code": code,
+                "say": say, "text": text,
+            })
+
+    def add_fuel_used(self, tons):
+        with self._lock:
+            if tons and tons > 0:
+                self.fuel_used_samples.append(float(tons))
+
+    def _fuel_per_jump(self):
+        # Worst of the recent jumps → a conservative "jumps of fuel" projection.
+        return max(self.fuel_used_samples) if self.fuel_used_samples else None
+
+    def _nav_snapshot(self):
+        from . import flight
+
+        ahead = flight.route_ahead(self.nav_route, self.system_address, self.system)
+        fpj = self._fuel_per_jump()
+        jumps_of_fuel = (
+            int(self.fuel_main / fpj) if (fpj and self.fuel_main is not None) else None
+        )
+        # No fuel nagging while docked — you're safe and can refuel.
+        advisory = (
+            None if self.docked
+            else flight.fuel_advisory(ahead, self.fuel_main, self.fuel_capacity, fpj)
+        )
+        return {
+            "system": self.system,
+            "ahead": ahead[:12],
+            "fuel_per_jump": round(fpj, 2) if fpj else None,
+            "jumps_of_fuel": jumps_of_fuel,
+            "advisory": advisory,
+        }
 
     def start_session(self, ts, credits):
         """Reset the live-session counters at a game launch (LoadGame)."""
@@ -169,6 +216,8 @@ class AppState:
                 ),
                 "materials": self._materials_snapshot(),
                 "session": self._session_snapshot(),
+                "nav": self._nav_snapshot(),
+                "alerts": list(self.alerts),
                 "last_journal_event": self.last_journal_event,
                 "journal_dir_found": self.journal_dir_found,
             }

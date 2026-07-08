@@ -520,6 +520,7 @@ function render() {
   $("legal").textContent = state.legal_state || "—";
 
   renderBanner();
+  handleAlerts();
   renderLinks();
   renderMarket();
   renderJumps();
@@ -709,26 +710,64 @@ function renderMaterials(mats) {
   }
 }
 
-let lowFuelSpoken = false;
+let lastFuelSig = null;   // advisory code+system last spoken, to avoid repeats
+let lastAlertId = 0;      // highest one-shot alert id already handled
+let alertsInit = false;   // baseline set on first state so old alerts don't replay
 
 function renderBanner() {
   const banner = $("banner");
-  const lowFuel = state.fuel_main != null && state.fuel_capacity > 0 &&
-    !state.docked && state.fuel_main / state.fuel_capacity < 0.25;
-  if (lowFuel && !lowFuelSpoken) { speak("Warning. Low fuel."); lowFuelSpoken = true; }
-  if (!lowFuel) lowFuelSpoken = false;
+  const advisory = state.nav && state.nav.advisory;
+
+  // Speak the fuel advisory once whenever the situation (code + system) changes.
+  const sig = advisory ? advisory.code + "|" + (state.nav.system || "") : null;
+  if (sig !== lastFuelSig) {
+    if (advisory) speak(advisory.say);
+    lastFuelSig = sig;
+  }
+
+  banner.classList.remove("banner-critical", "banner-warn");
   if (state.journal_dir_found === false) {
     banner.textContent = "Elite Dangerous journal folder not found - set the ED_JOURNAL_DIR environment variable.";
     banner.classList.remove("hidden");
   } else if (!state.system) {
     banner.textContent = "Waiting for journal data - start Elite Dangerous (or play a bit) and this will fill in.";
     banner.classList.remove("hidden");
-  } else if (lowFuel) {
-    banner.textContent = `⚠ LOW FUEL: ${state.fuel_main.toFixed(1)} / ${state.fuel_capacity.toFixed(0)} t — find a scoopable star (K G B F O A M) or a station soon.`;
+  } else if (advisory) {
+    banner.textContent = "⚠ " + advisory.text;
+    banner.classList.add(advisory.level === "critical" ? "banner-critical" : "banner-warn");
     banner.classList.remove("hidden");
   } else {
     banner.classList.add("hidden");
   }
+}
+
+// One-shot voice alerts (interdiction, hull damage, first discovery). Each is
+// spoken once; on first load we skip the backlog so nothing stale replays.
+function handleAlerts() {
+  const alerts = (state && state.alerts) || [];
+  const maxId = alerts.length ? Math.max(...alerts.map((a) => a.id)) : 0;
+  // On the first state we see, adopt its high-water mark without speaking, so
+  // alerts that fired before the page opened don't all replay at once.
+  if (!alertsInit) { alertsInit = true; lastAlertId = maxId; return; }
+  if (!alerts.length) return;
+  const fresh = alerts.filter((a) => a.id > lastAlertId).sort((a, b) => a.id - b.id);
+  if (fresh.length) lastAlertId = Math.max(lastAlertId, maxId);
+  for (const a of fresh) {
+    speak(a.say);
+    showFlightToast(a);
+  }
+}
+
+let flightToastTimer = null;
+function showFlightToast(alert) {
+  const toast = $("flight-toast");
+  if (!toast) return;
+  toast.textContent = alert.text;
+  toast.className = "flight-toast " + (alert.level === "critical" ? "toast-critical"
+    : alert.level === "warn" ? "toast-warn" : "toast-info");
+  toast.classList.remove("hidden");
+  clearTimeout(flightToastTimer);
+  flightToastTimer = setTimeout(() => toast.classList.add("hidden"), 7000);
 }
 
 function renderLinks() {

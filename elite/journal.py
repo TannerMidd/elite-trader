@@ -73,6 +73,8 @@ class JournalWatcher:
         self._live = False  # False during bootstrap replay, True while tailing
         self._last_logged_balance = None
         self._bio_fetched = set()  # id64s we've queried Spansh for this session
+        self._hull_bucket = None   # lowest hull-damage tier already called out
+        self._first_disc_system = None  # system a first-discovery alert fired for
 
     # ---------- event handling ----------
 
@@ -153,6 +155,11 @@ class JournalWatcher:
             bio_signals={},
         )
         self.state.add_jump(e.get("StarSystem"), e.get("JumpDist"), e.get("timestamp"))
+        # Actual fuel burned this jump → conservative fuel-per-jump for scoop
+        # projections. FuelLevel is the fresh post-jump tank reading.
+        self.state.add_fuel_used(e.get("FuelUsed"))
+        if e.get("FuelLevel") is not None:
+            self.state.update(fuel_main=e.get("FuelLevel"))
         self._fetch_community_bio(e.get("SystemAddress"), e.get("StarSystem"))
 
     def _on_carrierjump(self, e):
@@ -168,6 +175,7 @@ class JournalWatcher:
         self._fetch_community_bio(e.get("SystemAddress"), e.get("StarSystem"))
 
     def _on_docked(self, e):
+        self._hull_bucket = None  # repairs are available; let damage re-announce
         self.state.update(
             system=e.get("StarSystem"),
             system_address=e.get("SystemAddress"),
@@ -257,6 +265,24 @@ class JournalWatcher:
         body = e.get("BodyName")
         if not body:
             return
+        # First-in: the primary star's auto-scan reveals whether anyone has been
+        # here before. WasDiscovered false on the entry star = the whole system
+        # is yours to discover. Announce once per system, live only.
+        if (
+            self._live
+            and e.get("StarType")
+            and e.get("BodyID") == 0
+            and not e.get("WasDiscovered", True)
+            and self.state.system
+            and self._first_disc_system != self.state.system
+        ):
+            self._first_disc_system = self.state.system
+            self.state.push_alert(
+                "info", "first_discovery",
+                f"First discovery. {self.state.system} is undiscovered.",
+                f"✦ FIRST DISCOVERY · {self.state.system}",
+            )
+
         # Cartographic value estimate for the exploration tracker
         base = exploration.scan_base_value(e)
         if base is not None:
@@ -546,6 +572,7 @@ class JournalWatcher:
             ("Status.json", self._apply_status),
             ("Cargo.json", self._apply_cargo),
             ("Market.json", self._apply_market),
+            ("NavRoute.json", self._apply_navroute),
         ):
             path = self.journal_dir / name
             try:
@@ -580,6 +607,50 @@ class JournalWatcher:
         dest = data.get("Destination") or {}
         updates["destination"] = dest.get("Name") or None
         self.state.update(**updates)
+
+    def _apply_navroute(self, data):
+        """NavRoute.json holds the full plotted route (each system's StarClass),
+        which the game keeps intact as you fly it. Kept for fuel-scoop callouts."""
+        route = [
+            {
+                "system": r.get("StarSystem"),
+                "address": r.get("SystemAddress"),
+                "star_class": r.get("StarClass"),
+            }
+            for r in (data.get("Route") or [])
+            if r.get("StarSystem")
+        ]
+        self.state.update(nav_route=route)
+
+    def _on_navrouteclear(self, e):
+        self.state.update(nav_route=[])
+
+    def _on_interdicted(self, e):
+        """You are being pulled out of supercruise (pirate / NPC / Thargoid)."""
+        if not self._live:
+            return
+        who = e.get("Interdictor_Localised") or e.get("Interdictor")
+        if e.get("IsThargoid"):
+            who = "Thargoid"
+        say = "Interdiction detected. Evade or submit."
+        text = "⚠ BEING INTERDICTED" + (f" · {who}" if who else "")
+        self.state.push_alert("critical", "interdiction", say, text)
+
+    # Hull-damage tiers: (fraction ceiling, spoken/banner percent, level).
+    _HULL_TIERS = ((0.25, 25, "critical"), (0.50, 50, "critical"), (0.75, 75, "warn"))
+
+    def _on_hulldamage(self, e):
+        """Significant hull loss on your own ship (not fighters/crew)."""
+        if not self._live or not e.get("PlayerPilot", True) or e.get("Fighter"):
+            return
+        health = e.get("Health")
+        if health is None:
+            return
+        for ceiling, pct, level in self._HULL_TIERS:
+            if health <= ceiling and (self._hull_bucket is None or ceiling < self._hull_bucket):
+                self._hull_bucket = ceiling
+                self.state.push_alert(level, "hull", f"Warning. Hull at {pct} percent.", f"⚠ HULL {pct}%")
+                return
 
     def _apply_cargo(self, data):
         inventory = [

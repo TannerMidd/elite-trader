@@ -1,19 +1,31 @@
-## Elite Trader v1.7.0 — filter the Exobiology route by genus
+## Elite Trader v1.8.0 — vital voice callouts (fuel scooping & more)
 
-### ⬡ Pick the genera you actually want
-The **Exobiology Route** now has a row of genus chips (Stratum, Bacterium,
-Osseus, …). Tap one or more **before** you plot, and the route only returns
-landable worlds that host those genera — no more wading past every signal on
-the way to the species you're farming.
+Voice callouts now warn you about the things that actually end deep-space trips.
+Toggle them with **🔊 VOICE** in the flight panel; every callout also flashes a
+banner or toast so it works with sound off.
 
-- Select any combination of genera; the route restricts to bodies hosting at
-  least one of them.
-- The genus pick is treated as an explicit choice, so it's never quietly
-  relaxed — only the value/gravity filters loosen as a fallback, and the search
-  scans further out because a single genus is sparser than "any bio".
-- Matching genera are highlighted in each body's list, and the status line
-  shows which filter is active.
-- No chips selected = every genus, exactly as before.
+### ⛽ Fuel-scoop planning along your route
+The app reads your plotted route (NavRoute) and each star's class, learns your
+real fuel-per-jump from your last jumps, and watches for the classic strander —
+a run of non-scoopable stars (brown/white dwarfs, neutron stars…) your tank
+can't clear:
+
+- **"Scoop now"** (critical) — you're sitting on a fuel star but the *next* one
+  is farther than your fuel can reach. Top off before you leave.
+- **"Top off, N dry jumps ahead"** — leaving a scoopable star into a stretch
+  with no fuel stars.
+- **"Strand risk / no fuel star ahead"** — already low with no reachable
+  scoopable star; time to replot.
+- **Low-fuel** warning at 25% (route or not). Quiet while docked.
+
+Scoopable = the KGB-FOAM classes (O B A F G K M) plus proto-stars.
+
+### 🚨 Other vital callouts
+- **Interdiction** — "Interdiction detected. Evade or submit." the instant
+  you're pulled from supercruise.
+- **Hull damage** — spoken at 75% / 50% / 25% as your hull drops.
+- **First discovery** — "…is undiscovered." when you jump into a system no
+  commander has scanned before.
 
 ---
 

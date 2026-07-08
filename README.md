@@ -151,9 +151,11 @@ standard mode is still there** — a fixed bottom touch bar (or swiping left/rig
 with the page sliding under your finger) moves between Status, Trade, Market,
 Explore, Guides, Stats, Local and Database pages, all rescaled for fingers. A
 **one-tap "best loop from here"** finds the top trade loops around you without
-touching a single form field, and optional **voice callouts** speak low-fuel
-warnings, route confirmations and waypoint arrivals for a display you're not
-looking at. Goes fullscreen where the browser allows; remembers the mode and
+touching a single form field, and optional **voice callouts** speak vital
+warnings — fuel-scoop and low-fuel alerts along your plotted route (so a dry
+stretch of non-scoopable stars never strands you), interdictions, hull damage,
+first-discovery systems — plus route confirmations and waypoint arrivals, for a
+display you're not looking at. Goes fullscreen where the browser allows; remembers the mode and
 page per device.
 
 <div align="center"><img src="docs/screenshots/flight-panel.png" alt="Flight panel mode on a tablet" width="700"></div>
