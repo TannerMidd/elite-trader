@@ -1421,6 +1421,46 @@ async function showHotspots(mineral, btn, afterRow) {
 
 /* ---------- guides: exobiology route (Billionaire's Boulevard) ---------- */
 
+// Genera the pilot wants the route restricted to (empty = every genus). This is
+// a pre-query filter: only bodies hosting one of these come back from Spansh.
+const exoGenera = new Set();
+
+async function buildExoGenusChips() {
+  const wrap = $("exo-genus-chips");
+  if (!wrap) return;
+  let genera;
+  try {
+    const resp = await fetch("/api/exobio-genera");
+    genera = (await resp.json()).genera || [];
+  } catch {
+    return; // filter is optional; leave the row empty if the list can't load
+  }
+  wrap.innerHTML = "";
+  genera.forEach((g) => {
+    const chip = document.createElement("button");
+    chip.type = "button";
+    chip.className = "exo-chip";
+    chip.textContent = g;
+    chip.setAttribute("aria-pressed", "false");
+    chip.addEventListener("click", () => {
+      const on = !exoGenera.has(g);
+      if (on) exoGenera.add(g); else exoGenera.delete(g);
+      chip.classList.toggle("on", on);
+      chip.setAttribute("aria-pressed", String(on));
+      updateExoGenusHint();
+    });
+    wrap.appendChild(chip);
+  });
+  updateExoGenusHint();
+}
+
+function updateExoGenusHint() {
+  const hint = $("exo-genus-hint");
+  if (hint) hint.textContent = exoGenera.size
+    ? `only ${[...exoGenera].sort().join(", ")}`
+    : "none = every genus";
+}
+
 async function searchExobio(ev) {
   ev.preventDefault();
   const status = $("exo-status");
@@ -1435,18 +1475,24 @@ async function searchExobio(ev) {
       max_gravity: $("exo-grav").value || "0.5",
       min_value: $("exo-minvalue").value || "1000000",
     });
+    if (exoGenera.size) params.set("genera", [...exoGenera].join(","));
     const resp = await fetch("/api/exobio-route?" + params);
     const data = await resp.json();
     if (!resp.ok) throw new Error(data.error || "Search failed");
     const systems = data.systems || [];
     if (!systems.length) {
-      status.textContent = "No landable bodies with biological signals found near you at all — you may be in truly deep space.";
+      status.textContent = exoGenera.size
+        ? `No landable bodies hosting ${[...exoGenera].sort().join(", ")} found nearby — try clearing genera, raising Max gravity or lowering Min value.`
+        : "No landable bodies with biological signals found near you at all — you may be in truly deep space.";
       return;
     }
-    const relaxNote = data.relaxed
-      ? `Nothing cleared your ${esc(data.relaxed)} filter nearby, so here are the closest bio worlds regardless. `
+    const genusNote = exoGenera.size
+      ? `${[...exoGenera].sort().join(", ")} · `
       : "";
-    status.textContent = relaxNote +
+    const relaxNote = data.relaxed
+      ? `Nothing cleared your ${esc(data.relaxed)} filter nearby, so here are the closest matching worlds regardless. `
+      : "";
+    status.textContent = relaxNote + genusNote +
       `${systems.length} systems in visit order · ≈${fmtNum(data.total_value)} cr of exobiology if you sample it all (first footfall pays up to 5× more).`;
 
     const summary = document.createElement("div");
@@ -1467,7 +1513,8 @@ async function searchExobio(ev) {
         `<div>${esc(b.body)} <span class="sub">${esc(b.subtype || "")} · ${b.gravity} g · ` +
         `${b.dist_ls != null ? fmtNum(Math.round(b.dist_ls)) + " ls" : "?"} · ≈${fmtNum(b.value)} cr</span>` +
         (b.genuses && b.genuses.length
-          ? `<div class="sub exo-genuses">${b.genuses.map(esc).join(" · ")}</div>` : "") +
+          ? `<div class="sub exo-genuses">${b.genuses.map((g) =>
+              exoGenera.has(g) ? `<b class="exo-hit">${esc(g)}</b>` : esc(g)).join(" · ")}</div>` : "") +
         `</div>`
       ).join("");
       div.innerHTML =
@@ -2283,6 +2330,7 @@ document.addEventListener("DOMContentLoaded", () => {
   $("os-form").addEventListener("submit", searchStations);
   $("cargo-sell-btn").addEventListener("click", findCargoSell);
   $("exo-form").addEventListener("submit", searchExobio);
+  buildExoGenusChips();
   $("rr-form").addEventListener("submit", planRiches);
   $("nr-form").addEventListener("submit", planNeutron);
 

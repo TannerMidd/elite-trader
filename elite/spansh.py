@@ -315,17 +315,27 @@ def _exobio_page(reference_system, page):
     return resp.json().get("results") or []
 
 
-def exobio_bodies(reference_system, max_gravity=0.5, min_value=1_000_000, max_systems=25):
+def exobio_bodies(reference_system, max_gravity=0.5, min_value=1_000_000, max_systems=25, genera=None):
     """The live 'Billionaire's Boulevard': landable, low-gravity bodies with
     high-value biological signals, grouped by system and ordered by distance.
 
     Pages outward from the reference system as far as needed to gather enough
     matches, so it is not capped to a small radius, and always returns the
     nearest results — relaxing the value (then gravity) filter as a last resort
-    so it never comes back empty when any landable bio exists nearby. Returns
-    (systems, relaxed) where `relaxed` names any filter that had to be dropped."""
+    so it never comes back empty when any landable bio exists nearby.
+
+    `genera`, if given, restricts the route to bodies that host at least one of
+    those genera (e.g. {"Stratum"}) — an explicit pick, so it is never relaxed:
+    the value/gravity fallbacks still apply, but a non-matching genus is never
+    substituted in. Returns (systems, relaxed) where `relaxed` names any filter
+    that had to be dropped."""
     if not reference_system:
         raise SpanshError("No reference system known yet - is the game running?")
+
+    want = {g for g in (genera or []) if g}
+
+    def has_wanted_genus(b):
+        return not want or any(g in want for g in b["genuses"])
 
     # Collect every fetched landable-bio body, grouped by system, keeping all
     # bodies so we can re-filter at different strictness without re-querying.
@@ -334,10 +344,13 @@ def exobio_bodies(reference_system, max_gravity=0.5, min_value=1_000_000, max_sy
     def qualifying_count():
         return sum(
             1 for s in systems.values()
-            if any(b["value"] >= min_value and b["gravity"] <= max_gravity for b in s["bodies"])
+            if any(b["value"] >= min_value and b["gravity"] <= max_gravity and has_wanted_genus(b)
+                   for b in s["bodies"])
         )
 
-    for page in range(EXOBIO_MAX_PAGES):
+    # A specific genus is sparser than "any bio", so scan further out for one.
+    max_pages = min(EXOBIO_MAX_PAGES * 2, 16) if want else EXOBIO_MAX_PAGES
+    for page in range(max_pages):
         results = _exobio_page(reference_system, page)
         if not results:
             break
@@ -366,7 +379,8 @@ def exobio_bodies(reference_system, max_gravity=0.5, min_value=1_000_000, max_sy
     def build(min_v, max_g):
         out = []
         for s in systems.values():
-            bodies = [b for b in s["bodies"] if b["value"] >= min_v and b["gravity"] <= max_g]
+            bodies = [b for b in s["bodies"]
+                      if b["value"] >= min_v and b["gravity"] <= max_g and has_wanted_genus(b)]
             if not bodies:
                 continue
             bodies.sort(key=lambda x: -x["value"])
@@ -377,8 +391,9 @@ def exobio_bodies(reference_system, max_gravity=0.5, min_value=1_000_000, max_sy
     result = build(min_value, max_gravity)
     if result:
         return result, None
-    # Nothing cleared the filters even paging out — relax so the pilot still
-    # gets the closest bio worlds rather than an empty result.
+    # Nothing cleared the filters even paging out — relax value then gravity so
+    # the pilot still gets the closest matching bio worlds. The genus pick (if
+    # any) is kept intact throughout; only value/gravity are loosened.
     result = build(0, max_gravity)
     if result:
         return result, "value"

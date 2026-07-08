@@ -589,6 +589,28 @@ td .sub { color: var(--dim); font-size: 11px; }
 /* guides tab */
 .guides-intro { font-size: 13px; margin: 2px 2px 2px; }
 .exo-genuses { color: var(--orange-soft); margin-top: 2px; }
+.exo-genuses .exo-hit { color: var(--good); font-weight: 700; }
+.exo-genus-filter { flex: 1 1 100%; display: flex; flex-direction: column; gap: 5px; margin-top: 2px; }
+.egf-label { font-size: 11px; color: var(--dim); letter-spacing: 1px; }
+.egf-label .dim { text-transform: none; letter-spacing: 0; }
+.egf-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.exo-chip {
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  color: var(--dim);
+  border-radius: 999px;
+  padding: 3px 11px;
+  font-size: 12px;
+  cursor: pointer;
+  transition: border-color .12s, color .12s, background .12s;
+}
+.exo-chip:hover { border-color: var(--border-bright); color: var(--text); }
+.exo-chip.on {
+  background: rgba(63, 182, 168, 0.16);
+  border-color: var(--exobiology, #3fb6a8);
+  color: var(--text);
+  font-weight: 600;
+}
 .guide-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px; margin-top: 6px; }
 .guide-item {
   background: var(--panel-2);

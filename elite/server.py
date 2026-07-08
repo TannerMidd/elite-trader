@@ -7,7 +7,7 @@ from pathlib import Path
 from flask import Flask, jsonify, request, send_from_directory
 from werkzeug.serving import make_server
 
-from . import alerts, links, marketdb, routes, settings, spansh
+from . import alerts, biovalues, links, marketdb, routes, settings, spansh
 from .eddn import LISTENER
 from .seed import SEEDER
 
@@ -185,17 +185,24 @@ def create_app(state):
                 return default
 
         ref = args.get("system") or snap.get("system")
+        genera = [g.strip() for g in (args.get("genera") or "").split(",") if g.strip()]
         try:
             systems, relaxed = spansh.exobio_bodies(
                 ref,
                 max_gravity=num("max_gravity", 0.5),
                 min_value=num("min_value", 1_000_000, int),
+                genera=genera,
             )
         except spansh.SpanshError as exc:
             return jsonify({"error": str(exc)}), 502
         total = sum(s["value"] for s in systems)
-        return jsonify({"reference": ref, "systems": systems,
+        return jsonify({"reference": ref, "systems": systems, "genera": genera,
                         "total_value": total, "relaxed": relaxed})
+
+    @app.get("/api/exobio-genera")
+    def api_exobio_genera():
+        """Genus names the exobiology route can be filtered by (for the UI)."""
+        return jsonify({"genera": sorted(biovalues.GENUS_VALUE_RANGE)})
 
     @app.post("/api/riches")
     def api_riches():
