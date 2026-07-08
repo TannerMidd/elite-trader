@@ -7,6 +7,7 @@ if not exist .venv (
 )
 .venv\Scripts\python -m pip install --quiet pyinstaller
 .venv\Scripts\pyinstaller --noconfirm --onefile --windowed --name EliteTrader ^
+  --icon assets\EliteTrader.ico ^
   --add-data "ui;ui" ^
   --hidden-import webview.platforms.winforms ^
   --hidden-import webview.platforms.edgechromium ^

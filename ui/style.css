@@ -63,8 +63,9 @@ input[type="checkbox"]:focus-visible {
   border-bottom: 2px solid var(--orange);
 }
 
-.brand { font-weight: 800; letter-spacing: 3px; color: var(--orange); }
+.brand { font-weight: 800; letter-spacing: 3px; color: var(--orange); display: flex; align-items: center; gap: 9px; }
 .brand span { color: var(--text); font-weight: 300; }
+.brand-mark { display: block; }
 .pilot { display: flex; gap: 12px; align-items: baseline; }
 .pilot #commander { font-weight: 600; }
 

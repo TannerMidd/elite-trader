@@ -1,0 +1,36 @@
+<svg viewBox="0 0 256 256" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Elite Trader">
+  <defs>
+    <linearGradient id="et-orange" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffb257"/>
+      <stop offset="1" stop-color="#ff6a00"/>
+    </linearGradient>
+    <radialGradient id="et-inner" cx="0.5" cy="0.4" r="0.8">
+      <stop offset="0" stop-color="#1c202a"/>
+      <stop offset="1" stop-color="#0a0b0e"/>
+    </radialGradient>
+    <filter id="et-glow" x="-40%" y="-40%" width="180%" height="180%">
+      <feGaussianBlur stdDeviation="4.5" result="b"/>
+      <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+  </defs>
+
+  <!-- HUD hexagon (flat-top) -->
+  <polygon points="222,128 175,209 81,209 34,128 81,47 175,47"
+           fill="url(#et-inner)" stroke="url(#et-orange)" stroke-width="11"
+           stroke-linejoin="round" filter="url(#et-glow)"/>
+
+  <!-- ascending trade route -->
+  <path d="M92,172 Q120,150 168,96" fill="none" stroke="url(#et-orange)"
+        stroke-width="13" stroke-linecap="round" filter="url(#et-glow)"/>
+
+  <!-- origin station (ring) -->
+  <circle cx="92" cy="172" r="15" fill="none" stroke="url(#et-orange)" stroke-width="8"/>
+  <circle cx="92" cy="172" r="4.5" fill="#ffd7a1"/>
+
+  <!-- destination system (targeted node) -->
+  <circle cx="168" cy="96" r="17" fill="#ff7a12" filter="url(#et-glow)"/>
+  <circle cx="168" cy="96" r="17" fill="none" stroke="#ffdcb0" stroke-width="3"/>
+
+  <!-- spark -->
+  <path d="M191,63 l3.4,10 10,3.4 -10,3.4 -3.4,10 -3.4,-10 -10,-3.4 10,-3.4 z" fill="#ffd7a1"/>
+</svg>

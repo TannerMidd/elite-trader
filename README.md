@@ -1,8 +1,6 @@
 <div align="center">
 
-# ELITE TRADER
-
-**Your own trade computer for Elite Dangerous.**
+<img src="assets/logo.png" alt="Elite Trader" width="520">
 
 Reads the game's journal live · builds its own 36-million-price market database from
 the same open data Inara & Spansh use · finds profit-per-hour trade loops · plots

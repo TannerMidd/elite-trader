@@ -39,6 +39,7 @@ jobs:
         run: >
           pyinstaller --noconfirm --onefile --windowed --name EliteTrader
           --version-file version_info.rendered.txt
+          --icon assets/EliteTrader.ico
           --add-data "ui;ui"
           --hidden-import webview.platforms.winforms
           --hidden-import webview.platforms.edgechromium
