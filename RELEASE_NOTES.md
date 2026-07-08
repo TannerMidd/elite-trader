@@ -1,16 +1,19 @@
-## Elite Trader v1.5.1 — auto-update relaunch fix
+## Elite Trader v1.6.0 — logo, app icon & smarter exobio routes
 
-Fixes the one remaining auto-update glitch: after installing an update the app
-could close but fail to reopen ("Failed to load Python DLL"), because it tried to
-relaunch the new exe a split-second too early. The updater now waits briefly for
-the old process to finish tearing down before relaunching, and keeps a one-file
-backup so a bad launch is recoverable.
+### 🎨 A proper logo and app icon
+Elite Trader now has a real brand mark — an Elite-style HUD hexagon with an
+ascending trade-route glyph — so the app gets a proper taskbar/window icon and a
+matching logo and favicon.
 
-> The v1.5.0 → v1.5.1 update itself predates this fix, so it may still need you
-> to open EliteTrader.exe once by hand after it swaps. Every update from v1.5.1
-> onward reopens on its own.
+### 🧬 Exobiology route: closest results, however far — never empty
+The Guides tab's exobiology route finder no longer stops at a small radius. It
+now searches outward as far as needed to find the nearest qualifying worlds, so a
+route can span well beyond the old ~20 ly reach. And if nothing nearby meets your
+value/gravity filters, it relaxes them and shows the closest bio worlds anyway
+(with a note) instead of returning no results.
 
 ---
 
 Run from source (`run.bat` / `run.sh`) or grab the attached `EliteTrader.exe`
-(no Python needed).
+(no Python needed). On the packaged app, updates install in place — click
+**Update & restart** when it appears.
