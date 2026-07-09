@@ -16,6 +16,7 @@ class AppState:
         self.cargo_capacity = None
         self.max_jump_range = None
         self.fuel_capacity = None
+        self.rebuy = None  # insurance cost from Loadout
 
         # Location
         self.system = None
@@ -183,6 +184,7 @@ class AppState:
                 "cargo_capacity": self.cargo_capacity,
                 "max_jump_range": self.max_jump_range,
                 "fuel_capacity": self.fuel_capacity,
+                "rebuy": self.rebuy,
                 "system": self.system,
                 "star_pos": self.star_pos,
                 "body": self.body,

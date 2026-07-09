@@ -118,6 +118,7 @@ class JournalWatcher:
         self._bio_fetched = set()  # id64s we've queried Spansh for this session
         self._hull_bucket = None   # lowest hull-damage tier already called out
         self._first_disc_system = None  # system a first-discovery alert fired for
+        self._rebuy_level = 0      # 0 = covered, 1 = below 2x rebuy, 2 = below 1x
 
     # ---------- event handling ----------
 
@@ -165,7 +166,9 @@ class JournalWatcher:
             cargo_capacity=e.get("CargoCapacity"),
             max_jump_range=e.get("MaxJumpRange"),
             fuel_capacity=fuel_cap,
+            rebuy=e.get("Rebuy"),
         )
+        self._check_rebuy()
 
     def _on_location(self, e):
         if e.get("StarSystem") != self.state.system:
@@ -658,6 +661,8 @@ class JournalWatcher:
         dest = data.get("Destination") or {}
         updates["destination"] = dest.get("Name") or None
         self.state.update(**updates)
+        if balance is not None:
+            self._check_rebuy()
 
     def _apply_navroute(self, data):
         """NavRoute.json holds the full plotted route (each system's StarClass),
@@ -686,6 +691,31 @@ class JournalWatcher:
         say = "Interdiction detected. Evade or submit."
         text = "⚠ BEING INTERDICTED" + (f" · {who}" if who else "")
         self.state.push_alert("critical", "interdiction", say, text)
+
+    REBUY_COVER = 2  # warn when credits can't cover this many rebuys
+
+    def _check_rebuy(self):
+        """The most expensive lesson in the game: flying without rebuy money.
+        One-shot callouts when the balance drops below 2x (warn) or 1x
+        (critical) the ship's insurance cost; re-arms once covered again."""
+        credits, rebuy = self.state.credits, self.state.rebuy
+        if not rebuy or rebuy <= 0 or credits is None:
+            return
+        level = 2 if credits < rebuy else (1 if credits < rebuy * self.REBUY_COVER else 0)
+        if level > self._rebuy_level and self._live:
+            if level == 2:
+                self.state.push_alert(
+                    "critical", "rebuy",
+                    "Warning. You cannot afford your rebuy. Fly safe.",
+                    "⚠ REBUY NOT COVERED",
+                )
+            else:
+                self.state.push_alert(
+                    "warn", "rebuy",
+                    f"Caution. Credits below {self.REBUY_COVER} rebuys.",
+                    f"⚠ CREDITS BELOW {self.REBUY_COVER}× REBUY",
+                )
+        self._rebuy_level = level
 
     # Hull-damage tiers: (fraction ceiling, spoken/banner percent, level).
     _HULL_TIERS = ((0.25, 25, "critical"), (0.50, 50, "critical"), (0.75, 75, "warn"))

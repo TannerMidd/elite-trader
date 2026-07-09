@@ -187,6 +187,9 @@ td.warn { color: var(--bad); font-weight: 600; }
   white-space: nowrap;
   font-variant-numeric: tabular-nums;
 }
+/* rebuy coverage states (shared by the stat row and flight-panel tile) */
+.value.bad, .fp-value.bad { color: var(--bad) !important; }
+.value.low, .fp-value.low { color: var(--orange-soft) !important; }
 
 .copy {
   background: var(--panel-2);

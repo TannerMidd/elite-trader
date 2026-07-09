@@ -134,5 +134,28 @@ with tempfile.TemporaryDirectory() as td:
     w._apply_status({"Flags": IN_SHIP, "Fuel": {"FuelMain": 19.0, "FuelReservoir": 0.6}})
     assert state.snapshot()["fuel_main"] == 19.0  # back aboard -> live again
 
-print("journal integration OK: FuelUsed->advisory, docked-mute, interdiction/hull/first-discovery alerts, SRV fuel ignored")
+    # Rebuy safety net: silent while covered, warn below 2x, critical below 1x,
+    # no duplicates while at a level, re-arms after recovering.
+    prev = len(state.snapshot()["alerts"])
+    state.update(credits=20_000_000)
+    w.handle_event({"timestamp": "t", "event": "Loadout", "Ship": "python",
+                    "Rebuy": 5_000_000, "FuelCapacity": {"Main": 32}})
+    snap = state.snapshot()
+    assert snap["rebuy"] == 5_000_000, snap["rebuy"]
+    assert len(snap["alerts"]) == prev, "covered balance must not alert"
+    state.update(credits=8_000_000); w._check_rebuy()
+    a = state.snapshot()["alerts"][-1]
+    assert a["code"] == "rebuy" and a["level"] == "warn", a
+    state.update(credits=3_000_000); w._check_rebuy()
+    a = state.snapshot()["alerts"][-1]
+    assert a["code"] == "rebuy" and a["level"] == "critical", a
+    n = len(state.snapshot()["alerts"])
+    state.update(credits=2_000_000); w._check_rebuy()  # still critical: no dup
+    assert len(state.snapshot()["alerts"]) == n
+    state.update(credits=50_000_000); w._check_rebuy()  # recovered: re-arms
+    state.update(credits=6_000_000); w._check_rebuy()
+    a = state.snapshot()["alerts"][-1]
+    assert a["code"] == "rebuy" and a["level"] == "warn", a
+
+print("journal integration OK: FuelUsed->advisory, docked-mute, interdiction/hull/first-discovery alerts, SRV fuel ignored, rebuy net")
 print("ALL FLIGHT TESTS PASSED")

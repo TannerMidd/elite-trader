@@ -256,6 +256,23 @@ function initPanelNav() {
   document.addEventListener("touchcancel", endDrag, { passive: true });
 }
 
+/* Rebuy readout: red when the balance can't cover one rebuy, amber when it
+   can't cover two — the same thresholds the voice callout uses. */
+function renderRebuy(el) {
+  if (!el) return;
+  if (!state.rebuy) { el.textContent = "—"; el.classList.remove("bad", "low"); return; }
+  el.textContent = shortCr(state.rebuy) + " cr";
+  const c = state.credits;
+  const covered1 = c != null && c >= state.rebuy;
+  const covered2 = c != null && c >= state.rebuy * 2;
+  el.classList.toggle("bad", c != null && !covered1);
+  el.classList.toggle("low", covered1 && !covered2);
+  el.title = c == null ? "Your ship's insurance cost"
+    : !covered1 ? "REBUY NOT COVERED — you cannot afford to lose this ship"
+    : !covered2 ? "Less than 2 rebuys in the bank"
+    : "Insurance covered";
+}
+
 /* ---------- arrangement mode: drag cards to reorder any page ---------- */
 /* Card order is saved per tab (and per device) as a flat list of data-arr
    keys. Cards reorder only among themselves within their container, so fixed
@@ -379,6 +396,7 @@ function renderPanel() {
   const legal = $("fp-legal");
   legal.textContent = state.legal_state || "—";
   legal.style.color = state.legal_state && state.legal_state !== "Clean" ? "var(--bad)" : "var(--good)";
+  renderRebuy($("fp-rebuy"));
   const ex = state.exploration || {};
   $("fp-explo").textContent = ex.count ? "≈" + shortCr(ex.total) + " cr" : "—";
   const vault = (state.bio || {}).vault || {};
@@ -617,6 +635,7 @@ function render() {
   $("cargo").textContent = (state.cargo_tons != null ? Math.round(state.cargo_tons) : "—")
     + (state.cargo_capacity ? " / " + state.cargo_capacity : "") + " t";
   $("legal").textContent = state.legal_state || "—";
+  renderRebuy($("rebuy"));
 
   renderBanner();
   handleAlerts();
