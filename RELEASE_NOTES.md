@@ -1,37 +1,43 @@
-## Elite Trader v1.9.0 — cockpit everywhere, arrange mode & painless setup
+## Elite Trader v1.10.0 — engineering, combat, price history & station intel
 
-### 🖥️ Every flight-panel page is a cockpit display now
-Panel mode used to look right only on the status screen. Now all eight pages
-share the same MFD design language — orange rails, glowing letter-spaced
-labels, solid chunky controls, touch-sized tables — so the whole app looks like
-it belongs on your dashboard.
+The biggest feature release yet — the first wave of the all-in-one roadmap.
 
-### 🧩 Arrange mode
-Tap **⇅ ARRANGE** (next to the tabs, or the floating ⇅ in panel mode) and every
-card collapses to a compact header with a drag handle. Drag pages into the
-order that suits how you play — bio signals on top of Explore, jump history
-first in Local. Layouts are remembered **per page, per device**. (Explore now
-defaults to bio signals first, too.)
+### 🔧 Engineering planner
+Pin a blueprint (say, **FSD Increased Range → G5**) and get a live checklist
+of every material the full upgrade needs, checked against your inventory:
+exact shortfalls, **where each material comes from** (hover), **material-trader
+swap suggestions** from your surplus, and the nearest raw/manufactured/encoded
+traders one tap from plotting. A voice callout tells you the moment your list
+completes. Includes a built-in **"New to engineering?"** primer — no wiki tab
+required. ([wiki](../../wiki/Engineering))
 
-### 🛠️ Journal setup that just works
-- Auto-detection now resolves a **relocated Saved Games folder** via the
-  Windows known-folder API.
-- New **Settings → Journal folder** field with live validation ("✓ 60 journal
-  files found") — applies immediately, no restart, no environment variables.
-- If the folder doesn't exist yet (app installed before the game's first run),
-  the app **recovers by itself** the moment it appears.
-- The "journal not found" banner now has an **OPEN SETTINGS** button instead of
-  telling you to set an env var.
+### ⚔️ Combat tracker & massacre stacks
+Massacre-stack bookkeeping without the spreadsheet: stacks grouped per target
+faction with the *correct* math (kills count for every giver at once — the
+largest giver sets the target), progress bars, payouts, and a callout when the
+stack completes. Plus session kills / bounty / bond claims, and a **rebuy
+safety net** — amber under 2× rebuy, red (and spoken) when you can't cover
+one. ([wiki](../../wiki/Combat-and-Missions))
 
-### 📄 Release notes in the app
-Clicking **release notes** on the update banner now opens the notes right in
-the app instead of your browser (this text you're reading, for instance).
+### 📈 Price history
+Stations you dock at (and watched routes) now build **price history**: a
+sparkline column in the station market, and **tap any sparkline for a full
+price chart**. WATCH alerts **survive restarts** and re-anchor after firing,
+so a collapsing price alerts you once per further 10% step.
+
+### 🛰️ System stations viewer
+Every station in any system — orbital and surface — with pads, economy,
+faction, services, and a one-tap expand into its full EDDN-fresh market table.
 
 ### 🐛 Fixes
-- **SRV / Nomad no longer triggers false "low fuel" callouts** — Status.json
-  reports the vehicle's tiny tank while you're driving; the app now keeps the
-  ship's reading until you're back aboard (fixes the fuel gauge during SRV
-  trips as well).
+- Wide-radius searches (3000+ ly — deep-space life) no longer crash commodity
+  search, mining and sell-cargo ("too many SQL variables").
+- Outfitting/module search works from systems Spansh doesn't index (fresh
+  discoveries) by falling back to your coordinates.
+- REBUY shown on the location card and flight panel.
+
+Also: the README got a full rewrite (short + sharp, wiki carries the depth)
+and the wiki gained Engineering and Combat & Missions pages.
 
 ---
 
