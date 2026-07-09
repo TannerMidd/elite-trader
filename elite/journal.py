@@ -637,8 +637,42 @@ class JournalWatcher:
             mats[cat].pop(sym, None)
         self.state.update(materials=mats)
 
+    def _pinned_craftable(self):
+        """Names of pinned blueprints whose full climb is covered right now."""
+        from . import blueprints, settings
+
+        inventory = {}
+        for cat in self.state.materials.values():
+            for sym, m in cat.items():
+                inventory[sym] = m.get("count", 0)
+        out = set()
+        for p in settings.get("pinned_blueprints", []):
+            try:
+                if blueprints.plan(p["name"], p.get("grade", 5), inventory)["craftable"]:
+                    out.add(p["name"])
+            except KeyError:
+                continue
+        return out
+
     def _on_materialcollected(self, e):
+        before = self._pinned_craftable() if self._live else set()
         self._adjust_material(e.get("Category"), e, +1)
+        if not self._live:
+            return
+        # A pickup that completes a pinned blueprint's shopping list is worth
+        # announcing — that's the moment you can stop farming.
+        newly_ready = self._pinned_craftable() - before
+        if newly_ready:
+            from . import settings
+
+            grades = {p["name"]: p.get("grade", 5) for p in settings.get("pinned_blueprints", [])}
+            for name in newly_ready:
+                grade = grades.get(name, 5)
+                self.state.push_alert(
+                    "info", "blueprint",
+                    f"Materials complete for {name}, grade {grade}.",
+                    f"✦ READY TO ENGINEER · {name} G{grade}",
+                )
 
     def _on_materialdiscarded(self, e):
         self._adjust_material(e.get("Category"), e, -1)

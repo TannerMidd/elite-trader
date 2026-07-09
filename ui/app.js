@@ -649,6 +649,9 @@ function render() {
   renderMissions(state.missions);
   renderMassacre();
   renderMaterials(state.materials);
+  // Re-plan pinned blueprints when the material inventory changes.
+  const matTotal = (state.materials && state.materials.total) || 0;
+  if (engMatsSig !== matTotal) { engMatsSig = matTotal; loadEngineering(); }
   if (syncRouteToPosition()) saveActiveRoute();
   renderRouteProgress();
   renderPanel();
@@ -834,6 +837,104 @@ function renderMassacre() {
       (s.complete ? "✓ STACK COMPLETE — hand your missions in" : `${s.kills_done} / ${s.kills_needed} kills`) +
       `</div>`;
     list.appendChild(div);
+  }
+}
+
+/* ---------- engineering planner ---------- */
+let engMatsSig = null;  // refetch plans when the materials inventory changes
+
+async function loadEngineering() {
+  try {
+    const resp = await fetch("/api/engineering");
+    const data = await resp.json();
+    fillBlueprintSelect(data.blueprints || {});
+    renderEngPlans(data.pinned || []);
+  } catch (e) { /* planner card degrades to empty */ }
+}
+
+function fillBlueprintSelect(bps) {
+  const sel = $("ep-blueprint");
+  if (!sel || sel.options.length) return;
+  for (const name of Object.keys(bps).sort()) {
+    const o = document.createElement("option");
+    o.value = o.textContent = name;
+    sel.appendChild(o);
+  }
+}
+
+function renderEngPlans(plans) {
+  const list = $("engplan-list");
+  if (!list) return;
+  list.innerHTML = "";
+  if (!plans.length) {
+    list.innerHTML = '<div class="dim empty">Nothing pinned yet — pick a blueprint and PIN it for a live shopping list checked against your materials.</div>';
+    return;
+  }
+  for (const p of plans) {
+    const div = document.createElement("div");
+    div.className = "engplan" + (p.craftable ? " done" : "");
+    const total = p.materials.reduce((a, m) => a + m.need, 0);
+    const haveTotal = p.materials.reduce((a, m) => a + Math.min(m.have, m.need), 0);
+    const pct = total ? Math.round((haveTotal / total) * 100) : 0;
+    const rows = p.materials.map((m) => {
+      const short = m.deficit > 0;
+      const trade = short && m.trade
+        ? ` <span class="dim">· trade ${m.trade.spend}× ${esc(m.trade.from)} ${m.trade.direction === "down" ? "▽" : "△"} → covers ${m.trade.covers}</span>`
+        : "";
+      return `<div class="ep-mat"><span class="${short ? "warn" : "good"}">${short ? "○" : "●"}</span> ` +
+        `${esc(m.name)} <span class="${short ? "warn" : "dim"}">${m.have}/${m.need}</span> ` +
+        `<span class="dim">G${m.grade} ${esc(m.kind)}</span>${trade}</div>`;
+    }).join("");
+    div.innerHTML =
+      `<div class="stack-line"><b>${esc(p.blueprint)}</b><span class="dim">G1→G${p.grade}</span>` +
+      `<span class="${p.craftable ? "profit" : "dim"}">${p.craftable ? "✓ READY TO ENGINEER" : pct + "%"}</span></div>` +
+      `<div class="stack-bar"><div style="width:${pct}%"></div></div>` +
+      `<div class="ep-mats">${rows}</div>`;
+    const line = div.querySelector(".stack-line");
+    const un = document.createElement("button");
+    un.className = "copy";
+    un.textContent = "✕";
+    un.title = "Unpin " + p.blueprint;
+    un.addEventListener("click", () => pinBlueprint(p.blueprint, p.grade, "unpin"));
+    line.appendChild(un);
+    list.appendChild(div);
+  }
+}
+
+async function pinBlueprint(name, grade, action) {
+  try {
+    await fetch("/api/engineering/pin", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name, grade, action }),
+    });
+    loadEngineering();
+  } catch (e) { /* next load reflects reality */ }
+}
+
+async function findTraders() {
+  const out = $("engplan-traders");
+  out.innerHTML = '<div class="dim">Finding material traders near you… (~5s)</div>';
+  try {
+    const kinds = ["raw", "manufactured", "encoded"];
+    const results = await Promise.all(kinds.map((k) =>
+      fetch("/api/material-traders?kind=" + k).then((r) => r.json())));
+    out.innerHTML = "";
+    results.forEach((res, i) => {
+      const t = (res.traders || [])[0];
+      const div = document.createElement("div");
+      div.className = "ep-trader";
+      if (!t) {
+        div.innerHTML = `<b>${kinds[i].toUpperCase()}</b> <span class="dim">${esc(res.error || "none found")}</span>`;
+      } else {
+        div.innerHTML = `<b>${kinds[i].toUpperCase()}</b> ${esc(t.station)} ` +
+          `<span class="dim">${esc(t.system)} · ${t.distance} ly${t.large_pad ? " · L pad" : ""}</span>`;
+        div.appendChild(plotButton(t.system));
+      }
+      out.appendChild(div);
+    });
+  } catch (e) {
+    out.innerHTML = '<div class="dim">Trader search failed — try again.</div>';
   }
 }
 
@@ -2682,6 +2783,13 @@ document.addEventListener("DOMContentLoaded", () => {
   const toggleArrange = () => setArrangeMode(!document.body.classList.contains("arranging"));
   $("arrange-btn").addEventListener("click", toggleArrange);
   $("fp-arrange").addEventListener("click", toggleArrange);
+
+  $("engplan-form").addEventListener("submit", (ev) => {
+    ev.preventDefault();
+    pinBlueprint($("ep-blueprint").value, Number($("ep-grade").value) || 5, "pin");
+  });
+  $("ep-traders").addEventListener("click", findTraders);
+  loadEngineering();
 
   $("notes-close").addEventListener("click", () => $("notes-modal").classList.add("hidden"));
   $("notes-modal").addEventListener("click", (ev) => {

@@ -219,6 +219,45 @@ def station_search(reference_system, module=None, ship=None, size=20):
     ]
 
 
+def material_traders(reference_system, kind, size=8, coords=None):
+    """Nearest material traders of one kind ('Raw'|'Manufactured'|'Encoded').
+
+    Spansh's station search rejects reference systems missing from its index
+    (fresh discoveries, deep space), so when coordinates are known they are
+    used as a fallback reference."""
+    body = {
+        "filters": {"material_trader": {"value": [kind.title()]}},
+        "sort": [{"distance": {"direction": "asc"}}],
+        "size": int(size),
+        "page": 0,
+        "reference_system": reference_system,
+    }
+
+    def post(payload):
+        try:
+            return requests.post(f"{BASE}/stations/search", json=payload, headers=HEADERS, timeout=SUBMIT_TIMEOUT)
+        except requests.RequestException as exc:
+            raise SpanshError(f"Could not reach Spansh: {exc}") from exc
+
+    resp = post(body)
+    if resp.status_code >= 400 and coords and len(coords) == 3:
+        body.pop("reference_system", None)
+        body["reference_coords"] = {"x": coords[0], "y": coords[1], "z": coords[2]}
+        resp = post(body)
+    if resp.status_code >= 400:
+        raise SpanshError(_error_text(resp))
+    return [
+        {
+            "station": s.get("name"),
+            "system": s.get("system_name"),
+            "distance": round(s.get("distance") or 0, 1),
+            "dist_ls": s.get("distance_to_arrival"),
+            "large_pad": bool(s.get("has_large_pad")),
+        }
+        for s in resp.json().get("results") or []
+    ]
+
+
 def neutron_route(from_system, to_system, jump_range, efficiency=60):
     """Neutron highway plot: waypoint list for long-distance travel."""
     payload = {

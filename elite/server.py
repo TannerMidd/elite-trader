@@ -199,6 +199,57 @@ def create_app(state):
         return jsonify({"reference": ref, "systems": systems, "genera": genera,
                         "total_value": total, "relaxed": relaxed})
 
+    @app.get("/api/engineering")
+    def api_engineering():
+        """Blueprint catalog + deficit plans for the pinned ones."""
+        from elite import blueprints
+
+        snap = state.snapshot()
+        inventory = {}
+        for cat in ("raw", "manufactured", "encoded"):
+            for m in (snap.get("materials") or {}).get(cat) or []:
+                inventory[m.get("symbol")] = m.get("count", 0)
+        pinned = settings.get("pinned_blueprints", [])
+        plans = []
+        for p in pinned:
+            try:
+                plans.append(blueprints.plan(p["name"], p.get("grade", 5), inventory))
+            except KeyError:
+                continue  # blueprint removed from the catalog; skip quietly
+        return jsonify({
+            "blueprints": {name: sorted(g) for name, g in
+                           ((n, bp.keys()) for n, bp in blueprints.BLUEPRINTS.items())},
+            "rolls_per_grade": blueprints.ROLLS_PER_GRADE,
+            "pinned": plans,
+        })
+
+    @app.post("/api/engineering/pin")
+    def api_engineering_pin():
+        from elite import blueprints
+
+        body = request.get_json(silent=True) or {}
+        name, grade = body.get("name"), int(body.get("grade") or 5)
+        if body.get("action") == "unpin":
+            pinned = [p for p in settings.get("pinned_blueprints", []) if p["name"] != name]
+        else:
+            if name not in blueprints.BLUEPRINTS:
+                return jsonify({"error": f"Unknown blueprint: {name}"}), 400
+            pinned = [p for p in settings.get("pinned_blueprints", []) if p["name"] != name]
+            pinned.append({"name": name, "grade": grade})
+        settings.update({"pinned_blueprints": pinned})
+        return jsonify({"ok": True, "pinned": pinned})
+
+    @app.get("/api/material-traders")
+    def api_material_traders():
+        snap = state.snapshot()
+        ref = request.args.get("system") or snap.get("system")
+        kind = request.args.get("kind", "raw")
+        try:
+            traders = spansh.material_traders(ref, kind, coords=snap.get("star_pos"))
+        except spansh.SpanshError as exc:
+            return jsonify({"error": str(exc)}), 502
+        return jsonify({"kind": kind.title(), "reference": ref, "traders": traders})
+
     @app.get("/api/price-history")
     def api_price_history():
         """Recorded price points for one tracked market (docked-at or watched)."""

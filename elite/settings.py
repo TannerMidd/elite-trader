@@ -17,6 +17,7 @@ DEFAULTS = {
     "exclude_carriers": True,   # keep fleet carriers out of routes/searches
     "exclude_surface": False,   # keep planetary/settlement stations out
     "journal_dir": "",          # manual journal folder; "" = auto-detect
+    "pinned_blueprints": [],    # engineering planner pins: [{"name", "grade"}]
 }
 
 _lock = threading.Lock()
