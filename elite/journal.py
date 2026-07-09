@@ -586,14 +586,22 @@ class JournalWatcher:
                 self._status_mtimes[name] = mtime
                 parser(data)
 
+    _FLAG_IN_MAIN_SHIP = 0x01000000  # Status.json Flags bit 24
+
     def _apply_status(self, data):
-        fuel = data.get("Fuel") or {}
         updates = {
-            "fuel_main": fuel.get("FuelMain"),
-            "fuel_reservoir": fuel.get("FuelReservoir"),
             "cargo_tons": data.get("Cargo"),
             "legal_state": data.get("LegalState"),
         }
+        # In an SRV / Scarab / Nomad (or on foot), Status.json's Fuel block is
+        # the *vehicle's* tiny tank, not the ship's — taking it would read as
+        # ~0% against ship capacity and false-trigger low-fuel callouts. Keep
+        # the last known ship reading until we're back in the main ship.
+        flags = data.get("Flags")
+        if flags is None or flags & self._FLAG_IN_MAIN_SHIP:
+            fuel = data.get("Fuel") or {}
+            updates["fuel_main"] = fuel.get("FuelMain")
+            updates["fuel_reservoir"] = fuel.get("FuelReservoir")
         balance = data.get("Balance")
         if balance is not None:
             updates["credits"] = balance

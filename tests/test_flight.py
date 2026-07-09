@@ -119,5 +119,20 @@ with tempfile.TemporaryDirectory() as td:
     # ids strictly increasing so the UI can speak each exactly once
     assert [a["id"] for a in alerts] == sorted(a["id"] for a in alerts)
 
-print("journal integration OK: FuelUsed->advisory, docked-mute, interdiction/hull/first-discovery alerts")
+    # SRV/Nomad fuel must not overwrite the ship's tank (Flags bit 24 unset =
+    # not in the main ship; the Fuel block is the vehicle's own tiny tank).
+    IN_SHIP, IN_SRV = 0x01000000, 0x04000000
+    w._apply_status({"Flags": IN_SHIP | 8, "Fuel": {"FuelMain": 20.0, "FuelReservoir": 0.6}})
+    assert state.snapshot()["fuel_main"] == 20.0
+    w._apply_status({"Flags": IN_SRV, "Fuel": {"FuelMain": 0.45, "FuelReservoir": 0.0}})
+    assert state.snapshot()["fuel_main"] == 20.0, "SRV fuel clobbered the ship reading"
+    # With 20t (~3 jumps) the standing advisory stays the mild dry-stretch
+    # top-off; had the 0.45t SRV tank been taken, it would escalate to a
+    # critical scoop_now. Same check as before boarding the SRV.
+    adv = state.snapshot()["nav"]["advisory"]
+    assert adv and adv["code"] == "dry_stretch", adv
+    w._apply_status({"Flags": IN_SHIP, "Fuel": {"FuelMain": 19.0, "FuelReservoir": 0.6}})
+    assert state.snapshot()["fuel_main"] == 19.0  # back aboard -> live again
+
+print("journal integration OK: FuelUsed->advisory, docked-mute, interdiction/hull/first-discovery alerts, SRV fuel ignored")
 print("ALL FLIGHT TESTS PASSED")
