@@ -43,6 +43,18 @@ class RouteError(Exception):
     pass
 
 
+# Older SQLite builds cap host parameters at 999; wide-radius searches (deep
+# space needs 1000+ ly) sweep in far more stations than that, so every
+# market-id IN(...) query must run in chunks.
+SQL_IN_CHUNK = 800
+
+
+def _chunks(seq, n=SQL_IN_CHUNK):
+    seq = list(seq)
+    for i in range(0, len(seq), n):
+        yield seq[i:i + n]
+
+
 def plan_route_local(
     system,
     station=None,
@@ -140,19 +152,25 @@ def _extend(conn, route, max_hop, max_cargo, filters, min_supply=1):
     if not dest_by_id:
         return []
 
-    marks = ",".join("?" for _ in dest_by_id)
-    pairs = conn.execute(
-        f"""SELECT cd.market_id, cs.symbol, cs.buy_price, cd.sell_price, cs.supply, cd.demand
-            FROM commodities cs
-            JOIN commodities cd ON cd.symbol = cs.symbol
-            WHERE cs.market_id = ?
-              AND cd.market_id IN ({marks})
-              AND cs.supply > 0 AND cs.buy_price > 0
-              AND cd.demand > 0 AND cd.sell_price > cs.buy_price
-            ORDER BY (cd.sell_price - cs.buy_price) DESC
-            LIMIT {PAIR_QUERY_LIMIT}""",
-        [src["market_id"], *dest_by_id.keys()],
-    ).fetchall()
+    pairs = []
+    multi = len(dest_by_id) > SQL_IN_CHUNK
+    for chunk in _chunks(dest_by_id.keys()):
+        marks = ",".join("?" for _ in chunk)
+        pairs.extend(conn.execute(
+            f"""SELECT cd.market_id, cs.symbol, cs.buy_price, cd.sell_price, cs.supply, cd.demand
+                FROM commodities cs
+                JOIN commodities cd ON cd.symbol = cs.symbol
+                WHERE cs.market_id = ?
+                  AND cd.market_id IN ({marks})
+                  AND cs.supply > 0 AND cs.buy_price > 0
+                  AND cd.demand > 0 AND cd.sell_price > cs.buy_price
+                ORDER BY (cd.sell_price - cs.buy_price) DESC
+                LIMIT {PAIR_QUERY_LIMIT}""",
+            [src["market_id"], *chunk],
+        ).fetchall())
+    if multi:  # re-establish the global best-margin trim across chunks
+        pairs.sort(key=lambda p: -(p[3] - p[2]))
+        pairs = pairs[:PAIR_QUERY_LIMIT]
 
     flows_by_dest = {}
     for market_id, symbol, buy, sell, supply, demand in pairs:
@@ -251,19 +269,19 @@ def plan_loops(
         conn.execute("DROP TABLE IF EXISTS temp.near_sell")
         conn.execute("CREATE TEMP TABLE near_buy(market_id INTEGER, symbol TEXT, buy INTEGER, supply INTEGER)")
         conn.execute("CREATE TEMP TABLE near_sell(market_id INTEGER, symbol TEXT, sell INTEGER, demand INTEGER)")
-        marks = ",".join("?" for _ in by_id)
-        ids = list(by_id.keys())
         min_units = max(1, int(min_supply))
-        conn.execute(
-            f"INSERT INTO temp.near_buy SELECT market_id, symbol, buy_price, supply"
-            f" FROM commodities WHERE market_id IN ({marks}) AND supply >= ? AND buy_price > 0",
-            ids + [min_units],
-        )
-        conn.execute(
-            f"INSERT INTO temp.near_sell SELECT market_id, symbol, sell_price, demand"
-            f" FROM commodities WHERE market_id IN ({marks}) AND demand >= ? AND sell_price > 0",
-            ids + [min_units],
-        )
+        for chunk in _chunks(by_id.keys()):
+            marks = ",".join("?" for _ in chunk)
+            conn.execute(
+                f"INSERT INTO temp.near_buy SELECT market_id, symbol, buy_price, supply"
+                f" FROM commodities WHERE market_id IN ({marks}) AND supply >= ? AND buy_price > 0",
+                [*chunk, min_units],
+            )
+            conn.execute(
+                f"INSERT INTO temp.near_sell SELECT market_id, symbol, sell_price, demand"
+                f" FROM commodities WHERE market_id IN ({marks}) AND demand >= ? AND sell_price > 0",
+                [*chunk, min_units],
+            )
         conn.execute("CREATE INDEX temp.idx_nearsell_sym ON near_sell(symbol)")
 
         flows = conn.execute(
@@ -417,14 +435,16 @@ def search_commodity(
         if not by_id:
             return {"commodity": display, "results": []}
 
-        marks = ",".join("?" for _ in by_id)
         condition = "supply >= ? AND buy_price > 0" if mode == "buy" else "demand >= ? AND sell_price > 0"
-        rows = conn.execute(
-            f"""SELECT market_id, buy_price, sell_price, supply, demand
-                FROM commodities
-                WHERE symbol = ? AND market_id IN ({marks}) AND {condition}""",
-            [symbol, *by_id.keys(), max(1, int(min_units))],
-        ).fetchall()
+        rows = []
+        for chunk in _chunks(by_id.keys()):
+            marks = ",".join("?" for _ in chunk)
+            rows.extend(conn.execute(
+                f"""SELECT market_id, buy_price, sell_price, supply, demand
+                    FROM commodities
+                    WHERE symbol = ? AND market_id IN ({marks}) AND {condition}""",
+                [symbol, *chunk, max(1, int(min_units))],
+            ).fetchall())
 
         results = []
         for market_id, buy, sell, supply, demand in rows:
@@ -479,14 +499,16 @@ def sell_cargo(
             return []
         counts = {i["symbol"]: i["count"] for i in items}
         names = {i["symbol"]: i.get("name") or i["symbol"].title() for i in items}
-        marks_m = ",".join("?" for _ in by_id)
         marks_s = ",".join("?" for _ in counts)
-        rows = conn.execute(
-            f"""SELECT market_id, symbol, sell_price, demand FROM commodities
-                WHERE market_id IN ({marks_m}) AND symbol IN ({marks_s})
-                  AND sell_price > 0 AND demand > 0""",
-            [*by_id.keys(), *counts.keys()],
-        ).fetchall()
+        rows = []
+        for chunk in _chunks(by_id.keys()):
+            marks_m = ",".join("?" for _ in chunk)
+            rows.extend(conn.execute(
+                f"""SELECT market_id, symbol, sell_price, demand FROM commodities
+                    WHERE market_id IN ({marks_m}) AND symbol IN ({marks_s})
+                      AND sell_price > 0 AND demand > 0""",
+                [*chunk, *counts.keys()],
+            ).fetchall())
 
         per_station = {}
         for market_id, symbol, sell, demand in rows:
@@ -559,14 +581,16 @@ def mining_advisor(
         if not by_id:
             return {"results": [], "start": start["system"]}
 
-        marks_m = ",".join("?" for _ in by_id)
         marks_s = ",".join("?" for _ in MINEABLES)
-        rows = conn.execute(
-            f"""SELECT market_id, symbol, sell_price, demand FROM commodities
-                WHERE market_id IN ({marks_m}) AND symbol IN ({marks_s})
-                  AND sell_price > 0 AND demand > 0""",
-            [*by_id.keys(), *MINEABLES.keys()],
-        ).fetchall()
+        rows = []
+        for chunk in _chunks(by_id.keys()):
+            marks_m = ",".join("?" for _ in chunk)
+            rows.extend(conn.execute(
+                f"""SELECT market_id, symbol, sell_price, demand FROM commodities
+                    WHERE market_id IN ({marks_m}) AND symbol IN ({marks_s})
+                      AND sell_price > 0 AND demand > 0""",
+                [*chunk, *MINEABLES.keys()],
+            ).fetchall())
         names = marketdb.commodity_display_names(conn, list(MINEABLES.keys()))
 
         best = {}  # symbol -> best-paying station near you

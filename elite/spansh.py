@@ -171,7 +171,28 @@ def riches_route(
 MODULE_RE = None  # compiled lazily
 
 
-def station_search(reference_system, module=None, ship=None, size=20):
+def _stations_search(body, coords=None):
+    """POST to Spansh's station search. Spansh rejects reference systems it
+    doesn't index (fresh discoveries, deep space), so known coordinates are
+    retried as the reference when the named system bounces."""
+    def post(payload):
+        try:
+            return requests.post(f"{BASE}/stations/search", json=payload, headers=HEADERS, timeout=SUBMIT_TIMEOUT)
+        except requests.RequestException as exc:
+            raise SpanshError(f"Could not reach Spansh: {exc}") from exc
+
+    resp = post(body)
+    if resp.status_code >= 400 and coords and len(coords) == 3:
+        body = dict(body)
+        body.pop("reference_system", None)
+        body["reference_coords"] = {"x": coords[0], "y": coords[1], "z": coords[2]}
+        resp = post(body)
+    if resp.status_code >= 400:
+        raise SpanshError(_error_text(resp))
+    return resp.json().get("results") or []
+
+
+def station_search(reference_system, module=None, ship=None, size=20, coords=None):
     """Nearest stations selling a module ('6A Fuel Scoop') or a ship."""
     global MODULE_RE
     import re
@@ -198,13 +219,7 @@ def station_search(reference_system, module=None, ship=None, size=20):
         "page": 0,
         "reference_system": reference_system,
     }
-    try:
-        resp = requests.post(f"{BASE}/stations/search", json=body, headers=HEADERS, timeout=SUBMIT_TIMEOUT)
-    except requests.RequestException as exc:
-        raise SpanshError(f"Could not reach Spansh: {exc}") from exc
-    if resp.status_code >= 400:
-        raise SpanshError(_error_text(resp))
-    results = resp.json().get("results") or []
+    results = _stations_search(body, coords)
     return [
         {
             "station": s.get("name"),
@@ -220,11 +235,7 @@ def station_search(reference_system, module=None, ship=None, size=20):
 
 
 def material_traders(reference_system, kind, size=8, coords=None):
-    """Nearest material traders of one kind ('Raw'|'Manufactured'|'Encoded').
-
-    Spansh's station search rejects reference systems missing from its index
-    (fresh discoveries, deep space), so when coordinates are known they are
-    used as a fallback reference."""
+    """Nearest material traders of one kind ('Raw'|'Manufactured'|'Encoded')."""
     body = {
         "filters": {"material_trader": {"value": [kind.title()]}},
         "sort": [{"distance": {"direction": "asc"}}],
@@ -232,20 +243,6 @@ def material_traders(reference_system, kind, size=8, coords=None):
         "page": 0,
         "reference_system": reference_system,
     }
-
-    def post(payload):
-        try:
-            return requests.post(f"{BASE}/stations/search", json=payload, headers=HEADERS, timeout=SUBMIT_TIMEOUT)
-        except requests.RequestException as exc:
-            raise SpanshError(f"Could not reach Spansh: {exc}") from exc
-
-    resp = post(body)
-    if resp.status_code >= 400 and coords and len(coords) == 3:
-        body.pop("reference_system", None)
-        body["reference_coords"] = {"x": coords[0], "y": coords[1], "z": coords[2]}
-        resp = post(body)
-    if resp.status_code >= 400:
-        raise SpanshError(_error_text(resp))
     return [
         {
             "station": s.get("name"),
@@ -254,7 +251,7 @@ def material_traders(reference_system, kind, size=8, coords=None):
             "dist_ls": s.get("distance_to_arrival"),
             "large_pad": bool(s.get("has_large_pad")),
         }
-        for s in resp.json().get("results") or []
+        for s in _stations_search(body, coords)
     ]
 
 

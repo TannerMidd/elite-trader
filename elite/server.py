@@ -324,6 +324,7 @@ def create_app(state):
                 reference_system=request.args.get("system") or snap.get("system"),
                 module=q if kind == "module" else None,
                 ship=q if kind == "ship" else None,
+                coords=snap.get("star_pos"),
             )
         except spansh.SpanshError as exc:
             return jsonify({"error": str(exc)}), 502
