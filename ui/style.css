@@ -822,6 +822,275 @@ body.panel-mode th, body.panel-mode td { padding: 10px 10px; font-size: 15px; }
 body.panel-mode .linkrow a { padding: 12px 18px; font-size: 14px; }
 body.panel-mode .jumps li, body.panel-mode .cargo-list li { padding: 11px 4px; font-size: 15px; }
 
+/* Cockpit theme for every panel-mode page: the same MFD design language as
+   the status page (orange rails, letter-spaced glowing labels, chunky solid
+   controls) applied to the standard cards the other pages are built from. */
+body.panel-mode main .card {
+  background: linear-gradient(180deg, #101114, #0b0c0f);
+  border: 1px solid #22262d;
+  border-left: 3px solid var(--orange);
+  border-radius: 8px;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .025), 0 4px 18px rgba(0, 0, 0, .4);
+  padding: clamp(12px, 1.8vw, 18px);
+}
+body.panel-mode main .label {
+  color: var(--orange-soft);
+  letter-spacing: 3px;
+  font-size: clamp(11px, 1.5vw, 13px);
+  text-transform: uppercase;
+  border-bottom: 1px solid rgba(255, 113, 0, .28);
+  padding-bottom: 7px;
+  margin-bottom: 10px;
+  text-shadow: 0 0 10px rgba(255, 113, 0, .25);
+}
+body.panel-mode main .label .dim {
+  color: var(--dim);
+  letter-spacing: 1px;
+  text-transform: none;
+  text-shadow: none;
+}
+
+/* Location chrome above the pages: echo the status page's glowing readout */
+body.panel-mode .location .system-row h1 {
+  font-size: clamp(26px, 4.5vw, 40px);
+  text-shadow: 0 0 16px rgba(255, 113, 0, .4);
+}
+body.panel-mode .stat .value {
+  color: var(--orange);
+  font-size: clamp(18px, 2.6vw, 24px);
+  font-weight: 700;
+}
+
+/* Controls: solid MFD buttons and chunky inputs, matching .fp-btn */
+body.panel-mode main button.primary {
+  background: var(--orange);
+  color: #14100a;
+  border: none;
+  border-radius: 6px;
+  font-weight: 800;
+  letter-spacing: 2px;
+  transition: background .15s, transform .08s;
+}
+body.panel-mode main button.primary:active { background: var(--orange-soft); transform: scale(.97); }
+body.panel-mode main button.primary:disabled { background: var(--panel-2); color: var(--dim); }
+body.panel-mode .route-form input,
+body.panel-mode .route-form select,
+body.panel-mode .plot-form input,
+body.panel-mode #market-filter {
+  background: var(--panel-2);
+  border-radius: 6px;
+  font-size: clamp(16px, 2vw, 18px);
+}
+body.panel-mode .route-form label {
+  font-size: clamp(11px, 1.4vw, 12px);
+  letter-spacing: 2px;
+  text-transform: uppercase;
+}
+body.panel-mode .route-form input[type="checkbox"] { width: 24px; height: 24px; }
+body.panel-mode input[type="checkbox"] { accent-color: var(--orange); }
+body.panel-mode .exo-chip { min-height: 44px; padding: 8px 18px; font-size: 15px; }
+
+/* Tables as MFD readouts: spaced uppercase headers over an orange rule */
+body.panel-mode th {
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  font-size: clamp(11px, 1.4vw, 12.5px);
+  border-bottom: 1px solid rgba(255, 113, 0, .35);
+}
+body.panel-mode td { border-bottom-color: #1d2026; }
+body.panel-mode td.num, body.panel-mode .profit, body.panel-mode .profit-cell {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Result cards (.hop), link pills and list rows pick up the cockpit accents */
+body.panel-mode .hop {
+  background: linear-gradient(180deg, #101114, #0b0c0f);
+  padding: 14px 16px;
+}
+body.panel-mode .hop .route-line b { font-size: clamp(16px, 2.2vw, 19px); }
+body.panel-mode .linkrow a {
+  border-radius: 6px;
+  background: var(--panel);
+  color: var(--orange-soft);
+  letter-spacing: 1px;
+  min-height: 46px;
+  display: inline-flex;
+  align-items: center;
+}
+body.panel-mode .guide-item {
+  background: linear-gradient(180deg, #101114, #0b0c0f);
+  border-left: 3px solid var(--orange);
+}
+body.panel-mode .jumps li, body.panel-mode .cargo-list li { border-bottom-color: #1d2026; }
+body.panel-mode .route-summary .profit { font-size: clamp(18px, 2.6vw, 24px); }
+
+/* ---------- arrangement mode: drag cards to reorder ---------- */
+.tab-arrange {
+  margin-left: auto;
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--dim);
+  font-family: inherit;
+  font-size: 11.5px;
+  letter-spacing: 2px;
+  padding: 6px 14px;
+  margin-bottom: 4px;
+  cursor: pointer;
+  transition: color .15s, border-color .15s, background .15s;
+}
+.tab-arrange:hover { color: var(--orange); border-color: var(--orange); }
+.tab-arrange.on { color: var(--orange); border-color: var(--orange); background: rgba(255, 113, 0, .1); }
+
+.fp-arrange {
+  display: none;
+  position: fixed;
+  right: 12px;
+  bottom: 92px;
+  z-index: 31;
+  width: 54px;
+  height: 54px;
+  border-radius: 50%;
+  background: var(--panel-2);
+  border: 1px solid var(--orange);
+  color: var(--orange);
+  font-size: 22px;
+  cursor: pointer;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, .5);
+  touch-action: manipulation;
+}
+body.panel-mode:not(.fp-status-page) .fp-arrange { display: block; }
+.fp-arrange.on { background: var(--orange); color: #14100a; }
+
+body.arranging .tabpane section.card[data-arr] {
+  position: relative;
+  outline: 1px dashed rgba(255, 113, 0, .5);
+  outline-offset: 3px;
+}
+/* While arranging, cards collapse to just their header so even table-heavy
+   pages fit on screen and short drags reorder anything. */
+body.arranging .tabpane section.card[data-arr] > :not(.label):not(.card-head):not(.arr-handle) {
+  display: none !important;
+}
+body.arranging .tabpane section.card[data-arr] {
+  min-height: 62px;
+  padding-right: 130px;   /* keep the header clear of the DRAG handle */
+}
+body.arranging .tabpane section.card[data-arr] .label { margin-bottom: 0; border-bottom: none; }
+body.arranging .tabpane section.card[data-arr] .card-head { margin-bottom: 0; }
+body.arranging .tabpane section.card[data-arr] .card-head input,
+body.arranging .tabpane section.card[data-arr] .card-head select,
+body.arranging .tabpane section.card[data-arr] .card-head button { display: none; }
+body.arranging .two-col {
+  grid-template-columns: 1fr;
+  gap: 8px;
+  outline: 1px dashed rgba(255, 154, 64, .35);
+  outline-offset: 6px;
+  border-radius: 8px;
+}
+.arr-handle {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 5;
+  min-height: 44px;
+  padding: 8px 16px;
+  border-radius: 6px;
+  background: var(--orange);
+  color: #14100a;
+  border: none;
+  font-weight: 800;
+  font-size: 13px;
+  letter-spacing: 1px;
+  cursor: grab;
+  touch-action: none;   /* the handle drags the card, never scrolls the page */
+  user-select: none;
+}
+.arr-handle:active { cursor: grabbing; }
+section.card.arr-drag {
+  outline: 2px solid var(--orange) !important;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, .6), 0 0 22px rgba(255, 113, 0, .25);
+  opacity: .92;
+}
+
+/* ---------- in-app release notes ---------- */
+.notes-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 70;
+  background: rgba(0, 0, 0, .62);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  animation: pane-in .18s var(--ease);
+}
+.notes-box {
+  background: var(--panel);
+  border: 1px solid var(--border-bright);
+  border-top: 3px solid var(--orange);
+  border-radius: 10px;
+  max-width: 720px;
+  width: 100%;
+  max-height: 84vh;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 18px 60px rgba(0, 0, 0, .6);
+}
+.notes-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 18px 10px;
+  border-bottom: 1px solid var(--border);
+}
+.notes-head b { color: var(--orange); font-size: 16px; }
+.notes-head .copy { min-width: 34px; min-height: 34px; font-size: 15px; }
+.notes-body { padding: 6px 18px 12px; overflow-y: auto; font-size: 14px; line-height: 1.55; }
+.notes-body h3, .notes-body h4, .notes-body h5 { color: var(--orange-soft); margin: 14px 0 4px; }
+.notes-body ul { margin: 6px 0; padding-left: 22px; }
+.notes-body li { margin: 3px 0; }
+.notes-body p { margin: 8px 0; }
+.notes-body code {
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 1px 5px;
+  font-size: 12.5px;
+}
+.notes-body blockquote {
+  margin: 8px 0;
+  padding: 6px 12px;
+  border-left: 3px solid var(--orange);
+  background: var(--panel-2);
+  color: var(--dim);
+  border-radius: 0 6px 6px 0;
+}
+.notes-body hr { border: none; border-top: 1px solid var(--border); margin: 12px 0; }
+.notes-body a { color: var(--orange-soft); }
+.notes-foot { padding: 10px 18px 14px; border-top: 1px solid var(--border); }
+.notes-foot a { color: var(--orange-soft); text-decoration: none; }
+.notes-foot a:hover { color: var(--orange); }
+
+/* ---------- journal folder setting ---------- */
+.setting-journal { flex-direction: column; align-items: stretch; gap: 8px; }
+.journal-dir-row { display: flex; gap: 8px; }
+.journal-dir-row input {
+  flex: 1;
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text);
+  padding: 9px 12px;
+  font-size: 13.5px;
+  font-family: Consolas, monospace;
+}
+.journal-dir-row input:focus { outline: none; border-color: var(--orange); box-shadow: var(--focus-ring); }
+.journal-dir-status { font-size: 12.5px; }
+.journal-dir-status.error { color: var(--bad); }
+.banner-settings-btn { margin-left: 8px; font-weight: 700; }
+
 #flight-panel {
   min-height: 100vh;
   padding: clamp(12px, 3vw, 32px);

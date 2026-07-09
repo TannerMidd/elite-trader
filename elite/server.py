@@ -500,6 +500,23 @@ def create_app(state):
         body = request.get_json(silent=True) or {}
         return jsonify({"settings": settings.update(body)})
 
+    @app.get("/api/journal-dir/validate")
+    def api_journal_dir_validate():
+        """Live validation for the journal-folder setting. Empty path = show
+        what auto-detection (env var included) would resolve to."""
+        from pathlib import Path
+
+        from . import journal
+
+        raw = (request.args.get("path") or "").strip()
+        auto = not raw
+        path = Path(raw) if raw else journal.find_journal_dir()
+        exists = path.is_dir()
+        files = len(journal.journal_files(path)) if exists else 0
+        resp = jsonify({"path": str(path), "auto": auto, "exists": exists, "files": files})
+        resp.headers["Cache-Control"] = "no-store"
+        return resp
+
     @app.post("/api/plot")
     def api_plot():
         body = request.get_json(silent=True) or {}

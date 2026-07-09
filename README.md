@@ -20,6 +20,29 @@ tablet over your home network.
 
 </div>
 
+## Standing on the shoulders of the community ❤️
+
+None of this would be possible without the people and projects that keep Elite
+Dangerous' third-party ecosystem alive. Elite Trader is a consumer of their
+work, and they deserve the credit first:
+
+- **[EDDN](https://github.com/EDCD/EDDN)** (Elite Dangerous Data Network) — the
+  community's live market-data relay. Every fresh price in this app arrives via
+  EDDN, and the app **contributes back**: markets you dock at are published to
+  the network (the same way EDMC does), keeping it alive for everyone.
+- **[Spansh](https://spansh.co.uk)** — the daily galaxy dumps that seed the
+  local market database, the route-planning APIs behind the neutron plotter,
+  Road to Riches and the exobiology route, and the community body data that
+  shows you what's on a planet before you land.
+- **[Inara](https://inara.cz)** — the encyclopedia of the galaxy; pre-filled
+  links throughout the app and the engineering references in the guides.
+- **[EDSM](https://www.edsm.net)** — system data links.
+- **[EDCD](https://edcd.github.io/)** — the community developer collective whose
+  schemas and conventions make interoperability possible.
+
+Not affiliated with Frontier Developments. Elite Dangerous is a trademark of
+Frontier Developments plc.
+
 ## What it does
 
 ### 🔁 Trade loops, ranked by profit per hour
@@ -66,7 +89,9 @@ A curated hub of routes, planners and references:
   landable, low-gravity worlds packed with high-value biology (Stratum
   Tectonicas and friends), ranked by distance with an estimated payout, the
   genera on each body, and one-tap plot + route tracking. Location-aware, so it
-  works from wherever you are — not a fixed list.
+  works from wherever you are — not a fixed list. **Filter by genus** with one
+  tap (chips for Stratum, Bacterium, Osseus, …) and the route only returns
+  worlds hosting what you're farming.
 - **Road to Riches** — high-value scan/mapping targets near you in visit order.
 - **Neutron highway plotter** for long-range travel.
 - **Reference guides** — quick pointers to engineering unlocks, material traders,
@@ -149,16 +174,27 @@ readout, fuel and cargo gauges, credits/legal/exploration tiles, recent jumps as
 big tap-to-replot buttons and a one-line route plotter. **Everything from the
 standard mode is still there** — a fixed bottom touch bar (or swiping left/right,
 with the page sliding under your finger) moves between Status, Trade, Market,
-Explore, Guides, Stats, Local and Database pages, all rescaled for fingers. A
-**one-tap "best loop from here"** finds the top trade loops around you without
-touching a single form field, and optional **voice callouts** speak vital
-warnings — fuel-scoop and low-fuel alerts along your plotted route (so a dry
-stretch of non-scoopable stars never strands you), interdictions, hull damage,
-first-discovery systems — plus route confirmations and waypoint arrivals, for a
-display you're not looking at. Goes fullscreen where the browser allows; remembers the mode and
-page per device.
+Explore, Guides, Stats, Local and Database pages — and **every page is themed as
+a cockpit MFD**: orange rails, glowing letter-spaced readout labels, chunky
+solid controls and touch-sized tables, so the whole app looks like it belongs on
+your dashboard, not just the status screen. A **one-tap "best loop from here"**
+finds the top trade loops around you without touching a single form field, and
+optional **voice callouts** speak vital warnings — fuel-scoop and low-fuel
+alerts along your plotted route (so a dry stretch of non-scoopable stars never
+strands you), interdictions, hull damage, first-discovery systems — plus route
+confirmations and waypoint arrivals, for a display you're not looking at. Goes
+fullscreen where the browser allows; remembers the mode and page per device.
 
 <div align="center"><img src="docs/screenshots/flight-panel.png" alt="Flight panel mode on a tablet" width="700"></div>
+
+### 🧩 Arrange mode — make every page yours
+
+Tap **⇅ ARRANGE** (next to the tabs, or the floating ⇅ button in panel mode)
+and every card collapses to a compact header with a drag handle: drag them into
+whatever order suits how you play — bio signals on top of Explore, jump history
+first in Local, whatever you like. Works with touch or mouse, in both normal and
+panel mode, and each page's layout is **remembered per device**, so the tablet
+at your flight station and your desktop can be arranged differently.
 
 ### 🚀 Live ship & local data
 
@@ -191,8 +227,16 @@ Allow the Windows Firewall prompt on **Private networks** if you want LAN access
 Prefer no Python at all? Grab **`EliteTrader.exe`** from the
 [Releases](../../releases) page, or build it yourself with `build_exe.bat`.
 The exe keeps its database in a `data\` folder next to itself, and **updates
-itself** — when a new release ships it offers a one-click "Update & restart"
-(checksum-verified; set `ET_AUTO_UPDATE=0` to opt out).
+itself** — when a new release ships it offers a one-click "Update & restart",
+with the **release notes readable right in the app** before you apply
+(checksum-verified; opt out in Settings or with `ET_AUTO_UPDATE=0`).
+
+**Journal detection is automatic** — including a relocated `Saved Games`
+folder (resolved via the Windows known-folder API). If it still can't find your
+journals, a banner points you to **Settings → Journal folder**, where you can
+paste a path with live validation; it takes effect immediately, no restart. If
+the folder doesn't exist yet (game not run since install), the app picks it up
+by itself the moment it appears.
 
 ## Quick start (Linux / Steam Deck)
 
@@ -209,8 +253,9 @@ Then open the printed URL in any browser (same machine or LAN). Notes:
 
 - **Journals and bindings are auto-detected** inside the Proton prefix
   (`~/.local/share/Steam/steamapps/compatdata/359320/pfx/...` and the `~/.steam`
-  variants). If your Steam library lives elsewhere, point `ED_JOURNAL_DIR` at the
-  journal folder inside the prefix.
+  variants). If your Steam library lives elsewhere, set the journal folder in
+  **Settings → Journal folder** (live-validated, no restart) or point
+  `ED_JOURNAL_DIR` at it.
 - **Headless + browser is the recommended mode.** The desktop window works too,
   but pywebview needs GTK/WebKit system packages
   (e.g. Debian/Ubuntu: `sudo apt install python3-gi gir1.2-gtk-3.0 gir1.2-webkit2-4.1`).
@@ -244,11 +289,15 @@ game refuses it).
 
 ## Configuration
 
+Day-to-day options live in the app: **Settings** (Database tab) covers the
+journal folder, EDDN contribution, fleet-carrier/surface filtering and auto
+updates — all applied immediately. Environment variables remain for the rest:
+
 | Env var          | Meaning                          | Default |
 |------------------|----------------------------------|---------|
 | `ET_PORT`        | HTTP port                        | `8666`  |
 | `ET_DATA_DIR`    | Database folder                  | `data/` next to the app |
-| `ED_JOURNAL_DIR` | Journal folder override          | auto-detected (Windows / Proton) |
+| `ED_JOURNAL_DIR` | Journal folder override          | auto-detected; the in-app setting wins |
 | `ED_BINDINGS_DIR`| Key bindings folder override     | auto-detected (Windows / Proton) |
 | `ED_PLOT_KEY`    | Autoplot hold-key override       | `UI_Select` bind, then Enter |
 
@@ -270,10 +319,7 @@ the internet.
 
 ## Data sources & credits
 
-- **[EDDN](https://github.com/EDCD/EDDN)** — the community's live market data
-  relay; this app is a consumer.
-- **[Spansh](https://spansh.co.uk)** — daily galaxy dumps used to seed the
-  database, and the fallback route API.
-- Links to **[Inara](https://inara.cz)** and **[EDSM](https://www.edsm.net)**.
-- Not affiliated with Frontier Developments. Elite Dangerous is a trademark of
-  Frontier Developments plc.
+See [Standing on the shoulders of the community](#standing-on-the-shoulders-of-the-community-%EF%B8%8F)
+at the top — EDDN, Spansh, Inara, EDSM and EDCD make this app possible.
+Not affiliated with Frontier Developments. Elite Dangerous is a trademark of
+Frontier Developments plc.

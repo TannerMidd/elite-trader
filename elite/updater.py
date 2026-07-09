@@ -146,6 +146,8 @@ class Updater:
             "latest": None,
             "available": False,
             "notes_url": f"https://github.com/{REPO}/releases/latest",
+            "notes": None,        # release body (markdown) for the in-app viewer
+            "notes_title": None,
             "size": None,
             "supported": is_supported(),
             "error": None,
@@ -161,6 +163,8 @@ class Updater:
                               if a.get("name") == ASSET_NAME), None)
                 result["latest"] = tag.lstrip("vV") or None
                 result["notes_url"] = data.get("html_url") or result["notes_url"]
+                result["notes"] = data.get("body") or None
+                result["notes_title"] = data.get("name") or tag or None
                 if asset:
                     result["size"] = asset.get("size")
                     result["_download_url"] = asset.get("browser_download_url")

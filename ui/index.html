@@ -27,6 +27,19 @@
 <div id="flight-toast" class="flight-toast hidden"></div>
 <div id="alert-strip" class="alert-strip hidden"></div>
 <div id="update-banner" class="update-banner hidden"></div>
+
+<div id="notes-modal" class="notes-modal hidden" role="dialog" aria-modal="true" aria-labelledby="notes-title">
+  <div class="notes-box">
+    <div class="notes-head">
+      <b id="notes-title">Release notes</b>
+      <button id="notes-close" class="copy" title="Close" aria-label="Close">✕</button>
+    </div>
+    <div id="notes-body" class="notes-body"></div>
+    <div class="notes-foot">
+      <a id="notes-external" class="extlink" target="_blank" rel="noopener">Open on GitHub ↗</a>
+    </div>
+  </div>
+</div>
 <div id="route-progress" class="route-progress hidden"></div>
 
 <div id="flight-panel" class="hidden">
@@ -83,6 +96,8 @@
   <div id="fp-loop-results" class="fp-loops"></div>
 </div>
 
+<button id="fp-arrange" class="fp-arrange" title="Drag cards to reorder this page; the layout is remembered on this device" aria-pressed="false">⇅</button>
+
 <nav id="fp-nav" aria-label="Flight panel pages">
   <button data-page="status" class="active">STATUS</button>
   <button data-page="trade">TRADE</button>
@@ -130,10 +145,11 @@
     <button class="tab" data-tab="analytics">ANALYTICS</button>
     <button class="tab" data-tab="local">LOCAL</button>
     <button class="tab" data-tab="database">DATABASE</button>
+    <button class="tab-arrange" id="arrange-btn" title="Drag cards to reorder this page; the layout is remembered on this device" aria-pressed="false">⇅ ARRANGE</button>
   </nav>
 
   <div class="tabpane" id="tab-trade">
-    <section class="card">
+    <section class="card" data-arr="routes">
       <div class="card-head">
         <div class="label">TRADE ROUTES <span class="dim">computed locally · live EDDN prices · ranked by profit/hour</span></div>
       </div>
@@ -165,7 +181,7 @@
   </div>
 
   <div class="tabpane hidden" id="tab-commodities">
-    <section class="card" id="mining-card">
+    <section class="card" id="mining-card" data-arr="mining">
       <div class="label">MINING <span class="dim">what's worth mining near you now · best sell price from live data · tap ◇ for nearest hotspots</span></div>
       <form id="mining-form" class="route-form">
         <label>Radius (ly) <input type="number" id="mn-radius" min="1" value="50"></label>
@@ -188,7 +204,7 @@
       </div>
     </section>
 
-    <section class="card">
+    <section class="card" data-arr="comsearch">
       <div class="label">COMMODITY SEARCH <span class="dim">local database · where to buy or sell near you</span></div>
       <form id="cs-form" class="route-form">
         <label>Commodity
@@ -220,7 +236,7 @@
       </div>
     </section>
 
-    <section class="card">
+    <section class="card" data-arr="outfitting">
       <div class="label">OUTFITTING &amp; SHIPYARDS <span class="dim">nearest stations selling a module or ship · via Spansh</span></div>
       <form id="os-form" class="route-form">
         <label>Search for
@@ -245,31 +261,7 @@
   </div>
 
   <div class="tabpane hidden" id="tab-bio">
-    <section class="card">
-      <div class="card-head">
-        <div class="label">EXPLORATION DATA <span class="dim">unsold cartographic value · estimates; first discovery ×2.6, mapping ×3.3</span></div>
-        <div class="value orange" id="explo-total"></div>
-      </div>
-      <div class="commodities" id="explo-summary"></div>
-      <ul id="explo-top" class="cargo-list"></ul>
-      <div id="explo-empty" class="dim empty">No unsold scans — FSS some bodies and this fills in.</div>
-    </section>
-
-    <section class="card hidden" id="bio-sampling-card">
-      <div class="label">SAMPLING IN PROGRESS</div>
-      <div id="bio-sampling"></div>
-    </section>
-
-    <section class="card">
-      <div class="card-head">
-        <div class="label">UNSOLD SAMPLES <span class="dim">estimated Vista Genomics value · first footfall pays 5×</span></div>
-        <div class="value orange" id="bio-vault-total"></div>
-      </div>
-      <ul id="bio-vault" class="cargo-list"></ul>
-      <div id="bio-vault-empty" class="dim empty">No completed samples on board.</div>
-    </section>
-
-    <section class="card">
+    <section class="card" data-arr="biosignals">
       <div class="label">BIO SIGNALS — CURRENT SYSTEM <span class="dim">◇ = genuses others already mapped (Spansh) · map a body yourself (DSS) to confirm · values are estimates</span></div>
       <div class="table-wrap">
         <table id="bio-table" class="hidden">
@@ -284,12 +276,36 @@
         <div id="bio-empty" class="dim empty">No biological signals detected in this system yet — honk (FSS discovery scan) and scan bodies to populate this.</div>
       </div>
     </section>
+
+    <section class="card hidden" id="bio-sampling-card" data-arr="sampling">
+      <div class="label">SAMPLING IN PROGRESS</div>
+      <div id="bio-sampling"></div>
+    </section>
+
+    <section class="card" data-arr="explodata">
+      <div class="card-head">
+        <div class="label">EXPLORATION DATA <span class="dim">unsold cartographic value · estimates; first discovery ×2.6, mapping ×3.3</span></div>
+        <div class="value orange" id="explo-total"></div>
+      </div>
+      <div class="commodities" id="explo-summary"></div>
+      <ul id="explo-top" class="cargo-list"></ul>
+      <div id="explo-empty" class="dim empty">No unsold scans — FSS some bodies and this fills in.</div>
+    </section>
+
+    <section class="card" data-arr="vault">
+      <div class="card-head">
+        <div class="label">UNSOLD SAMPLES <span class="dim">estimated Vista Genomics value · first footfall pays 5×</span></div>
+        <div class="value orange" id="bio-vault-total"></div>
+      </div>
+      <ul id="bio-vault" class="cargo-list"></ul>
+      <div id="bio-vault-empty" class="dim empty">No completed samples on board.</div>
+    </section>
   </div>
 
   <div class="tabpane hidden" id="tab-guides">
     <div class="guides-intro dim">Curated routes, planners and references. Everything below is one tap from plotting in the galaxy map.</div>
 
-    <section class="card" id="exobio-card">
+    <section class="card" id="exobio-card" data-arr="exobio">
       <div class="label">⬡ EXOBIOLOGY ROUTE <span class="dim">the live "Billionaire's Boulevard" — nearest landable, low-gravity worlds packed with high-value biology · via Spansh</span></div>
       <form id="exo-form" class="route-form">
         <label title="Lower gravity = easier to land and drive the SRV">Max gravity (g) <input type="number" id="exo-grav" min="0.1" max="2" step="0.05" value="0.5"></label>
@@ -304,7 +320,7 @@
       <div id="exo-results"></div>
     </section>
 
-    <section class="card">
+    <section class="card" data-arr="riches">
       <div class="label">ROAD TO RICHES <span class="dim">high-value scan/mapping targets near you · via Spansh</span></div>
       <form id="rr-form" class="route-form">
         <label>Jump range (ly) <input type="number" id="rr-range" min="1" step="any"></label>
@@ -318,7 +334,7 @@
       <div id="rr-results"></div>
     </section>
 
-    <section class="card">
+    <section class="card" data-arr="neutron">
       <div class="label">NEUTRON PLOTTER <span class="dim">long-range travel via neutron highway · via Spansh</span></div>
       <form id="nr-form" class="route-form">
         <label>Destination <input type="text" id="nr-to" placeholder="e.g. Colonia" autocomplete="off"></label>
@@ -335,7 +351,7 @@
       </div>
     </section>
 
-    <section class="card">
+    <section class="card" data-arr="refguides">
       <div class="label">REFERENCE GUIDES <span class="dim">the community's best resources, one click away</span></div>
       <div class="guide-grid">
         <div class="guide-item">
@@ -361,7 +377,7 @@
       </div>
     </section>
 
-    <section class="card">
+    <section class="card" data-arr="builds">
       <div class="label">SHIP BUILDS <span class="dim">starting points by role · open in a ship builder</span></div>
       <div class="guide-grid">
         <div class="guide-item">
@@ -400,7 +416,7 @@
   </div>
 
   <div class="tabpane hidden" id="tab-analytics">
-    <section class="card" id="session-card">
+    <section class="card" id="session-card" data-arr="session">
       <div class="card-head">
         <div class="label">THIS SESSION <span class="dim" id="session-since"></span></div>
         <div class="value good" id="session-crhr">—</div>
@@ -415,13 +431,13 @@
       </div>
     </section>
 
-    <section class="card">
+    <section class="card" data-arr="earnings">
       <div class="label">EARNINGS BY SOURCE <span class="dim">all income this period · trade profit + missions, bounties, exploration &amp; exobiology</span></div>
       <div id="earnings-breakdown" class="earnings"></div>
       <div id="earnings-empty" class="dim empty">No earnings recorded in this period yet.</div>
     </section>
 
-    <section class="card">
+    <section class="card" data-arr="trading">
       <div class="card-head">
         <div class="label">TRADING PERFORMANCE <span class="dim">from your journal history · sell profit = sale − average paid</span></div>
         <select id="an-days">
@@ -438,15 +454,15 @@
         <div class="stat"><div class="label">TONS SOLD</div><div class="value" id="an-tons">—</div></div>
       </div>
     </section>
-    <section class="card">
+    <section class="card" data-arr="balance">
       <div class="label">CREDIT BALANCE OVER TIME</div>
       <div class="chart-wrap"><svg id="an-balance" width="100%" height="220"></svg></div>
     </section>
-    <section class="card">
+    <section class="card" data-arr="daily">
       <div class="label">DAILY TRADING PROFIT</div>
       <div class="chart-wrap"><svg id="an-daily" width="100%" height="200"></svg></div>
     </section>
-    <section class="card">
+    <section class="card" data-arr="topcomm">
       <div class="label">TOP COMMODITIES BY PROFIT</div>
       <div class="table-wrap">
         <table id="an-top" class="hidden">
@@ -459,7 +475,7 @@
   </div>
 
   <div class="tabpane hidden" id="tab-local">
-    <section class="card" id="missions-card">
+    <section class="card" id="missions-card" data-arr="missions">
       <div class="card-head">
         <div class="label">ACTIVE MISSIONS <span class="dim">from your journal · red = expiring soon · ⚠ = cargo not aboard</span></div>
         <div class="value orange" id="missions-count"></div>
@@ -468,12 +484,12 @@
       <div id="missions-empty" class="dim empty">No active missions — accept some at a station's mission board and they'll show here.</div>
     </section>
 
-    <section class="card hidden" id="colonisation-card">
+    <section class="card hidden" id="colonisation-card" data-arr="colonisation">
       <div class="label">COLONIZATION PROJECTS <span class="dim">construction depots you've visited · what's still needed and where to buy it</span></div>
       <div id="colonisation-list"></div>
     </section>
-    <div class="two-col">
-      <section class="card">
+    <div class="two-col" data-arr="marketjumps">
+      <section class="card" data-arr="market">
         <div class="card-head">
           <div class="label" id="market-title">STATION MARKET</div>
           <input type="search" id="market-filter" placeholder="filter…">
@@ -495,7 +511,7 @@
         </div>
       </section>
 
-      <section class="card">
+      <section class="card" data-arr="jumpscargo">
         <div class="label">JUMP HISTORY</div>
         <ul id="jumps" class="jumps"></ul>
         <div id="jumps-empty" class="dim empty">No jumps recorded yet this session.</div>
@@ -510,7 +526,7 @@
       </section>
     </div>
 
-    <section class="card" id="materials-card">
+    <section class="card" id="materials-card" data-arr="materials">
       <div class="card-head">
         <div class="label">ENGINEERING MATERIALS <span class="dim">raw · manufactured · encoded · from your journal</span></div>
         <div class="value dim" id="materials-total"></div>
@@ -521,7 +537,7 @@
   </div>
 
   <div class="tabpane hidden" id="tab-database">
-    <section class="card">
+    <section class="card" data-arr="marketdb">
       <div class="card-head">
         <div class="label">MARKET DATABASE <span class="dim">local trade data · seeded from Spansh dump · live-updated by EDDN</span></div>
         <button id="seed-btn" class="primary small">BUILD DATABASE (~3.9 GB download)</button>
@@ -530,7 +546,7 @@
       <div class="seedbar hidden" id="seed-bar"><div id="seed-fill"></div></div>
     </section>
 
-    <section class="card" id="settings-card">
+    <section class="card" id="settings-card" data-arr="settings">
       <div class="label">SETTINGS <span class="dim">saved on this machine · changes take effect immediately</span></div>
       <div id="settings-list" class="settings-list"></div>
       <div id="settings-info" class="dim settings-info"></div>

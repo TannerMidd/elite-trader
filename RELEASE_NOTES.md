@@ -1,31 +1,37 @@
-## Elite Trader v1.8.0 — vital voice callouts (fuel scooping & more)
+## Elite Trader v1.9.0 — cockpit everywhere, arrange mode & painless setup
 
-Voice callouts now warn you about the things that actually end deep-space trips.
-Toggle them with **🔊 VOICE** in the flight panel; every callout also flashes a
-banner or toast so it works with sound off.
+### 🖥️ Every flight-panel page is a cockpit display now
+Panel mode used to look right only on the status screen. Now all eight pages
+share the same MFD design language — orange rails, glowing letter-spaced
+labels, solid chunky controls, touch-sized tables — so the whole app looks like
+it belongs on your dashboard.
 
-### ⛽ Fuel-scoop planning along your route
-The app reads your plotted route (NavRoute) and each star's class, learns your
-real fuel-per-jump from your last jumps, and watches for the classic strander —
-a run of non-scoopable stars (brown/white dwarfs, neutron stars…) your tank
-can't clear:
+### 🧩 Arrange mode
+Tap **⇅ ARRANGE** (next to the tabs, or the floating ⇅ in panel mode) and every
+card collapses to a compact header with a drag handle. Drag pages into the
+order that suits how you play — bio signals on top of Explore, jump history
+first in Local. Layouts are remembered **per page, per device**. (Explore now
+defaults to bio signals first, too.)
 
-- **"Scoop now"** (critical) — you're sitting on a fuel star but the *next* one
-  is farther than your fuel can reach. Top off before you leave.
-- **"Top off, N dry jumps ahead"** — leaving a scoopable star into a stretch
-  with no fuel stars.
-- **"Strand risk / no fuel star ahead"** — already low with no reachable
-  scoopable star; time to replot.
-- **Low-fuel** warning at 25% (route or not). Quiet while docked.
+### 🛠️ Journal setup that just works
+- Auto-detection now resolves a **relocated Saved Games folder** via the
+  Windows known-folder API.
+- New **Settings → Journal folder** field with live validation ("✓ 60 journal
+  files found") — applies immediately, no restart, no environment variables.
+- If the folder doesn't exist yet (app installed before the game's first run),
+  the app **recovers by itself** the moment it appears.
+- The "journal not found" banner now has an **OPEN SETTINGS** button instead of
+  telling you to set an env var.
 
-Scoopable = the KGB-FOAM classes (O B A F G K M) plus proto-stars.
+### 📄 Release notes in the app
+Clicking **release notes** on the update banner now opens the notes right in
+the app instead of your browser (this text you're reading, for instance).
 
-### 🚨 Other vital callouts
-- **Interdiction** — "Interdiction detected. Evade or submit." the instant
-  you're pulled from supercruise.
-- **Hull damage** — spoken at 75% / 50% / 25% as your hull drops.
-- **First discovery** — "…is undiscovered." when you jump into a system no
-  commander has scanned before.
+### 🐛 Fixes
+- **SRV / Nomad no longer triggers false "low fuel" callouts** — Status.json
+  reports the vehicle's tiny tank while you're driving; the app now keeps the
+  ship's reading until you're back aboard (fixes the fuel gauge during SRV
+  trips as well).
 
 ---
 

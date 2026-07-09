@@ -3,6 +3,7 @@ session logs, then tails the newest journal + Status/Cargo/Market json files."""
 
 import json
 import os
+import sys
 import threading
 import time
 from pathlib import Path
@@ -25,8 +26,42 @@ _PROTON_SUFFIX = (
 )
 
 
+def _windows_saved_games():
+    """The real 'Saved Games' known folder via the shell API. Users can relocate
+    it (small C: drives); Path.home()/'Saved Games' misses that."""
+    if sys.platform != "win32":
+        return None
+    try:
+        import ctypes
+        from ctypes import wintypes
+
+        class GUID(ctypes.Structure):
+            _fields_ = [
+                ("Data1", wintypes.DWORD), ("Data2", wintypes.WORD),
+                ("Data3", wintypes.WORD), ("Data4", ctypes.c_ubyte * 8),
+            ]
+
+        # FOLDERID_SavedGames {4C5C32FF-BB9D-43B0-B5B4-2D72E54EAAA4}
+        folder_id = GUID(0x4C5C32FF, 0xBB9D, 0x43B0,
+                         (ctypes.c_ubyte * 8)(0xB5, 0xB4, 0x2D, 0x72, 0xE5, 0x4E, 0xAA, 0xA4))
+        path_ptr = ctypes.c_wchar_p()
+        res = ctypes.windll.shell32.SHGetKnownFolderPath(
+            ctypes.byref(folder_id), 0, None, ctypes.byref(path_ptr))
+        if res != 0:
+            return None
+        try:
+            return Path(path_ptr.value) / "Frontier Developments" / "Elite Dangerous"
+        finally:
+            ctypes.windll.ole32.CoTaskMemFree(path_ptr)
+    except Exception:
+        return None
+
+
 def _candidate_journal_dirs():
-    yield DEFAULT_JOURNAL_DIR  # native Windows
+    known = _windows_saved_games()  # honors a relocated Saved Games folder
+    if known:
+        yield known
+    yield DEFAULT_JOURNAL_DIR  # native Windows, default profile layout
     home = Path.home()
     for steam_root in (  # Linux: Steam Proton prefixes
         home / ".local/share/Steam",
@@ -47,6 +82,13 @@ def _clean_name(raw):
 
 
 def find_journal_dir():
+    """Precedence: the in-app setting, the ED_JOURNAL_DIR env var, then
+    auto-detection (known-folder Saved Games, default path, Proton prefixes)."""
+    from . import settings
+
+    manual = (settings.get("journal_dir") or "").strip()
+    if manual:
+        return Path(manual)
     override = os.environ.get("ED_JOURNAL_DIR")
     if override:
         return Path(override)
@@ -64,6 +106,7 @@ def journal_files(journal_dir):
 class JournalWatcher:
     def __init__(self, state, journal_dir=None):
         self.state = state
+        self._fixed_dir = journal_dir is not None  # explicit dir: never re-detect
         self.journal_dir = Path(journal_dir) if journal_dir else find_journal_dir()
         self._current_file = None
         self._offset = 0
@@ -737,6 +780,7 @@ class JournalWatcher:
         if not self.journal_dir.is_dir():
             self.state.update(journal_dir_found=False)
             return
+        self.state.update(journal_dir_found=True)
         files = journal_files(self.journal_dir)
         if not files:
             return
@@ -882,6 +926,33 @@ class JournalWatcher:
             finally:
                 conn.close()
 
+    def _ensure_journal_dir(self):
+        """Recover from a missing or changed journal folder without a restart:
+        re-resolve (the in-app setting may have changed, or the game's first
+        launch may have just created the folder) and re-bootstrap on a switch."""
+        if self._fixed_dir:
+            return
+        desired = find_journal_dir()
+        changed = desired != self.journal_dir
+        appeared = not self.state.journal_dir_found and self.journal_dir.is_dir()
+        if not changed and not appeared:
+            return
+        if changed:
+            if not desired.is_dir():
+                self.state.update(journal_dir_found=False)
+                self.journal_dir = desired  # keep watching; recovers if created
+                return
+            self.journal_dir = desired
+        self._live = False
+        self._status_mtimes = {}
+        self.bootstrap()
+        try:
+            self.import_trade_history()
+        except Exception:
+            pass
+        self._live = True
+        self._fetch_community_bio(self.state.system_address, self.state.system)
+
     def run_forever(self):
         self.bootstrap()
         try:
@@ -894,6 +965,7 @@ class JournalWatcher:
         self._fetch_community_bio(self.state.system_address, self.state.system)
         while True:
             try:
+                self._ensure_journal_dir()
                 self._poll_journal()
                 self._refresh_status_files()
             except Exception:

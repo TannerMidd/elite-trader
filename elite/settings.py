@@ -16,6 +16,7 @@ DEFAULTS = {
     "auto_update": os.environ.get("ET_AUTO_UPDATE", "1") != "0",
     "exclude_carriers": True,   # keep fleet carriers out of routes/searches
     "exclude_surface": False,   # keep planetary/settlement stations out
+    "journal_dir": "",          # manual journal folder; "" = auto-detect
 }
 
 _lock = threading.Lock()

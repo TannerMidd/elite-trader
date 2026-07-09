@@ -225,6 +225,7 @@ function initPanelNav() {
   document.addEventListener("touchstart", (ev) => {
     gesture = null;
     if (!document.body.classList.contains("panel-mode") || ev.touches.length !== 1) return;
+    if (document.body.classList.contains("arranging")) return;  // dragging cards, not pages
     if (ev.target.closest(".table-wrap, input, select, textarea")) return;
     startX = ev.touches[0].clientX;
     startY = ev.touches[0].clientY;
@@ -253,6 +254,104 @@ function initPanelNav() {
     if (Math.abs(dx) > 70) panelSwipe(dx);
   }, { passive: true });
   document.addEventListener("touchcancel", endDrag, { passive: true });
+}
+
+/* ---------- arrangement mode: drag cards to reorder any page ---------- */
+/* Card order is saved per tab (and per device) as a flat list of data-arr
+   keys. Cards reorder only among themselves within their container, so fixed
+   chrome (intro text, grids) keeps its place. */
+
+const arrKey = (el) => el.dataset.arr || "";
+
+function arrContainers(pane) {
+  return [pane, ...pane.querySelectorAll(".two-col")];
+}
+
+function applyCardOrders() {
+  document.querySelectorAll(".tabpane").forEach((pane) => {
+    let saved;
+    try { saved = JSON.parse(localStorage.getItem("cardOrder:" + pane.id)); } catch { return; }
+    if (!Array.isArray(saved) || !saved.length) return;
+    for (const container of arrContainers(pane)) {
+      // Orderable units: keyed cards and keyed grid blocks (.two-col).
+      const units = [...container.children].filter((el) => arrKey(el));
+      if (units.length < 2) continue;
+      // Re-place sorted units into the same DOM slots so unkeyed siblings stay put.
+      const slots = units.map(() => document.createComment("card-slot"));
+      units.forEach((el, i) => container.replaceChild(slots[i], el));
+      const pos = (el) => { const i = saved.indexOf(arrKey(el)); return i === -1 ? 1e9 : i; };
+      const sorted = [...units].sort((a, b) => pos(a) - pos(b));
+      slots.forEach((slot, i) => container.replaceChild(sorted[i], slot));
+    }
+  });
+}
+
+function saveCardOrder(pane) {
+  const keys = [...pane.querySelectorAll("[data-arr]")].map(arrKey);
+  localStorage.setItem("cardOrder:" + pane.id, JSON.stringify(keys));
+}
+
+function setArrangeMode(on) {
+  document.body.classList.toggle("arranging", on);
+  for (const btn of [$("arrange-btn"), $("fp-arrange")]) {
+    if (!btn) continue;
+    btn.classList.toggle("on", on);
+    btn.setAttribute("aria-pressed", String(on));
+  }
+  $("arrange-btn").textContent = on ? "✓ DONE" : "⇅ ARRANGE";
+  document.querySelectorAll(".arr-handle").forEach((h) => h.remove());
+  if (!on) return;
+  document.querySelectorAll(".tabpane section.card[data-arr]").forEach((card) => {
+    const h = document.createElement("button");
+    h.type = "button";
+    h.className = "arr-handle";
+    h.textContent = "⠿ DRAG";
+    h.setAttribute("aria-label", "Drag to reorder this card");
+    h.addEventListener("pointerdown", (ev) => startCardDrag(ev, card));
+    card.appendChild(h);
+  });
+}
+
+function startCardDrag(ev, card) {
+  ev.preventDefault();
+  card.classList.add("arr-drag");
+  const pane = card.closest(".tabpane");
+
+  // Listen on the document: reordering moves the card (and its handle) in the
+  // DOM, which drops pointer capture mid-drag — document-level listeners keep
+  // receiving the pointer no matter where the card lands.
+  const onMove = (mv) => {
+    if (mv.pointerId !== ev.pointerId) return;
+    const container = card.parentElement;
+    for (const sib of container.children) {
+      if (sib === card || !arrKey(sib) || sib.classList.contains("hidden")) continue;
+      const r = sib.getBoundingClientRect();
+      if (mv.clientX < r.left || mv.clientX > r.right || mv.clientY < r.top || mv.clientY > r.bottom) continue;
+      // Pointer is over a sibling unit. Swap only once the pointer crosses its
+      // midpoint (on the axis the two are separated along) — plain edge-entry
+      // swapping oscillates when the sibling is taller than the drag step.
+      const cr = card.getBoundingClientRect();
+      const horiz = Math.abs((r.left + r.right) - (cr.left + cr.right)) >
+                    Math.abs((r.top + r.bottom) - (cr.top + cr.bottom));
+      const mid = horiz ? (r.left + r.right) / 2 : (r.top + r.bottom) / 2;
+      const pos = horiz ? mv.clientX : mv.clientY;
+      const sibBefore = (card.compareDocumentPosition(sib) & Node.DOCUMENT_POSITION_PRECEDING) !== 0;
+      if (sibBefore && pos < mid) container.insertBefore(card, sib);
+      else if (!sibBefore && pos > mid) container.insertBefore(card, sib.nextSibling);
+      break;
+    }
+  };
+  const onUp = (up) => {
+    if (up.pointerId !== ev.pointerId) return;
+    document.removeEventListener("pointermove", onMove);
+    document.removeEventListener("pointerup", onUp);
+    document.removeEventListener("pointercancel", onUp);
+    card.classList.remove("arr-drag");
+    if (pane) saveCardOrder(pane);
+  };
+  document.addEventListener("pointermove", onMove);
+  document.addEventListener("pointerup", onUp);
+  document.addEventListener("pointercancel", onUp);
 }
 
 function renderPanel() {
@@ -727,7 +826,19 @@ function renderBanner() {
 
   banner.classList.remove("banner-critical", "banner-warn");
   if (state.journal_dir_found === false) {
-    banner.textContent = "Elite Dangerous journal folder not found - set the ED_JOURNAL_DIR environment variable.";
+    if (!banner.querySelector(".banner-settings-btn")) {
+      banner.textContent = "Elite Dangerous journal folder not found — if the game is installed, point Elite Trader at it: ";
+      const btn = document.createElement("button");
+      btn.className = "copy banner-settings-btn";
+      btn.textContent = "OPEN SETTINGS";
+      btn.addEventListener("click", () => {
+        if (document.body.classList.contains("panel-mode")) setPanelPage("database");
+        else activateTab("database");
+        const inp = $("journal-dir-input");
+        if (inp) inp.focus();
+      });
+      banner.appendChild(btn);
+    }
     banner.classList.remove("hidden");
   } else if (!state.system) {
     banner.textContent = "Waiting for journal data - start Elite Dangerous (or play a bit) and this will fill in.";
@@ -2099,6 +2210,61 @@ async function checkForUpdatesNow(btn, stat) {
   }
 }
 
+/* Tiny markdown renderer for GitHub release bodies: headings, lists, bold,
+   code, links, quotes and rules. Input is escaped before any tags are added. */
+function mdToHtml(md) {
+  const inline = (s) => esc(s)
+    .replace(/`([^`]+)`/g, "<code>$1</code>")
+    .replace(/\*\*([^*]+)\*\*/g, "<b>$1</b>")
+    .replace(/\*([^*]+)\*/g, "<i>$1</i>")
+    .replace(/\[([^\]]+)\]\((https?:[^)\s]+)\)/g,
+      '<a href="$2" target="_blank" rel="noopener">$1</a>');
+  // Join lazy continuations first: release notes are hard-wrapped at ~80
+  // columns, and like GitHub we fold a plain line into the paragraph or list
+  // item above it rather than starting a new block.
+  const special = (l) => /^\s*[-*]\s+/.test(l) || /^#{1,4}\s/.test(l) || /^-{3,}$/.test(l) || l.startsWith(">");
+  const lines = [];
+  for (const raw of String(md || "").replace(/\r/g, "").split("\n")) {
+    const line = raw.trimEnd();
+    if (line && lines.length && lines[lines.length - 1] && !special(line) &&
+        !/^#{1,4}\s|^-{3,}$/.test(lines[lines.length - 1])) {
+      lines[lines.length - 1] += " " + line.trim();
+    } else {
+      lines.push(line);
+    }
+  }
+  let html = "", inList = false;
+  for (const line of lines) {
+    const li = line.match(/^\s*[-*]\s+(.*)/);
+    if (li) {
+      if (!inList) { html += "<ul>"; inList = true; }
+      html += `<li>${inline(li[1])}</li>`;
+      continue;
+    }
+    if (inList) { html += "</ul>"; inList = false; }
+    const h = line.match(/^(#{1,4})\s+(.*)/);
+    if (h) { const lvl = Math.min(h[1].length + 2, 5); html += `<h${lvl}>${inline(h[2])}</h${lvl}>`; continue; }
+    if (/^-{3,}$/.test(line)) { html += "<hr>"; continue; }
+    if (line.startsWith(">")) { html += `<blockquote>${inline(line.replace(/^>\s?/, ""))}</blockquote>`; continue; }
+    if (line) html += `<p>${inline(line)}</p>`;
+  }
+  if (inList) html += "</ul>";
+  return html;
+}
+
+function showReleaseNotes() {
+  if (!updateInfo) return;
+  if (!updateInfo.notes) {
+    // No body on the release — fall back to opening it externally.
+    if (!openExternal(updateInfo.notes_url, "Release notes")) window.open(updateInfo.notes_url, "_blank");
+    return;
+  }
+  $("notes-title").textContent = updateInfo.notes_title || `Elite Trader v${updateInfo.latest}`;
+  $("notes-body").innerHTML = mdToHtml(updateInfo.notes);
+  $("notes-external").href = updateInfo.notes_url;
+  $("notes-modal").classList.remove("hidden");
+}
+
 function renderUpdateBanner() {
   const el = $("update-banner");
   if (!updateInfo || !updateInfo.available || !updateInfo.supported) {
@@ -2116,7 +2282,7 @@ function renderUpdateBanner() {
   notes.rel = "noopener";
   notes.className = "ub-notes";
   notes.textContent = "release notes";
-  notes.addEventListener("click", (ev) => { if (openExternal(updateInfo.notes_url, "Release notes")) ev.preventDefault(); });
+  notes.addEventListener("click", (ev) => { ev.preventDefault(); showReleaseNotes(); });
   const btn = document.createElement("button");
   btn.className = "ub-btn";
   btn.textContent = "Update & restart";
@@ -2212,6 +2378,8 @@ function renderSettings(values, info) {
     row.append(cb, sw, txt);
     list.appendChild(row);
   }
+  list.appendChild(buildJournalDirSetting(values));
+
   if (info.auto_update_supported) {
     const wrap = document.createElement("div");
     wrap.className = "update-check-row";
@@ -2229,6 +2397,53 @@ function renderSettings(values, info) {
   if (info.journal_dir) parts.push(`journal: <span class="path">${esc(info.journal_dir)}</span>`);
   if (info.data_dir) parts.push(`data: <span class="path">${esc(info.data_dir)}</span>`);
   $("settings-info").innerHTML = parts.join(" · ");
+}
+
+/* Journal-folder setting: a validated text path. Blank = auto-detect. Saved
+   changes are picked up by the journal watcher within a second, no restart. */
+function buildJournalDirSetting(values) {
+  const wrap = document.createElement("div");
+  wrap.className = "setting setting-journal";
+  wrap.innerHTML =
+    `<div class="setting-text"><b>Journal folder</b>` +
+    `<div class="dim">Where Elite Dangerous writes its journal. Leave blank to auto-detect. ` +
+    `Takes effect immediately.</div></div>`;
+  const row = document.createElement("div");
+  row.className = "journal-dir-row";
+  const input = document.createElement("input");
+  input.type = "text";
+  input.id = "journal-dir-input";
+  input.placeholder = "auto-detect";
+  input.value = values.journal_dir || "";
+  input.setAttribute("spellcheck", "false");
+  const save = document.createElement("button");
+  save.className = "primary small";
+  save.textContent = "SAVE";
+  const status = document.createElement("div");
+  status.className = "dim journal-dir-status";
+
+  let timer = null, seq = 0;
+  const validate = async () => {
+    const mine = ++seq;
+    try {
+      const resp = await fetch("/api/journal-dir/validate?path=" + encodeURIComponent(input.value.trim()));
+      const v = await resp.json();
+      if (mine !== seq) return;  // a newer keystroke's check superseded this one
+      status.classList.toggle("error", !v.exists);
+      status.textContent = v.exists
+        ? `✓ ${v.files} journal file${v.files === 1 ? "" : "s"} in ${v.path}` + (v.auto ? " (auto-detected)" : "")
+        : `✗ folder not found: ${v.path}`;
+    } catch { /* server briefly unreachable */ }
+  };
+  input.addEventListener("input", () => { clearTimeout(timer); timer = setTimeout(validate, 350); });
+  save.addEventListener("click", async () => {
+    await saveSetting("journal_dir", input.value.trim(), wrap);
+    validate();
+  });
+  row.append(input, save);
+  wrap.append(row, status);
+  validate();
+  return wrap;
 }
 
 async function saveSetting(key, value, row) {
@@ -2370,6 +2585,19 @@ document.addEventListener("DOMContentLoaded", () => {
   $("cargo-sell-btn").addEventListener("click", findCargoSell);
   $("exo-form").addEventListener("submit", searchExobio);
   buildExoGenusChips();
+
+  applyCardOrders();
+  const toggleArrange = () => setArrangeMode(!document.body.classList.contains("arranging"));
+  $("arrange-btn").addEventListener("click", toggleArrange);
+  $("fp-arrange").addEventListener("click", toggleArrange);
+
+  $("notes-close").addEventListener("click", () => $("notes-modal").classList.add("hidden"));
+  $("notes-modal").addEventListener("click", (ev) => {
+    if (ev.target === ev.currentTarget) $("notes-modal").classList.add("hidden");
+  });
+  document.addEventListener("keydown", (ev) => {
+    if (ev.key === "Escape") $("notes-modal").classList.add("hidden");
+  });
   $("rr-form").addEventListener("submit", planRiches);
   $("nr-form").addEventListener("submit", planNeutron);
 
