@@ -77,6 +77,22 @@ CREATE TABLE IF NOT EXISTS income_log(
     amount INTEGER NOT NULL DEFAULT 0,
     PRIMARY KEY(ts, category, detail, amount)) WITHOUT ROWID;
 CREATE TABLE IF NOT EXISTS imported_journals(filename TEXT PRIMARY KEY);
+CREATE TABLE IF NOT EXISTS price_history(
+    market_id INTEGER NOT NULL,
+    symbol TEXT NOT NULL,
+    ts INTEGER NOT NULL,
+    buy_price INTEGER NOT NULL DEFAULT 0,
+    sell_price INTEGER NOT NULL DEFAULT 0,
+    supply INTEGER NOT NULL DEFAULT 0,
+    demand INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY(market_id, symbol, ts)) WITHOUT ROWID;
+CREATE TABLE IF NOT EXISTS tracked_markets(
+    market_id INTEGER PRIMARY KEY,
+    added_ts INTEGER NOT NULL);
+CREATE TABLE IF NOT EXISTS watches(
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    created TEXT NOT NULL,
+    payload TEXT NOT NULL);
 """
 
 
@@ -246,6 +262,92 @@ def stations_near(conn, x, y, z, radius, min_updated=0, require_large_pad=False,
                 "system_id64": m[6], "system": m[7], "x": m[8], "y": m[9], "z": m[10],
             }
         )
+    return out
+
+
+# ---------- price history (tracked markets only) ----------
+# Recording every EDDN update galaxy-wide would grow by millions of rows a
+# day, so history is kept only for markets the player cares about: stations
+# they dock at and stations in watched routes.
+
+HISTORY_KEEP_DAYS = 45
+TRACKED_CAP = 60           # most-recently docked markets kept in history
+_tracked_cache = None      # set of tracked market_ids (refreshed on change)
+_tracked_lock = threading.Lock()
+_prune_counter = 0
+
+
+def tracked_ids():
+    global _tracked_cache
+    with _tracked_lock:
+        if _tracked_cache is None:
+            conn = connect()
+            try:
+                _tracked_cache = {r[0] for r in conn.execute("SELECT market_id FROM tracked_markets")}
+            finally:
+                conn.close()
+        return set(_tracked_cache)
+
+
+def track_market(market_id):
+    """Mark a market as history-worthy (called when the player docks)."""
+    global _tracked_cache
+    if not market_id:
+        return
+    conn = connect()
+    try:
+        conn.execute(
+            "INSERT OR REPLACE INTO tracked_markets(market_id, added_ts) VALUES(?, ?)",
+            (market_id, now_epoch()),
+        )
+        # Cap to the most recent; drop history rows along with the tracking.
+        stale = conn.execute(
+            "SELECT market_id FROM tracked_markets ORDER BY added_ts DESC LIMIT -1 OFFSET ?",
+            (TRACKED_CAP,),
+        ).fetchall()
+        for (mid,) in stale:
+            conn.execute("DELETE FROM tracked_markets WHERE market_id = ?", (mid,))
+            conn.execute("DELETE FROM price_history WHERE market_id = ?", (mid,))
+        conn.commit()
+    finally:
+        conn.close()
+    with _tracked_lock:
+        _tracked_cache = None
+
+
+def record_price_history(conn, market_id, rows, ts=None):
+    """Append one observation per commodity. rows: (symbol, buy, sell, supply, demand)."""
+    global _prune_counter
+    ts = ts or now_epoch()
+    conn.executemany(
+        "INSERT OR IGNORE INTO price_history(market_id, symbol, ts, buy_price, sell_price, supply, demand)"
+        " VALUES(?, ?, ?, ?, ?, ?, ?)",
+        [(market_id, s, ts, b, sl, sp, d) for (s, b, sl, sp, d) in rows],
+    )
+    _prune_counter += 1
+    if _prune_counter % 200 == 0:
+        conn.execute(
+            "DELETE FROM price_history WHERE ts < ?",
+            (now_epoch() - HISTORY_KEEP_DAYS * 86400,),
+        )
+
+
+def price_history(market_id, days=HISTORY_KEEP_DAYS):
+    """{symbol: [[ts, sell, buy, demand, supply], ...]} oldest first."""
+    if not market_id:
+        return {}
+    conn = connect()
+    try:
+        rows = conn.execute(
+            "SELECT symbol, ts, sell_price, buy_price, demand, supply FROM price_history"
+            " WHERE market_id = ? AND ts >= ? ORDER BY ts",
+            (market_id, now_epoch() - days * 86400),
+        ).fetchall()
+    finally:
+        conn.close()
+    out = {}
+    for sym, ts, sell, buy, demand, supply in rows:
+        out.setdefault(sym, []).append([ts, sell, buy, demand, supply])
     return out
 
 

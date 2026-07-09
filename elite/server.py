@@ -199,6 +199,12 @@ def create_app(state):
         return jsonify({"reference": ref, "systems": systems, "genera": genera,
                         "total_value": total, "relaxed": relaxed})
 
+    @app.get("/api/price-history")
+    def api_price_history():
+        """Recorded price points for one tracked market (docked-at or watched)."""
+        mid = request.args.get("market_id", type=int)
+        return jsonify({"market_id": mid, "history": marketdb.price_history(mid)})
+
     @app.get("/api/exobio-genera")
     def api_exobio_genera():
         """Genus names the exobiology route can be filtered by (for the UI)."""

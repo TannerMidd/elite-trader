@@ -413,6 +413,8 @@ th.sorted { color: var(--orange); }
 td.num { font-variant-numeric: tabular-nums; }
 td .sub { color: var(--dim); font-size: 11px; }
 .trend { font-size: 9px; vertical-align: middle; }
+.spark { vertical-align: middle; }
+.sparkcell { min-width: 68px; }
 .trend.up { color: var(--good); }
 .trend.down { color: var(--bad); }
 .community { color: var(--orange-soft); }

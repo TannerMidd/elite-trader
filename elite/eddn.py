@@ -119,6 +119,15 @@ class EddnListener:
                     (market_id, system[0], station_name or "?", updated),
                 )
             marketdb.replace_market(conn, market_id, rows)
+            # Price history only for markets the player cares about (docked-at
+            # or watched) — recording the whole galaxy would grow unbounded.
+            try:
+                from . import alerts
+
+                if market_id in marketdb.tracked_ids() or market_id in alerts.watched_market_ids():
+                    marketdb.record_price_history(conn, market_id, rows, updated)
+            except Exception:
+                pass  # history is a nicety; ingestion must not break
             conn.commit()
             with self._lock:
                 self.markets_updated += 1

@@ -920,6 +920,38 @@ function renderLinks() {
   }
 }
 
+/* Price history for the shown market (docked-at stations are tracked server
+   side; anyone's EDDN report adds points). Fetched once per market id. */
+let marketHist = { id: null, series: {} };
+
+async function loadMarketHistory(mid) {
+  if (!mid || marketHist.id === mid) return;
+  marketHist = { id: mid, series: {} };
+  try {
+    const resp = await fetch("/api/price-history?market_id=" + mid);
+    const data = await resp.json();
+    if (marketHist.id === mid) {
+      marketHist.series = data.history || {};
+      renderMarket();
+    }
+  } catch (e) { /* sparklines are a nicety */ }
+}
+
+function sparkline(points) {
+  const sells = (points || []).map((p) => p[1]).filter((v) => v > 0);
+  if (sells.length < 2) return "";
+  const w = 64, h = 16;
+  const min = Math.min(...sells), max = Math.max(...sells);
+  const span = max - min || 1;
+  const step = w / (sells.length - 1);
+  const pts = sells.map((v, i) =>
+    `${(i * step).toFixed(1)},${(h - 2 - ((v - min) / span) * (h - 4)).toFixed(1)}`).join(" ");
+  const up = sells[sells.length - 1] >= sells[0];
+  return `<svg class="spark" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" ` +
+    `role="img" aria-label="sell price trend"><polyline points="${pts}" fill="none" ` +
+    `stroke="${up ? "var(--good)" : "var(--bad)"}" stroke-width="1.5"/></svg>`;
+}
+
 function renderMarket() {
   const market = state.market;
   const title = $("market-title");
@@ -932,6 +964,7 @@ function renderMarket() {
     empty.classList.remove("hidden");
     return;
   }
+  loadMarketHistory(market.market_id);
   empty.classList.add("hidden");
   title.textContent = market.is_current_station
     ? "STATION MARKET — " + market.station
@@ -958,7 +991,8 @@ function renderMarket() {
       `<td class="num">${i.sell ? i.sell.toLocaleString() : "—"}${trendArrow(i.sell, i.prev_sell)}</td>` +
       `<td class="num">${i.buy ? i.buy.toLocaleString() : "—"}${trendArrow(i.buy, i.prev_buy)}</td>` +
       `<td class="num">${i.demand ? i.demand.toLocaleString() : "—"}</td>` +
-      `<td class="num">${i.stock ? i.stock.toLocaleString() : "—"}</td>`;
+      `<td class="num">${i.stock ? i.stock.toLocaleString() : "—"}</td>` +
+      `<td class="num sparkcell">${(marketHist.id === market.market_id && sparkline(marketHist.series[i.symbol])) || '<span class="dim">·</span>'}</td>`;
     tbody.appendChild(tr);
   }
 }

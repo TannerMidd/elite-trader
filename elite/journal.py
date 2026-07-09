@@ -789,6 +789,23 @@ class JournalWatcher:
                 "items": items,
             }
         )
+        # Docking here makes this market history-worthy: start keeping price
+        # points for it (this snapshot now, EDDN updates from anyone later).
+        if self._live and data.get("MarketID") and items:
+            try:
+                marketdb.track_market(data["MarketID"])
+                conn = marketdb.connect()
+                try:
+                    marketdb.record_price_history(
+                        conn, data["MarketID"],
+                        [(i["symbol"], i["buy"], i["sell"], i["stock"], i["demand"]) for i in items],
+                        marketdb.parse_update_time(data.get("timestamp")),
+                    )
+                    conn.commit()
+                finally:
+                    conn.close()
+            except Exception:
+                pass  # history is a nicety; never break market parsing
 
     # ---------- bootstrap & tail ----------
 
