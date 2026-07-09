@@ -66,6 +66,13 @@ class AppState:
         self.missions = {}
         self.materials = {"Raw": {}, "Manufactured": {}, "Encoded": {}}
 
+        # Combat: session counters + kills per faction while that faction has
+        # active massacre missions (drives the stack-progress card).
+        self.combat_kills = 0
+        self.combat_bounty_cr = 0
+        self.combat_bonds_cr = 0
+        self.faction_kills = {}  # target faction -> kills while stack active
+
         # Live session counters (reset each LoadGame / game launch)
         self.session_start_ts = None      # epoch when the session began
         self.session_start_credits = None  # balance at session start
@@ -88,6 +95,18 @@ class AppState:
             self.session_jumps += 1
             if dist:
                 self.session_ly += dist
+
+    def record_kill(self, victim_faction, bounty_cr=0, bond_cr=0, counts_for_stack=False):
+        """Session combat counters; returns the faction's new stack-kill count
+        when the kill counts toward an active massacre stack, else None."""
+        with self._lock:
+            self.combat_kills += 1
+            self.combat_bounty_cr += bounty_cr
+            self.combat_bonds_cr += bond_cr
+            if counts_for_stack and victim_faction:
+                self.faction_kills[victim_faction] = self.faction_kills.get(victim_faction, 0) + 1
+                return self.faction_kills[victim_faction]
+        return None
 
     def push_alert(self, level, code, say, text):
         """Queue a one-shot voice alert. The UI speaks any alert whose id is
@@ -136,6 +155,47 @@ class AppState:
             self.session_start_credits = credits
             self.session_jumps = 0
             self.session_ly = 0.0
+            self.combat_kills = 0
+            self.combat_bounty_cr = 0
+            self.combat_bonds_cr = 0
+
+    def _massacre_snapshot(self):
+        """Stack progress per target faction. Kills count toward every giver's
+        massacre missions simultaneously, so the kills actually needed are the
+        *largest single giver's* total, not the sum across givers."""
+        stacks = {}
+        for m in self.missions.values():
+            if m.get("kind") != "combat" or not m.get("target_faction") or not m.get("kill_count"):
+                continue
+            if "massacre" not in (m.get("name") or "").lower():
+                continue
+            s = stacks.setdefault(m["target_faction"], {"missions": 0, "reward": 0, "by_giver": {}})
+            s["missions"] += 1
+            s["reward"] += m.get("reward") or 0
+            giver = m.get("faction") or "?"
+            s["by_giver"][giver] = s["by_giver"].get(giver, 0) + m["kill_count"]
+        out = []
+        for faction, s in stacks.items():
+            needed = max(s["by_giver"].values())
+            done = self.faction_kills.get(faction, 0)
+            out.append({
+                "faction": faction,
+                "missions": s["missions"],
+                "givers": len(s["by_giver"]),
+                "reward": s["reward"],
+                "kills_needed": needed,
+                "kills_done": min(done, needed),
+                "complete": done >= needed,
+            })
+        return sorted(out, key=lambda s: -s["reward"])
+
+    def _combat_snapshot(self):
+        return {
+            "kills": self.combat_kills,
+            "bounty_cr": self.combat_bounty_cr,
+            "bonds_cr": self.combat_bonds_cr,
+            "massacre": self._massacre_snapshot(),
+        }
 
     def _session_snapshot(self):
         credits_now = self.credits
@@ -218,6 +278,7 @@ class AppState:
                 ),
                 "materials": self._materials_snapshot(),
                 "session": self._session_snapshot(),
+                "combat": self._combat_snapshot(),
                 "nav": self._nav_snapshot(),
                 "alerts": list(self.alerts),
                 "last_journal_event": self.last_journal_event,

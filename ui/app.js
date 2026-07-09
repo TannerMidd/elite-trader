@@ -647,6 +647,7 @@ function render() {
   renderColonisation();
   renderSession(state.session);
   renderMissions(state.missions);
+  renderMassacre();
   renderMaterials(state.materials);
   if (syncRouteToPosition()) saveActiveRoute();
   renderRouteProgress();
@@ -794,6 +795,44 @@ function renderMissions(missions) {
       const top = div.querySelector(".mission-top");
       top.insertBefore(plotButton(m.dest_system), top.querySelector(".mission-reward"));
     }
+    list.appendChild(div);
+  }
+}
+
+/* ---------- combat: massacre stacks ---------- */
+
+function renderMassacre() {
+  const card = $("massacre-card");
+  const combat = state.combat || {};
+  const stacks = combat.massacre || [];
+  const show = stacks.length > 0 || (combat.kills || 0) > 0;
+  card.classList.toggle("hidden", !show);
+  if (!show) return;
+
+  $("massacre-reward").textContent = stacks.length
+    ? "≈" + shortCr(stacks.reduce((a, s) => a + (s.reward || 0), 0)) + " cr" : "";
+  $("combat-session").textContent =
+    `This session: ${combat.kills || 0} kills · ` +
+    `bounty claims ≈${shortCr(combat.bounty_cr || 0)} cr · ` +
+    `bond claims ≈${shortCr(combat.bonds_cr || 0)} cr — redeem before you lose them.`;
+
+  const list = $("massacre-list");
+  const sig = JSON.stringify(stacks);
+  if (list.dataset.sig === sig) return;
+  list.dataset.sig = sig;
+  list.innerHTML = "";
+  for (const s of stacks) {
+    const pct = s.kills_needed ? Math.round((s.kills_done / s.kills_needed) * 100) : 0;
+    const div = document.createElement("div");
+    div.className = "stack" + (s.complete ? " done" : "");
+    div.innerHTML =
+      `<div class="stack-line"><b>${esc(s.faction)}</b>` +
+      `<span class="dim">${s.missions} mission${s.missions === 1 ? "" : "s"} · ${s.givers} giver${s.givers === 1 ? "" : "s"}</span>` +
+      `<span class="profit">≈${shortCr(s.reward)} cr</span></div>` +
+      `<div class="stack-bar"><div style="width:${pct}%"></div></div>` +
+      `<div class="stack-sub ${s.complete ? "good" : "dim"}">` +
+      (s.complete ? "✓ STACK COMPLETE — hand your missions in" : `${s.kills_done} / ${s.kills_needed} kills`) +
+      `</div>`;
     list.appendChild(div);
   }
 }

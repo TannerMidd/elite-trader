@@ -415,6 +415,23 @@ td .sub { color: var(--dim); font-size: 11px; }
 .trend { font-size: 9px; vertical-align: middle; }
 .spark { vertical-align: middle; }
 .sparkcell { min-width: 68px; }
+
+/* massacre stack card */
+.stack { margin-top: 10px; }
+.stack-line { display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap; }
+.stack-line .profit { margin-left: auto; color: var(--good); font-weight: 700; }
+.stack-bar {
+  height: 10px;
+  margin-top: 5px;
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  overflow: hidden;
+}
+.stack-bar > div { height: 100%; background: var(--orange); transition: width .5s var(--ease); }
+.stack.done .stack-bar > div { background: var(--good); }
+.stack-sub { margin-top: 3px; font-size: 12px; }
+.stack-sub.good { color: var(--good); font-weight: 600; }
 .trend.up { color: var(--good); }
 .trend.down { color: var(--bad); }
 .community { color: var(--orange-soft); }

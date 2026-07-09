@@ -489,6 +489,49 @@ class JournalWatcher:
     def _on_missionfailed(self, e):
         self._remove_mission(e.get("MissionID"))
 
+    # ---------- combat: kills, bounties, massacre stacks ----------
+
+    def _massacre_missions(self):
+        for m in self.state.missions.values():
+            if (m.get("kind") == "combat" and m.get("target_faction") and m.get("kill_count")
+                    and "massacre" in (m.get("name") or "").lower()):
+                yield m
+
+    def _record_combat_kill(self, victim, bounty_cr=0, bond_cr=0):
+        counts = any(m["target_faction"] == victim for m in self._massacre_missions())
+        new_count = self.state.record_kill(victim, bounty_cr, bond_cr, counts_for_stack=counts)
+        if new_count is None or not self._live:
+            return
+        # Fire exactly when the largest giver's requirement is crossed.
+        needed = next((s["kills_needed"] for s in self.state._massacre_snapshot()
+                       if s["faction"] == victim), None)
+        if needed and new_count == needed:
+            self.state.push_alert(
+                "info", "massacre",
+                f"Massacre stack complete. All missions against {victim} are done.",
+                f"✦ STACK COMPLETE · {victim}",
+            )
+
+    def _on_bounty(self, e):
+        total = e.get("TotalReward")
+        if total is None:
+            total = sum((r.get("Reward") or 0) for r in e.get("Rewards") or [])
+        self._record_combat_kill(e.get("VictimFaction"), bounty_cr=total or 0)
+
+    def _on_factionkillbond(self, e):
+        self._record_combat_kill(e.get("VictimFaction"), bond_cr=e.get("Reward") or 0)
+
+    def _sync_faction_kills(self):
+        """Drop stack-kill counters for factions with no active massacre
+        missions left, so a future stack starts counting from zero."""
+        active = {m["target_faction"] for m in self._massacre_missions()}
+        stale = [f for f in self.state.faction_kills if f not in active]
+        if stale:
+            fk = dict(self.state.faction_kills)
+            for f in stale:
+                fk.pop(f, None)
+            self.state.update(faction_kills=fk)
+
     def _on_redeemvoucher(self, e):
         vtype = (e.get("Type") or "").lower()
         category = "bounty" if vtype in ("bounty", "combatbond", "settlement") else "other"
@@ -529,6 +572,7 @@ class JournalWatcher:
             "dest_system": e.get("DestinationSystem") or None,
             "dest_station": e.get("DestinationStation") or None,
             "target_faction": e.get("TargetFaction") or None,
+            "kill_count": e.get("KillCount"),
             "reward": e.get("Reward") or 0,
             "wing": bool(e.get("Wing")),
             "expiry": e.get("Expiry"),
@@ -543,6 +587,7 @@ class JournalWatcher:
         missions = dict(self.state.missions)
         missions.pop(mission_id, None)
         self.state.update(missions=missions)
+        self._sync_faction_kills()
 
     def _on_missions(self, e):
         """Session-start snapshot: reconcile our set to the game's active list so
@@ -553,6 +598,7 @@ class JournalWatcher:
         missions = {mid: m for mid, m in self.state.missions.items() if mid in active_ids}
         if len(missions) != len(self.state.missions):
             self.state.update(missions=missions)
+            self._sync_faction_kills()
 
     # ---------- engineering materials ----------
 
