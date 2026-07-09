@@ -415,6 +415,13 @@ td .sub { color: var(--dim); font-size: 11px; }
 .trend { font-size: 9px; vertical-align: middle; }
 .spark { vertical-align: middle; }
 .sparkcell { min-width: 68px; }
+.spark-click { cursor: pointer; }
+.spark-click:hover .spark polyline { stroke-width: 2.5; }
+.hist-row td { padding: 4px 8px 10px; background: var(--panel-2); }
+.histchart { width: 100%; max-width: 760px; height: auto; display: block; }
+.hc-label { font-size: 11px; fill: var(--text); font-family: inherit; }
+.hc-label.dim { fill: var(--dim); }
+.hc-label.good { fill: var(--good); }
 
 /* massacre stack card */
 .stack { margin-top: 10px; }

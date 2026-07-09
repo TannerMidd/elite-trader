@@ -871,7 +871,9 @@ class JournalWatcher:
         )
         # Docking here makes this market history-worthy: start keeping price
         # points for it (this snapshot now, EDDN updates from anyone later).
-        if self._live and data.get("MarketID") and items:
+        # Runs at bootstrap too — the last-visited market starts accumulating
+        # immediately, with the snapshot's own (possibly old) timestamp.
+        if data.get("MarketID") and items:
             try:
                 marketdb.track_market(data["MarketID"])
                 conn = marketdb.connect()

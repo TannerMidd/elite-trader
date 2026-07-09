@@ -1178,6 +1178,41 @@ function sparkline(points) {
     `stroke="${up ? "var(--good)" : "var(--bad)"}" stroke-width="1.5"/></svg>`;
 }
 
+/* Full-width price-history chart, expanded under a market row by tapping its
+   sparkline. Sell line solid, buy line dim; min/max and time-span labels. */
+let histExpanded = null;  // commodity symbol currently expanded
+
+function histChart(points) {
+  const w = 720, h = 150, padL = 8, padR = 8, padT = 16, padB = 22;
+  const pts = (points || []).filter((p) => p[1] > 0 || p[2] > 0);
+  if (pts.length < 2) return "";
+  const t0 = pts[0][0], t1 = pts[pts.length - 1][0];
+  const tSpan = (t1 - t0) || 1;
+  const vals = pts.flatMap((p) => [p[1], p[2]]).filter((v) => v > 0);
+  const min = Math.min(...vals), max = Math.max(...vals);
+  const vSpan = (max - min) || 1;
+  const x = (ts) => padL + ((ts - t0) / tSpan) * (w - padL - padR);
+  const y = (v) => padT + (1 - (v - min) / vSpan) * (h - padT - padB);
+  const line = (idx, color, width) => {
+    const p = pts.filter((pt) => pt[idx] > 0);
+    if (p.length < 2) return "";
+    return `<polyline points="${p.map((pt) => `${x(pt[0]).toFixed(1)},${y(pt[idx]).toFixed(1)}`).join(" ")}"` +
+      ` fill="none" stroke="${color}" stroke-width="${width}"/>`;
+  };
+  const fmtDate = (ts) => new Date(ts * 1000).toLocaleDateString();
+  const last = pts[pts.length - 1];
+  return `<svg class="histchart" viewBox="0 0 ${w} ${h}" role="img" aria-label="price history">` +
+    line(2, "var(--dim)", 1) +          // buy price, dim
+    line(1, "var(--good)", 1.8) +       // sell price
+    `<text x="${padL}" y="11" class="hc-label">${max.toLocaleString()} cr</text>` +
+    `<text x="${padL}" y="${h - padB + 12}" class="hc-label">${min.toLocaleString()} cr</text>` +
+    `<text x="${padL}" y="${h - 4}" class="hc-label dim">${fmtDate(t0)}</text>` +
+    `<text x="${w - padR}" y="${h - 4}" class="hc-label dim" text-anchor="end">${fmtDate(t1)}</text>` +
+    (last[1] > 0 ? `<text x="${w - padR}" y="11" class="hc-label good" text-anchor="end">` +
+      `sell ${last[1].toLocaleString()} cr</text>` : "") +
+    `</svg>`;
+}
+
 function renderMarket() {
   const market = state.market;
   const title = $("market-title");
@@ -1210,7 +1245,10 @@ function renderMarket() {
   });
 
   tbody.innerHTML = "";
+  const histReady = marketHist.id === market.market_id;
   for (const i of items) {
+    const series = histReady ? marketHist.series[i.symbol] : null;
+    const spark = series && sparkline(series);
     const tr = document.createElement("tr");
     tr.innerHTML =
       `<td>${esc(i.name)}<div class="sub">${esc(i.category)}</div></td>` +
@@ -1218,8 +1256,17 @@ function renderMarket() {
       `<td class="num">${i.buy ? i.buy.toLocaleString() : "—"}${trendArrow(i.buy, i.prev_buy)}</td>` +
       `<td class="num">${i.demand ? i.demand.toLocaleString() : "—"}</td>` +
       `<td class="num">${i.stock ? i.stock.toLocaleString() : "—"}</td>` +
-      `<td class="num sparkcell">${(marketHist.id === market.market_id && sparkline(marketHist.series[i.symbol])) || '<span class="dim">·</span>'}</td>`;
+      (spark
+        ? `<td class="num sparkcell spark-click" data-sym="${esc(i.symbol)}" ` +
+          `title="Tap for the full price-history chart">${spark}</td>`
+        : `<td class="num sparkcell"><span class="dim" title="History builds as this station gets visits and EDDN reports">·</span></td>`);
     tbody.appendChild(tr);
+    if (histExpanded === i.symbol && series) {
+      const hr = document.createElement("tr");
+      hr.className = "hist-row";
+      hr.innerHTML = `<td colspan="6">${histChart(series)}</td>`;
+      tbody.appendChild(hr);
+    }
   }
 }
 
@@ -2877,6 +2924,13 @@ document.addEventListener("DOMContentLoaded", () => {
   $("ep-traders").addEventListener("click", findTraders);
   loadEngineering();
   $("ss-form").addEventListener("submit", loadSystemStations);
+  // Delegated: rows rebuild every poll, the table itself doesn't.
+  $("market-table").addEventListener("click", (ev) => {
+    const cell = ev.target.closest(".spark-click");
+    if (!cell) return;
+    histExpanded = histExpanded === cell.dataset.sym ? null : cell.dataset.sym;
+    renderMarket();
+  });
 
   $("notes-close").addEventListener("click", () => $("notes-modal").classList.add("hidden"));
   $("notes-modal").addEventListener("click", (ev) => {

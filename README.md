@@ -24,12 +24,34 @@ cockpit mode · route plotting inside the game itself.
 
 ## ❤️ Built on the community
 
-Nothing here would exist without **[EDDN](https://github.com/EDCD/EDDN)**
-(live market data — the app consumes it *and contributes your visits back*),
-**[Spansh](https://spansh.co.uk)** (galaxy dumps, route APIs, body & station
-data), **[Inara](https://inara.cz)**, **[EDSM](https://www.edsm.net)** and
-**[EDCD](https://edcd.github.io/)**. Not affiliated with Frontier Developments;
-Elite Dangerous is a trademark of Frontier Developments plc.
+This app is a consumer of Elite Dangerous' open-data ecosystem. Not one route,
+price or bio signal in it would be possible without these projects — and the
+thousands of commanders feeding them:
+
+- **[EDDN](https://github.com/EDCD/EDDN)** · *Elite Dangerous Data Network* —
+  the community's live data relay. Every fresh price here exists because
+  another commander docked somewhere and their tool reported it. Elite Trader
+  **contributes back**: markets you dock at are published to EDDN
+  (anonymously, the same way EDMC does), so playing with this app keeps the
+  network alive for everyone else too.
+- **[Spansh](https://spansh.co.uk)** — the backbone of the app's data. The
+  daily galaxy dump seeds the 36-million-price local database; the route APIs
+  power the neutron plotter, Road to Riches and the exobiology route; the
+  per-system dumps provide station facts, services and the community-mapped
+  bio signals you see before you honk; the station search finds material
+  traders, modules and ships.
+- **[Inara](https://inara.cz)** — the encyclopedia of the galaxy. Pre-filled
+  search links throughout the app, and the engineering and shipyard references
+  the guides point to.
+- **[EDSM](https://www.edsm.net)** — system data and mapping links wherever a
+  system name appears.
+- **[EDCD](https://edcd.github.io/)** — the community developer collective
+  whose schemas, journal documentation and conventions make it possible for
+  tools like this one to interoperate at all.
+
+If you find these sites useful, support them — most run on donations.
+Not affiliated with Frontier Developments. Elite Dangerous is a trademark of
+Frontier Developments plc.
 
 ## What it does
 
