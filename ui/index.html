@@ -561,17 +561,31 @@
       <div class="card-head">
         <div class="label">ENGINEERING PLANNER <span class="dim">pin a blueprint · see what's missing · trade the gap at a material trader</span></div>
       </div>
+      <details class="eng-help">
+        <summary>New to engineering? Read this first</summary>
+        <p><b>Engineers</b> are characters who upgrade your ship's modules far
+        beyond anything you can buy — for example, making your jump drive reach
+        ~50% farther. Upgrades don't cost credits: they cost <b>materials</b>
+        you collect while playing (scan data, salvage, planet minerals). Each
+        upgrade climbs <b>grades 1→5</b>, applied several times per grade.</p>
+        <p>Pin a blueprint below and this planner tracks <b>every material the
+        whole upgrade needs</b>, ticks them off as you collect them, and tells
+        you when a <b>material trader</b> (a station service that swaps
+        materials: 6 lower-grade → 1 higher, 1 higher → 3 lower) can cover a
+        shortfall from things you already have.</p>
+      </details>
       <form id="engplan-form" class="route-form">
         <label>Blueprint
           <select id="ep-blueprint"></select>
         </label>
-        <label>Target grade
-          <select id="ep-grade"><option>1</option><option>2</option><option>3</option><option>4</option><option selected>5</option></select>
+        <label title="How far to take the upgrade — Grade 5 is the full, maxed-out version">Target grade
+          <select id="ep-grade"><option value="1">1</option><option value="2">2</option><option value="3">3</option><option value="4">4</option><option value="5" selected>5 (max)</option></select>
         </label>
-        <button type="submit" id="ep-pin" class="primary">PIN</button>
-        <button type="button" id="ep-traders" class="primary" title="Nearest raw / manufactured / encoded material traders">TRADERS NEAR ME</button>
+        <button type="submit" id="ep-pin" class="primary" title="Add this blueprint to your tracked list">PIN</button>
+        <button type="button" id="ep-traders" class="primary" title="Find the nearest stations with a material trader">TRADERS NEAR ME</button>
       </form>
-      <div class="dim" id="engplan-note">Estimated for a full G1→target climb (community-average rolls per grade) — actual rolls vary. Curated recipe set; more blueprints each release.</div>
+      <div class="dim" id="ep-desc"></div>
+      <div class="dim" id="engplan-note">Counts cover the whole grade 1→target climb using typical roll counts — treat them as a close estimate, not an exact bill.</div>
       <div id="engplan-list"></div>
       <div id="engplan-traders"></div>
     </section>

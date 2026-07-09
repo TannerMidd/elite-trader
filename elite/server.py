@@ -253,6 +253,7 @@ def create_app(state):
         return jsonify({
             "blueprints": {name: sorted(g) for name, g in
                            ((n, bp.keys()) for n, bp in blueprints.BLUEPRINTS.items())},
+            "info": blueprints.BLUEPRINT_INFO,
             "rolls_per_grade": blueprints.ROLLS_PER_GRADE,
             "pinned": plans,
         })

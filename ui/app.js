@@ -929,23 +929,35 @@ function renderMassacre() {
 /* ---------- engineering planner ---------- */
 let engMatsSig = null;  // refetch plans when the materials inventory changes
 
+let engInfo = {};  // blueprint name -> {what, engineer}
+
 async function loadEngineering() {
   try {
     const resp = await fetch("/api/engineering");
     const data = await resp.json();
+    engInfo = data.info || {};
     fillBlueprintSelect(data.blueprints || {});
     renderEngPlans(data.pinned || []);
   } catch (e) { /* planner card degrades to empty */ }
 }
 
+function showBlueprintDesc() {
+  const info = engInfo[$("ep-blueprint").value];
+  $("ep-desc").textContent = info ? `${info.what} ${info.engineer}` : "";
+}
+
 function fillBlueprintSelect(bps) {
   const sel = $("ep-blueprint");
-  if (!sel || sel.options.length) return;
-  for (const name of Object.keys(bps).sort()) {
-    const o = document.createElement("option");
-    o.value = o.textContent = name;
-    sel.appendChild(o);
+  if (!sel) return;
+  if (!sel.options.length) {
+    for (const name of Object.keys(bps).sort()) {
+      const o = document.createElement("option");
+      o.value = o.textContent = name;
+      sel.appendChild(o);
+    }
+    sel.addEventListener("change", showBlueprintDesc);
   }
+  showBlueprintDesc();
 }
 
 function renderEngPlans(plans) {
@@ -953,7 +965,8 @@ function renderEngPlans(plans) {
   if (!list) return;
   list.innerHTML = "";
   if (!plans.length) {
-    list.innerHTML = '<div class="dim empty">Nothing pinned yet — pick a blueprint and PIN it for a live shopping list checked against your materials.</div>';
+    list.innerHTML = '<div class="dim empty">Nothing pinned yet — pick a blueprint above and press PIN to get a live checklist against your materials. ' +
+      'New player tip: <b>FSD Increased Range</b> is the best first upgrade for almost any ship.</div>';
     return;
   }
   for (const p of plans) {
@@ -965,17 +978,23 @@ function renderEngPlans(plans) {
     const rows = p.materials.map((m) => {
       const short = m.deficit > 0;
       const trade = short && m.trade
-        ? ` <span class="dim">· trade ${m.trade.spend}× ${esc(m.trade.from)} ${m.trade.direction === "down" ? "▽" : "△"} → covers ${m.trade.covers}</span>`
+        ? ` <span class="dim ep-trade" title="Material traders swap within a family: 6 lower-grade make 1 higher-grade; 1 higher-grade makes 3 lower.">` +
+          `→ swap ${m.trade.spend}× ${esc(m.trade.from)} at a material trader to cover ` +
+          `${m.trade.covers >= m.deficit ? "the rest" : m.trade.covers + " of them"}</span>`
         : "";
-      return `<div class="ep-mat"><span class="${short ? "warn" : "good"}">${short ? "○" : "●"}</span> ` +
-        `${esc(m.name)} <span class="${short ? "warn" : "dim"}">${m.have}/${m.need}</span> ` +
-        `<span class="dim">G${m.grade} ${esc(m.kind)}</span>${trade}</div>`;
+      const need = short ? `<span class="warn">${m.have} of ${m.need} — need ${m.deficit} more</span>`
+        : `<span class="dim">${m.have} of ${m.need} ✓</span>`;
+      return `<div class="ep-mat" title="${esc(m.source || "")}">` +
+        `<span class="${short ? "warn" : "good"}">${short ? "○" : "●"}</span> ` +
+        `<b>${esc(m.name)}</b> ${need} ` +
+        `<span class="dim">· grade ${m.grade} ${esc(m.kind)} material</span>${trade}</div>`;
     }).join("");
     div.innerHTML =
-      `<div class="stack-line"><b>${esc(p.blueprint)}</b><span class="dim">G1→G${p.grade}</span>` +
-      `<span class="${p.craftable ? "profit" : "dim"}">${p.craftable ? "✓ READY TO ENGINEER" : pct + "%"}</span></div>` +
+      `<div class="stack-line"><b>${esc(p.blueprint)}</b><span class="dim">full upgrade to grade ${p.grade}</span>` +
+      `<span class="${p.craftable ? "profit" : "dim"}">${p.craftable ? "✓ ALL MATERIALS COLLECTED — visit the engineer" : pct + "% of materials collected"}</span></div>` +
       `<div class="stack-bar"><div style="width:${pct}%"></div></div>` +
-      `<div class="ep-mats">${rows}</div>`;
+      `<div class="ep-mats">${rows}</div>` +
+      `<div class="dim ep-hint">Hover a material to see where to find it.</div>`;
     const line = div.querySelector(".stack-line");
     const un = document.createElement("button");
     un.className = "copy";

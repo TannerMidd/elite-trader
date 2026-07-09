@@ -14,6 +14,34 @@ DATA NOTES — community-derived (Inara/EDEngineer lineage), hand-curated:
 
 ROLLS_PER_GRADE = {1: 2, 2: 2, 3: 3, 4: 4, 5: 5}
 
+# Plain-language context so the planner explains itself to newer players.
+BLUEPRINT_INFO = {
+    "FSD Increased Range": {
+        "what": "Makes your Frame Shift Drive jump farther — about +50% range at "
+                "Grade 5. The best first upgrade for almost any ship.",
+        "engineer": "Applied by Felicity Farseer in Deciat (easy early unlock), among others.",
+    },
+    "Thrusters Dirty Tuning": {
+        "what": "Faster, more agile thrusters at the cost of extra heat — the "
+                "go-to speed upgrade for nearly every build.",
+        "engineer": "Applied by Professor Palin and others (higher grades need later unlocks).",
+    },
+}
+
+# Where each material family actually comes from, in player terms.
+MATERIAL_SOURCES = {
+    "wake scans": "Scan the high-energy wakes ships leave after jumping away (needs a Frame Shift Wake Scanner; nav beacons and stations are good spots).",
+    "firmware": "Downloaded at planetary settlement data points, or scanned from ships.",
+    "chemical": "Dropped as salvage by destroyed ships; also mission rewards.",
+    "mechanical components": "Dropped as salvage by destroyed ships (transport ships especially); also mission rewards.",
+    "alloys": "Salvage from destroyed ships and crash sites; also mission rewards.",
+}
+_RAW_SOURCE = "Prospect rocks, outcrops and crystals with the SRV on planet surfaces."
+
+
+def material_source(family):
+    return MATERIAL_SOURCES.get(family) or (_RAW_SOURCE if family.startswith("raw") else None)
+
 # name -> grade -> {material display name: qty per roll}
 BLUEPRINTS = {
     "FSD Increased Range": {
@@ -98,7 +126,8 @@ _BY_SYMBOL = {v[0]: name for name, v in MATERIALS.items()}
 
 def material_info(name):
     sym, kind, family, grade = MATERIALS[name]
-    return {"name": name, "symbol": sym, "kind": kind, "family": family, "grade": grade}
+    return {"name": name, "symbol": sym, "kind": kind, "family": family,
+            "grade": grade, "source": material_source(family)}
 
 
 def requirements(blueprint, target_grade, rolls=None):

@@ -47,6 +47,10 @@ p = blueprints.plan("FSD Increased Range", 5, inv)
 assert not p["craftable"]
 rows = {r["name"]: r for r in p["materials"]}
 assert rows["Chemical Processors"]["deficit"] == 3, rows["Chemical Processors"]
+# every material row carries a where-to-find-it hint for new players
+assert all(r["source"] for r in p["materials"]), [r["name"] for r in p["materials"] if not r["source"]]
+assert "salvage" in rows["Chemical Processors"]["source"], rows["Chemical Processors"]["source"]
+assert "SRV" in rows["Manganese"]["source"], rows["Manganese"]["source"]
 # Chemical Manipulators are G4 chemical: 25 spare after their own need of 5;
 # trading down covers the 3-deficit easily.
 trade = rows["Chemical Processors"]["trade"]
