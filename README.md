@@ -10,7 +10,11 @@ cockpit mode · route plotting inside the game itself.
 ![License: MIT](https://img.shields.io/badge/license-MIT-orange)
 ![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue)
 ![Platform: Windows | Linux](https://img.shields.io/badge/platform-Windows%20%7C%20Linux-lightgrey)
-![AI generated](https://img.shields.io/badge/code-AI%20generated%20with%20Claude-8A2BE2)
+![AI generated](https://img.shields.io/badge/code-AI%20generated%20with%20Claude%20Fable%205-8A2BE2)
+
+> **Disclaimer:** this codebase was **AI-generated with Claude (Fable 5)**,
+> directed and play-tested by me against my own live game. It's a personal
+> project built for my own use — shared as-is, and anyone is welcome to use it.
 
 [**Download**](../../releases) · [**Wiki**](../../wiki) · [**Getting Started**](../../wiki/Getting-Started) · [**Troubleshooting**](../../wiki/Troubleshooting-and-FAQ)
 
@@ -18,9 +22,7 @@ cockpit mode · route plotting inside the game itself.
 
 </div>
 
-> Runs on your machine, serves every screen to any device on your home network.
-> AI-generated with **Claude**, directed and play-tested against a live game —
-> a personal project, shared as-is. o7
+> Runs on your machine, serves every screen to any device on your home network. o7
 
 ## ❤️ Built on the community
 
