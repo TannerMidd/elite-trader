@@ -1113,7 +1113,19 @@ async function findTraders() {
 
 /* ---------- game-offline banner + launch button ---------- */
 
+const LAUNCH_IDLE_LABEL = "▲ LAUNCH ELITE DANGEROUS";
+const LAUNCH_IDLE_STATUS = "Game offline — the cockpit is showing your last session's data";
 let launchSentAt = 0;
+let launchStageTimer = null;
+
+function resetLaunchUI(statusText) {
+  launchSentAt = 0;
+  clearTimeout(launchStageTimer);
+  $("game-offline").classList.remove("launching");
+  $("launch-game").disabled = false;
+  $("launch-label").textContent = LAUNCH_IDLE_LABEL;
+  $("launch-status").textContent = statusText;
+}
 
 /* Shown only when the server has positively probed the game as NOT running
    (null = not probed yet — stay quiet rather than flash a false banner). */
@@ -1122,34 +1134,38 @@ function renderGameState() {
   const offline = state.game_running === false;
   bar.classList.toggle("show", offline);
   if (!offline && launchSentAt) {
-    // The game came up: reset the button for next time.
-    launchSentAt = 0;
-    $("launch-game").disabled = false;
-    $("launch-status").textContent = "";
+    // Telemetry is flowing: the launch worked.
+    resetLaunchUI(LAUNCH_IDLE_STATUS);
+    showFlightToast({ level: "info", text: "✦ LAUNCH CONFIRMED · journal telemetry live · o7" });
   } else if (offline && launchSentAt && Date.now() - launchSentAt > 180000) {
     // Three minutes and still no journal: let them try again.
-    launchSentAt = 0;
-    $("launch-game").disabled = false;
-    $("launch-status").textContent = "Still offline — launch again, or start it on the PC.";
+    resetLaunchUI("Still no telemetry — launch again, or start the game on the PC.");
   }
 }
 
 async function launchGame() {
+  const bar = $("game-offline");
   const btn = $("launch-game");
   const status = $("launch-status");
   btn.disabled = true;
-  status.textContent = "Launching…";
+  bar.classList.add("launching");
+  $("launch-label").textContent = "IGNITION SEQUENCE ENGAGED";
+  status.textContent = "T-0 · handing off to the launcher…";
   try {
     const resp = await fetch("/api/launch-game", { method: "POST" });
     const data = await resp.json();
     if (!resp.ok) throw new Error(data.error || "Launch failed");
     launchSentAt = Date.now();
     status.textContent = data.already_running
-      ? "The game is already running."
-      : `Handed off to ${data.via} — reaching the cockpit takes a minute or two. This banner clears by itself.`;
+      ? "The game is already running — waiting for its journal telemetry."
+      : `T-0 · handed off to ${data.via} — spooling up…`;
+    clearTimeout(launchStageTimer);
+    launchStageTimer = setTimeout(() => {
+      if (launchSentAt) status.textContent =
+        "Awaiting journal telemetry — the cockpit takes a minute or two. This panel clears itself.";
+    }, 12000);
   } catch (err) {
-    btn.disabled = false;
-    status.textContent = String(err.message || err);
+    resetLaunchUI(String(err.message || err));
   }
 }
 
