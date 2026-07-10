@@ -1,45 +1,50 @@
-## Elite Trader v1.11.0 — the new flight panel
+## Elite Trader v1.12.0 — launch control & the explorer's update
 
-The tablet cockpit got a ground-up redesign — and it's now the app's default
-view. Plus: the exobiology vault now knows which of your samples are likely
-**first logs** and prices in their 5× bonus.
+Deep-space explorers get a way home, a guard for their unsold fortune, and an
+honest session clock. The panel learns to start the game itself — and can now
+speak with a human voice.
 
-### 🛩️ Flight panel, redesigned (and now the default)
-- **New cockpit shell**: a left icon rail for the eight pages, and a
-  persistent status strip on every page — current system, station,
-  destination, fuel & cargo bars, a live clock and your CMDR name.
-- **Every page restyled**: corner-bracketed MFD cards, glowing readouts,
-  proper cockpit typography (Chakra Petch + IBM Plex Mono, bundled — works
-  offline), a boot splash and subtle scanlines. Swipe navigation, arrange
-  mode and everything else work as before.
-- **The panel is now what opens first.** ✕ EXIT switches to the classic
-  desktop layout (and the app remembers your choice); ◈ PANEL brings it back.
-- **Fullscreen is a button now** (⛶ FULL in the rail) instead of being forced
-  on entry — browsers often blocked the old automatic attempt anyway.
-- On phones and portrait screens the rail becomes a bottom bar.
+### 🛰️ For explorers deep in the black
+- **WHERE TO SELL YOUR DATA** (Explore page): the "get me home" search —
+  nearest ports with **Universal Cartographics** (map data) and **Vista
+  Genomics** (bio samples), sorted by distance from wherever you are, with
+  jump estimates at your ship's range. Fleet carriers are included (they can
+  fit both services) and clearly flagged — they move, so treat their position
+  as a lead. Works even from undiscovered systems.
+- **DATA AT RISK guard**: a destroyed ship loses every unsold scan and sample
+  aboard. When your unsold pile is worth many times your rebuy, a chip
+  appears on the status page and one-shot voice callouts fire as it crosses
+  10× / 25× / 50× — the nudge to go bank it before the galaxy takes it back.
+- **COLLECTED session metric**: exploration sessions finally have a number —
+  the estimated value of scans and samples gathered this session (first
+  discoveries and first logs counted at their bonus rates).
+- **The session clock stops when the game does.** Duration and cr/hr now
+  measure play time, not how long the app sat open overnight.
 
-### 🧬 First-log detection for exobiology (the 5× bonus)
-Being the *first commander ever to log a species on a body* pays **5×** at
-Vista Genomics. The game only tells you when you sell — Elite Trader now
-predicts it the moment you finish sampling:
-- **★ FIRST LOG ×5** badges in the unsold-samples vault and on the
-  sampling-in-progress card, with the boosted value priced into every total
-  (including the BIO SAMPLES tile on the status page).
-- How it's judged: the body was **undiscovered when you scanned it** and no
-  other commander has reported that genus there via the community data
-  network. Hover any ★ for the explanation; it's confirmed on sale.
-- The bio-signals table marks **undiscovered bodies with a ★** — land there
-  and every species you log is almost certainly a first.
-- Sold values were already counted correctly (the game reports the bonus in
-  the sale event); the estimates now match them.
+### 🚀 Launch control
+- When Elite Dangerous isn't running, every page shows a **FLIGHT SYSTEMS ·
+  STANDBY** panel with a **▲ LAUNCH ELITE DANGEROUS** ignition button — tap
+  it from the tablet and the game starts on your PC (Steam, or the Frontier
+  launcher). A staged T-0 sequence tracks the handoff, a **LAUNCH CONFIRMED**
+  callout fires when journal telemetry arrives, and pressing again aborts
+  the wait. Plotting while the game is off now says so instead of failing
+  cryptically.
 
-### 🐛 Also
-- **Unsold samples survive restarts on long expeditions.** Startup now reads
-  your journal back to the last Vista Genomics sale (or death), so samples
-  completed many sessions ago no longer vanish from the vault.
-- Vault entries now name the body they were sampled on reliably (previously
-  the label could lag behind where you actually were).
-- README screenshots retaken in the new flight-panel design.
+### 🗣️ Neural voice (experimental)
+- Optional human-sounding callouts: a one-time download installs **Piper
+  TTS** — running entirely on your PC, offline, nothing sent anywhere — and
+  every device on your LAN hears the same voice. **Six voices** to choose
+  from (British, Scottish, American · female and male) with a TEST button to
+  audition them. Off by default while experimental: Settings → Neural voice.
+
+### 🖥️ Also
+- **CRT effects** (scanlines + readout flicker) are now off by default and
+  opt-in per device — they could shimmer on some displays.
+- Empty market/mining results now point deep-space explorers at the
+  sell-your-data search; the exobiology route teaches "first log" correctly;
+  trade-loop searches no longer claim to ask Spansh (they're local).
+- Layout and QA fixes across the panel (launch double-tap grace, arrange
+  button clearance, and more).
 
 ---
 
