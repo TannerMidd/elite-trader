@@ -78,9 +78,13 @@ class AppState:
 
         # Live session counters (reset each LoadGame / game launch)
         self.session_start_ts = None      # epoch when the session began
+        self.session_end_ts = None        # epoch of Shutdown/crash; None while live
         self.session_start_credits = None  # balance at session start
         self.session_jumps = 0
         self.session_ly = 0.0
+        # Estimated unsold value collected this session (explorer's "earned"):
+        # cartographic scan estimates + completed bio samples at Vista value.
+        self.session_collected_cr = 0
 
         self.last_journal_event = None  # timestamp string of most recent event seen
         self.journal_dir_found = True
@@ -155,12 +159,28 @@ class AppState:
         """Reset the live-session counters at a game launch (LoadGame)."""
         with self._lock:
             self.session_start_ts = ts
+            self.session_end_ts = None
             self.session_start_credits = credits
             self.session_jumps = 0
             self.session_ly = 0.0
+            self.session_collected_cr = 0
             self.combat_kills = 0
             self.combat_bounty_cr = 0
             self.combat_bonds_cr = 0
+
+    def end_session(self, ts):
+        """Freeze the session clock at game shutdown (or crash detection);
+        duration and cr/hr stop counting wall time you weren't playing."""
+        with self._lock:
+            if self.session_start_ts is not None and self.session_end_ts is None:
+                self.session_end_ts = max(ts or 0, self.session_start_ts) or None
+
+    def add_collected(self, cr):
+        """Estimated unsold value gathered this session (scans, bio samples)."""
+        if not cr or cr <= 0:
+            return
+        with self._lock:
+            self.session_collected_cr += cr
 
     def _massacre_snapshot(self):
         """Stack progress per target faction. Kills count toward every giver's
@@ -209,11 +229,13 @@ class AppState:
         )
         return {
             "start_ts": self.session_start_ts,
+            "end_ts": self.session_end_ts,
             "start_credits": self.session_start_credits,
             "credits_now": credits_now,
             "earned": earned,
             "jumps": self.session_jumps,
             "ly": round(self.session_ly, 1),
+            "collected": self.session_collected_cr,
         }
 
     def _exploration_snapshot(self):

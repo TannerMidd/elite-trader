@@ -134,6 +134,7 @@ class JournalWatcher:
         self._bio_fetched = set()  # id64s we've queried Spansh for this session
         self._hull_bucket = None   # lowest hull-damage tier already called out
         self._first_disc_system = None  # system a first-discovery alert fired for
+        self._risk_level = 0       # unsold-data risk tier already called out
         self._rebuy_level = 0      # 0 = covered, 1 = below 2x rebuy, 2 = below 1x
 
     # ---------- event handling ----------
@@ -152,6 +153,9 @@ class JournalWatcher:
 
     def _on_shutdown(self, e):
         self.state.update(game_running=False)
+        # Freeze the session clock: duration/cr-per-hour shouldn't keep
+        # counting wall time after you stop playing.
+        self.state.end_session(marketdb.parse_update_time(e.get("timestamp")))
 
     def _on_commander(self, e):
         self.state.update(commander=e.get("Name"))
@@ -362,14 +366,18 @@ class JournalWatcher:
         if base is not None:
             scans = dict(self.state.explo_scans)
             prev = scans.get(body)
+            first = not e.get("WasDiscovered", True)
             scans[body] = {
                 "body": body,
                 "base": base,
-                "first": not e.get("WasDiscovered", True),
+                "first": first,
                 "mapped": prev.get("mapped", False) if prev else False,
                 "class": e.get("PlanetClass") or e.get("StarType"),
             }
             self.state.update(explo_scans=scans)
+            if prev is None:  # count each body once, however often it's re-scanned
+                self.state.add_collected(round(base * (2.6 if first else 1)))
+            self._check_data_risk()
 
         if e.get("PlanetClass") is None:
             return
@@ -401,10 +409,12 @@ class JournalWatcher:
     def _on_sellexplorationdata(self, e):
         self.state.update(explo_scans={})
         self._log_income(e, "exploration", e.get("TotalEarnings") or e.get("BaseValue"))
+        self._check_data_risk()  # pile shrank: re-arm the at-risk ladder
 
     def _on_multisellexplorationdata(self, e):
         self.state.update(explo_scans={})
         self._log_income(e, "exploration", e.get("TotalEarnings") or e.get("BaseValue"))
+        self._check_data_risk()
 
     def _likely_first_log(self, genus, body):
         """Best-effort guess at the Vista Genomics 'first logged' 5x bonus
@@ -443,15 +453,18 @@ class JournalWatcher:
             })
         elif scan_type == "Analyse":
             value = biovalues.species_value(species) or biovalues.genus_info(genus).get("min_value") or 0
+            first = self._likely_first_log(genus, body)
             vault = list(self.state.bio_vault)
             vault.append({
                 "species": species, "genus": genus, "variant": variant,
                 "value": value, "body": body,
                 # Snapshot the estimate now: body flags and community data are
                 # both session-scoped, so deciding later would forget.
-                "first": self._likely_first_log(genus, body),
+                "first": first,
             })
             self.state.update(bio_vault=vault, bio_sampling=None)
+            self.state.add_collected(value * (5 if first else 1))
+            self._check_data_risk()
 
     # ---------- colonization ----------
 
@@ -532,6 +545,7 @@ class JournalWatcher:
         total = sum((b.get("Value") or 0) + (b.get("Bonus") or 0) for b in e.get("BioData") or [])
         self._log_income(e, "exobiology", total)
         self.state.update(bio_vault=[], bio_sampling=None)
+        self._check_data_risk()  # pile shrank: re-arm the at-risk ladder
 
     def _on_missioncompleted(self, e):
         self._log_income(e, "mission", e.get("Reward") or 0, e.get("Name"))
@@ -851,6 +865,41 @@ class JournalWatcher:
                 )
         self._rebuy_level = level
 
+    # Unsold data below this is never worth a callout, whatever the rebuy —
+    # keeps early-game ships with tiny insurance costs quiet.
+    RISK_FLOOR_CR = 20_000_000
+
+    def _unsold_data_cr(self):
+        """Everything a rebuy screen would erase: completed bio samples at
+        Vista value (first logs at 5x) plus unsold cartographic estimates."""
+        bio = sum(
+            (i.get("value") or 0) * (5 if i.get("first") else 1)
+            for i in self.state.bio_vault
+        )
+        explo = sum(exploration.effective_value(e) for e in self.state.explo_scans.values())
+        return bio + explo
+
+    def _check_data_risk(self):
+        """The exobiology heartbreak: dying with hundreds of millions in
+        unsold data aboard. One-shot callouts as the pile crosses 10x / 25x /
+        50x the ship's rebuy; the ladder re-arms after selling."""
+        rebuy = self.state.rebuy
+        if not rebuy or rebuy <= 0:
+            return
+        at_risk = self._unsold_data_cr()
+        ratio = at_risk / rebuy if at_risk >= self.RISK_FLOOR_CR else 0
+        level = 3 if ratio >= 50 else 2 if ratio >= 25 else 1 if ratio >= 10 else 0
+        if level > self._risk_level and self._live:
+            millions = round(at_risk / 1_000_000)
+            self.state.push_alert(
+                "critical" if level == 3 else "warn", "data_risk",
+                f"You are carrying roughly {millions} million credits of unsold "
+                f"exploration and biology data — about {int(ratio)} times your rebuy. "
+                "Consider banking it soon.",
+                f"◈ DATA AT RISK · ≈{millions}M CR UNSOLD ({int(ratio)}× REBUY)",
+            )
+        self._risk_level = level
+
     # Hull-damage tiers: (fraction ceiling, spoken/banner percent, level).
     _HULL_TIERS = ((0.25, 25, "critical"), (0.50, 50, "critical"), (0.75, 75, "warn"))
 
@@ -1148,9 +1197,19 @@ class JournalWatcher:
         alive = launcher.is_running()
         if alive is not None and alive != self.state.game_running:
             self.state.update(game_running=alive)
+            if not alive:
+                # Crash or exit without a Shutdown event: freeze the session
+                # at the last thing the game wrote, not at detection time.
+                self.state.end_session(
+                    marketdb.parse_update_time(self.state.last_journal_event)
+                    or marketdb.now_epoch()
+                )
 
     def run_forever(self):
         self.bootstrap()
+        # Replayed Shutdown events leave game_running=False even when the game
+        # is up right now; ask the process table before the slow history sweep.
+        self._probe_game()
         try:
             self.import_trade_history()
         except Exception:

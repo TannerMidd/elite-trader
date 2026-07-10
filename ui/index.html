@@ -127,12 +127,16 @@
         <div class="fp-tile"><div class="fp-label">EXPLO DATA</div><div class="fp-value orange" id="fp-explo">—</div></div>
         <div class="fp-tile fp-tile-wide"><div class="fp-label">BIO SAMPLES</div><div class="fp-value orange" id="fp-bio">—</div></div>
       </div>
+      <div id="fp-risk" class="fp-risk hidden" title="Everything a rebuy screen would erase: unsold scans + bio samples. Sell at Universal Cartographics / Vista Genomics to bank it — WHERE TO SELL YOUR DATA on the Explore page finds the nearest.">
+        ◈ DATA AT RISK · <span id="fp-risk-text"></span>
+      </div>
     </div>
   </div>
 
   <div class="fp-rule"><span>THIS SESSION <span id="fp-sess-since"></span></span><i></i></div>
   <div class="fp-tiles fp-tiles-row">
     <div class="fp-tile"><div class="fp-label">EARNED</div><div class="fp-value" id="fp-sess-earned">—</div></div>
+    <div class="fp-tile" title="Estimated value of scans and bio samples gathered this session — banked when you sell them"><div class="fp-label">COLLECTED</div><div class="fp-value" id="fp-sess-collected">—</div></div>
     <div class="fp-tile"><div class="fp-label">CR / HR</div><div class="fp-value" id="fp-sess-crhr">—</div></div>
     <div class="fp-tile"><div class="fp-label">JUMPS</div><div class="fp-value" id="fp-sess-jumps">—</div></div>
     <div class="fp-tile"><div class="fp-label">DISTANCE</div><div class="fp-value" id="fp-sess-ly">—</div></div>
@@ -499,6 +503,7 @@
       </div>
       <div class="stats an-tiles session-tiles">
         <div class="stat"><div class="label">EARNED</div><div class="value" id="session-earned">—</div></div>
+        <div class="stat" title="Estimated value of scans and bio samples gathered this session — banked when you sell them"><div class="label">COLLECTED</div><div class="value" id="session-collected">—</div></div>
         <div class="stat"><div class="label">DURATION</div><div class="value" id="session-duration">—</div></div>
         <div class="stat"><div class="label">JUMPS</div><div class="value" id="session-jumps">—</div></div>
         <div class="stat"><div class="label">DISTANCE</div><div class="value" id="session-ly">—</div></div>

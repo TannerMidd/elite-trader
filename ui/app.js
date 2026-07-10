@@ -440,6 +440,17 @@ function renderPanel() {
   $("fp-strip-cargo-fill").style.width = cargoPct + "%";
   $("fp-strip-cargo").textContent = cargoTxt.replace(/ /g, "");
 
+  // Data-at-risk chip: unsold scans + samples vs. the ship's rebuy. Same
+  // thresholds as the server's voice callout (10x warn, 50x critical).
+  const atRisk = ((state.exploration || {}).total || 0) + (((state.bio || {}).vault || {}).total || 0);
+  const risky = state.rebuy > 0 && atRisk >= 20e6 && atRisk >= state.rebuy * 10;
+  $("fp-risk").classList.toggle("hidden", !risky);
+  if (risky) {
+    $("fp-risk").classList.toggle("crit", atRisk >= state.rebuy * 50);
+    $("fp-risk-text").textContent =
+      `≈${shortCr(atRisk)} cr unsold — ${Math.round(atRisk / state.rebuy)}× your rebuy. Bank it soon.`;
+  }
+
   $("fp-credits").textContent = state.credits != null ? shortCr(state.credits) + " cr" : "—";
   const legal = $("fp-legal");
   legal.textContent = state.legal_state || "—";
@@ -756,7 +767,11 @@ function signedCr(n) {
 function renderSession(sess) {
   sess = sess || {};
   const has = sess.start_ts != null;
-  const dur = has ? Math.max(0, Date.now() / 1000 - sess.start_ts) : null;
+  // The clock stops at Shutdown (or crash detection) — a session isn't the
+  // hours the app sat open, it's the hours the game ran.
+  const until = sess.end_ts != null ? sess.end_ts : Date.now() / 1000;
+  const dur = has ? Math.max(0, until - sess.start_ts) : null;
+  const ended = has && sess.end_ts != null;
   const earned = has ? sess.earned : null;
   // Ignore cr/hr for the first couple of minutes so it doesn't read as ±millions.
   const crhr = (has && dur > 120 && earned != null) ? earned / (dur / 3600) : null;
@@ -765,13 +780,15 @@ function renderSession(sess) {
   const crhrTxt = crhr == null ? "—" : (crhr >= 0 ? "+" : "−") + shortCr(Math.abs(crhr)) + " cr/hr";
   const jumpsTxt = has ? String(sess.jumps || 0) : "—";
   const lyTxt = has ? fmtNum(sess.ly || 0) + " ly" : "—";
-  const durTxt = dur != null ? fmtDuration(dur) : "";
+  const durTxt = dur != null ? fmtDuration(dur) + (ended ? " · ended" : "") : "";
+  const collectedTxt = has && sess.collected ? "≈" + shortCr(sess.collected) + " cr" : "—";
 
   // Flight-panel tiles
   setText("fp-sess-earned", earnedTxt);
   setText("fp-sess-crhr", crhrTxt);
   setText("fp-sess-jumps", jumpsTxt);
   setText("fp-sess-ly", lyTxt);
+  setText("fp-sess-collected", collectedTxt);
   setText("fp-sess-since", durTxt ? "· " + durTxt.toUpperCase() : "");
   colorSign("fp-sess-earned", earned);
 
@@ -781,6 +798,7 @@ function renderSession(sess) {
   setText("session-duration", durTxt || "—");
   setText("session-jumps", jumpsTxt);
   setText("session-ly", lyTxt);
+  setText("session-collected", collectedTxt);
   setText("session-since", durTxt ? "· " + durTxt : "");
   colorSign("session-earned", earned);
   colorSign("session-crhr", crhr);
@@ -1203,9 +1221,11 @@ async function findSellPoints(ev) {
       }
       const wrap = document.createElement("div");
       wrap.className = "table-wrap";
+      const range = state && state.max_jump_range > 0 ? state.max_jump_range : null;
       const table = document.createElement("table");
       table.innerHTML =
         "<thead><tr><th>Station</th><th>System</th><th class=\"num\">Jump</th>" +
+        (range ? `<th class="num" title="At your ship's ${range.toFixed(1)} ly jump range — before neutron boosts">≈ Jumps</th>` : "") +
         "<th class=\"num\">Star dist</th><th>Pad</th><th></th></tr></thead>";
       const tbody = document.createElement("tbody");
       for (const s of rows) {
@@ -1214,6 +1234,7 @@ async function findSellPoints(ev) {
           `<td>${esc(s.station)}${s.carrier ? ' <span class="chip" title="Fleet carriers move — this position may be stale. Check before committing to the trip.">CARRIER</span>' : ""}</td>` +
           `<td class="dim">${esc(s.system)}</td>` +
           `<td class="num">${fmtNum(s.distance)} ly</td>` +
+          (range ? `<td class="num">${Math.max(1, Math.ceil(s.distance / range))}</td>` : "") +
           `<td class="num">${s.dist_ls != null ? fmtNum(Math.round(s.dist_ls)) + " ls" : "—"}</td>` +
           `<td>${s.large_pad ? "L" : "M/S"}</td>`;
         const td = document.createElement("td");
@@ -1678,10 +1699,13 @@ async function findRoutes(ev) {
   const results = $("route-results");
   go.disabled = true;
   status.classList.remove("error");
-  status.textContent = "Asking Spansh for routes… (can take ~10-30s)";
+  const searchMode = $("rf-mode").value;
+  status.textContent = searchMode === "loop"
+    ? "Searching your local market database… (~3-10s)"
+    : "Planning the chain… (local database, or Spansh when it isn't built · ~10-30s)";
   results.innerHTML = "";
   try {
-    const mode = $("rf-mode").value;
+    const mode = searchMode;
     const resp = await fetch("/api/trade-route", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -2014,7 +2038,8 @@ async function searchCommodity(ev) {
     table.classList.toggle("hidden", !(data.results || []).length);
     status.textContent = (data.results || []).length
       ? `${data.results.length} station(s) ${mode === "buy" ? "selling" : "buying"} ${data.commodity} within ${$("cs-radius").value} ly.`
-      : `Nothing ${mode === "buy" ? "selling" : "buying"} ${data.commodity || "that"} nearby with those filters.`;
+      : `Nothing ${mode === "buy" ? "selling" : "buying"} ${data.commodity || "that"} nearby with those filters — ` +
+        "widen the radius, or if you're deep in the black, WHERE TO SELL YOUR DATA (Explore tab) finds the nearest civilization.";
   } catch (err) {
     table.classList.add("hidden");
     status.classList.add("error");
@@ -2068,7 +2093,8 @@ async function searchMining(ev) {
     table.classList.toggle("hidden", !results.length);
     status.textContent = results.length
       ? `${results.length} mineable commodities with buyers within ${$("mn-radius").value} ly, best price first. ◇ finds where to mine each.`
-      : "Nothing mineable selling nearby with those filters — widen the radius or lower Min price.";
+      : "Nothing mineable selling nearby with those filters — widen the radius or lower Min price. " +
+        "(Deep in the black? There are no buyers out here — see WHERE TO SELL YOUR DATA on the Explore tab.)";
   } catch (err) {
     table.classList.add("hidden");
     status.classList.add("error");
@@ -2197,7 +2223,7 @@ async function searchExobio(ev) {
       ? `Nothing cleared your ${esc(data.relaxed)} filter nearby, so here are the closest matching worlds regardless. `
       : "";
     status.textContent = relaxNote + genusNote +
-      `${systems.length} systems in visit order · ≈${fmtNum(data.total_value)} cr of exobiology if you sample it all (first footfall pays up to 5× more).`;
+      `${systems.length} systems in visit order · ≈${fmtNum(data.total_value)} cr of exobiology if you sample it all (species nobody has logged yet pay 5×).`;
 
     const summary = document.createElement("div");
     summary.className = "route-summary";
