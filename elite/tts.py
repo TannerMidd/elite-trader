@@ -70,11 +70,20 @@ VOICES = {
 }
 
 
+def _canonical_voice(name):
+    """Map a possibly request-derived voice name onto the catalog's own key.
+    The returned string comes from the VOICES constant — never from input —
+    so nothing tainted can reach a filesystem path (py/path-injection)."""
+    for known in VOICES:
+        if name == known:
+            return known
+    return None
+
+
 def active_voice():
     from . import settings  # lazy: avoids an import cycle at module load
 
-    voice = settings.get("tts_voice", DEFAULT_VOICE)
-    return voice if voice in VOICES else DEFAULT_VOICE
+    return _canonical_voice(settings.get("tts_voice", DEFAULT_VOICE)) or DEFAULT_VOICE
 
 
 def model_path(voice):
@@ -145,11 +154,12 @@ def set_voice(name):
     is server-wide: synthesis happens here, every device hears the result."""
     from . import settings
 
-    if name not in VOICES:
+    voice = _canonical_voice(name)
+    if voice is None:
         raise TTSError("Unknown voice.")
-    settings.update({"tts_voice": name})
+    settings.update({"tts_voice": voice})
     stop()  # next synthesis restarts piper with the new model
-    if not voice_installed(name):
+    if not voice_installed(voice):
         start_download()
 
 
