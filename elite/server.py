@@ -298,6 +298,24 @@ def create_app(state):
             return error_response(exc, 502)
         return jsonify({"kind": kind.title(), "reference": ref, "traders": traders})
 
+    @app.get("/api/sell-data")
+    def api_sell_data():
+        """Nearest ports to sell exploration data (Universal Cartographics) and
+        bio samples (Vista Genomics) — the deep-space 'get me home' search."""
+        snap = state.snapshot()
+        ref = request.args.get("system") or snap.get("system")
+        include_carriers = request.args.get("carriers") == "1"
+        out = {}
+        for key, service in (("carto", "Universal Cartographics"), ("bio", "Vista Genomics")):
+            try:
+                rows = spansh.service_stations(ref, service, size=24, coords=snap.get("star_pos"))
+            except spansh.SpanshError as exc:
+                return error_response(exc, 502)
+            if not include_carriers:
+                rows = [r for r in rows if not r["carrier"]]
+            out[key] = rows[:5]
+        return jsonify({"reference": ref, **out})
+
     @app.get("/api/price-history")
     def api_price_history():
         """Recorded price points for one tracked market (docked-at or watched)."""

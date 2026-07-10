@@ -350,6 +350,18 @@
       <ul id="bio-vault" class="cargo-list"></ul>
       <div id="bio-vault-empty" class="dim empty">No completed samples on board.</div>
     </section>
+
+    <section class="card" id="selldata-card" data-arr="selldata">
+      <div class="label">WHERE TO SELL YOUR DATA <span class="dim">nearest ports with Universal Cartographics (map data) and Vista Genomics (bio samples) · via Spansh</span></div>
+      <form id="sd-form" class="route-form">
+        <label class="check" title="Fleet carriers can fit both services and often sit far out in the black — but they move, so a listed position may be stale. Untick to see only fixed starports.">
+          <input type="checkbox" id="sd-carriers" checked> Include fleet carriers
+        </label>
+        <button type="submit" id="sd-go" class="primary">FIND NEAREST</button>
+      </form>
+      <div id="sd-status" class="dim">Deep in the black and done exploring? This finds the closest place to turn your scans and samples into credits.</div>
+      <div id="sd-results"></div>
+    </section>
   </div>
 
   <div class="tabpane hidden" id="tab-guides">

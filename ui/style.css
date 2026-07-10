@@ -1595,6 +1595,10 @@ body.panel-mode #fp-boot.hidden { display: none; }
 .footer-links a { padding: 3px 10px; font-size: 11.5px; color: var(--dim); }
 .footer-links a:hover { color: var(--orange); }
 
+/* "Where to sell your data" result sections */
+.sd-section { margin-top: 14px; }
+.sd-section .label { margin-bottom: 4px; }
+
 /* "Likely first log" badge (5x exobiology bonus) */
 .bio-first {
   color: var(--good);

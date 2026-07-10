@@ -303,6 +303,38 @@ def station_search(reference_system, module=None, ship=None, size=20, coords=Non
     ]
 
 
+def service_stations(reference_system, service, size=8, coords=None):
+    """Nearest stations offering a dockable service ('Universal Cartographics',
+    'Vista Genomics', ...). Fleet carriers can fit both and often sit far out
+    in the black, so they're included and flagged — but they move, so treat
+    their position as a lead, not a promise."""
+    if not reference_system and not (coords and len(coords) == 3):
+        raise SpanshError("No reference system known yet - is the game running?")
+    body = {
+        "filters": {"services": [{"name": [service]}]},
+        "sort": [{"distance": {"direction": "asc"}}],
+        "size": int(size),
+        "page": 0,
+        "reference_system": reference_system,
+    }
+    if not reference_system:
+        body.pop("reference_system")
+        body["reference_coords"] = {"x": coords[0], "y": coords[1], "z": coords[2]}
+    return [
+        {
+            "station": s.get("name"),
+            "system": s.get("system_name"),
+            "distance": round(s.get("distance") or 0, 1),
+            "dist_ls": s.get("distance_to_arrival"),
+            "type": s.get("type"),
+            "carrier": (s.get("type") or "") == "Drake-Class Carrier",
+            "large_pad": bool(s.get("has_large_pad")),
+            "updated_at": s.get("updated_at"),
+        }
+        for s in _stations_search(body, coords)
+    ]
+
+
 def material_traders(reference_system, kind, size=8, coords=None):
     """Nearest material traders of one kind ('Raw'|'Manufactured'|'Encoded')."""
     body = {

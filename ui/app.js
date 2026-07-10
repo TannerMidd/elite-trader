@@ -1110,6 +1110,72 @@ async function findTraders() {
   }
 }
 
+/* ---------- where to sell exploration/bio data ---------- */
+
+/* The deep-space "get me home" search: nearest ports with Universal
+   Cartographics (map data) and Vista Genomics (bio samples). */
+async function findSellPoints(ev) {
+  ev.preventDefault();
+  const btn = $("sd-go");
+  const status = $("sd-status");
+  const out = $("sd-results");
+  btn.disabled = true;
+  status.classList.remove("error");
+  status.textContent = "Searching outward from your position… (~5s)";
+  out.innerHTML = "";
+  try {
+    const resp = await fetch("/api/sell-data?carriers=" + ($("sd-carriers").checked ? "1" : "0"));
+    const data = await resp.json();
+    if (!resp.ok) throw new Error(data.error || "Search failed");
+    const sections = [
+      ["carto", "UNIVERSAL CARTOGRAPHICS", "sells your exploration map data"],
+      ["bio", "VISTA GENOMICS", "sells your bio samples"],
+    ];
+    status.textContent = `Nearest ports from ${data.reference || "your position"}:`;
+    for (const [key, title, blurb] of sections) {
+      const rows = data[key] || [];
+      const sec = document.createElement("div");
+      sec.className = "sd-section";
+      sec.innerHTML = `<div class="label">${title} <span class="dim">${blurb}</span></div>`;
+      if (!rows.length) {
+        sec.innerHTML += '<div class="dim empty">None found — widen the search by including fleet carriers.</div>';
+        out.appendChild(sec);
+        continue;
+      }
+      const wrap = document.createElement("div");
+      wrap.className = "table-wrap";
+      const table = document.createElement("table");
+      table.innerHTML =
+        "<thead><tr><th>Station</th><th>System</th><th class=\"num\">Jump</th>" +
+        "<th class=\"num\">Star dist</th><th>Pad</th><th></th></tr></thead>";
+      const tbody = document.createElement("tbody");
+      for (const s of rows) {
+        const tr = document.createElement("tr");
+        tr.innerHTML =
+          `<td>${esc(s.station)}${s.carrier ? ' <span class="chip" title="Fleet carriers move — this position may be stale. Check before committing to the trip.">CARRIER</span>' : ""}</td>` +
+          `<td class="dim">${esc(s.system)}</td>` +
+          `<td class="num">${fmtNum(s.distance)} ly</td>` +
+          `<td class="num">${s.dist_ls != null ? fmtNum(Math.round(s.dist_ls)) + " ls" : "—"}</td>` +
+          `<td>${s.large_pad ? "L" : "M/S"}</td>`;
+        const td = document.createElement("td");
+        td.className = "num";
+        td.appendChild(plotButton(s.system));
+        tr.appendChild(td);
+        tbody.appendChild(tr);
+      }
+      table.appendChild(tbody);
+      wrap.appendChild(table);
+      sec.appendChild(wrap);
+      out.appendChild(sec);
+    }
+  } catch (err) {
+    status.classList.add("error");
+    status.textContent = String(err.message || err);
+  } finally {
+    btn.disabled = false;
+  }
+}
+
 /* ---------- engineering materials (F6) ---------- */
 
 function renderMaterials(mats) {
@@ -3024,6 +3090,7 @@ document.addEventListener("DOMContentLoaded", () => {
   $("mining-form").addEventListener("submit", searchMining);
   $("os-form").addEventListener("submit", searchStations);
   $("cargo-sell-btn").addEventListener("click", findCargoSell);
+  $("sd-form").addEventListener("submit", findSellPoints);
   $("exo-form").addEventListener("submit", searchExobio);
   buildExoGenusChips();
 
