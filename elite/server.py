@@ -7,7 +7,7 @@ from pathlib import Path
 from flask import Flask, jsonify, request, send_from_directory
 from werkzeug.serving import make_server
 
-from . import alerts, biovalues, links, marketdb, routes, settings, spansh
+from . import alerts, biovalues, launcher, links, marketdb, routes, settings, spansh
 from .eddn import LISTENER
 from .errors import UserFacingError
 from .seed import SEEDER
@@ -315,6 +315,21 @@ def create_app(state):
                 rows = [r for r in rows if not r["carrier"]]
             out[key] = rows[:5]
         return jsonify({"reference": ref, **out})
+
+    @app.post("/api/launch-game")
+    def api_launch_game():
+        """Start Elite Dangerous via its store launcher (Steam / Frontier).
+        The target is fixed in launcher.py — nothing here executes input."""
+        if launcher.is_running():
+            state.update(game_running=True)
+            return jsonify({"ok": True, "already_running": True})
+        try:
+            via = launcher.launch()
+        except launcher.LaunchError as exc:
+            return error_response(exc, 502)
+        except OSError as exc:  # protocol handler missing / launcher refused
+            return error_response(exc, 502)
+        return jsonify({"ok": True, "via": via})
 
     @app.get("/api/price-history")
     def api_price_history():

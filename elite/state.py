@@ -37,6 +37,9 @@ class AppState:
         self.legal_state = None
         self.destination = None
 
+        # Is the game client itself running? None = not probed yet.
+        self.game_running = None
+
         # Collections
         self.jump_history = deque(maxlen=20)  # newest first
         self.cargo_inventory = []
@@ -287,6 +290,7 @@ class AppState:
                 "alerts": list(self.alerts),
                 "last_journal_event": self.last_journal_event,
                 "journal_dir_found": self.journal_dir_found,
+                "game_running": self.game_running,
             }
 
     def _bio_signals_snapshot(self):

@@ -705,6 +705,7 @@ function render() {
   renderRebuy($("rebuy"));
 
   renderBanner();
+  renderGameState();
   handleAlerts();
   renderLinks();
   renderMarket();
@@ -1107,6 +1108,48 @@ async function findTraders() {
     });
   } catch (e) {
     out.innerHTML = '<div class="dim">Trader search failed — try again.</div>';
+  }
+}
+
+/* ---------- game-offline banner + launch button ---------- */
+
+let launchSentAt = 0;
+
+/* Shown only when the server has positively probed the game as NOT running
+   (null = not probed yet — stay quiet rather than flash a false banner). */
+function renderGameState() {
+  const bar = $("game-offline");
+  const offline = state.game_running === false;
+  bar.classList.toggle("show", offline);
+  if (!offline && launchSentAt) {
+    // The game came up: reset the button for next time.
+    launchSentAt = 0;
+    $("launch-game").disabled = false;
+    $("launch-status").textContent = "";
+  } else if (offline && launchSentAt && Date.now() - launchSentAt > 180000) {
+    // Three minutes and still no journal: let them try again.
+    launchSentAt = 0;
+    $("launch-game").disabled = false;
+    $("launch-status").textContent = "Still offline — launch again, or start it on the PC.";
+  }
+}
+
+async function launchGame() {
+  const btn = $("launch-game");
+  const status = $("launch-status");
+  btn.disabled = true;
+  status.textContent = "Launching…";
+  try {
+    const resp = await fetch("/api/launch-game", { method: "POST" });
+    const data = await resp.json();
+    if (!resp.ok) throw new Error(data.error || "Launch failed");
+    launchSentAt = Date.now();
+    status.textContent = data.already_running
+      ? "The game is already running."
+      : `Handed off to ${data.via} — reaching the cockpit takes a minute or two. This banner clears by itself.`;
+  } catch (err) {
+    btn.disabled = false;
+    status.textContent = String(err.message || err);
   }
 }
 
@@ -3091,6 +3134,7 @@ document.addEventListener("DOMContentLoaded", () => {
   $("os-form").addEventListener("submit", searchStations);
   $("cargo-sell-btn").addEventListener("click", findCargoSell);
   $("sd-form").addEventListener("submit", findSellPoints);
+  $("launch-game").addEventListener("click", launchGame);
   $("exo-form").addEventListener("submit", searchExobio);
   buildExoGenusChips();
 

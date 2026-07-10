@@ -8,9 +8,10 @@ import threading
 import time
 from pathlib import Path
 
-from . import biovalues, exploration, marketdb
+from . import biovalues, exploration, launcher, marketdb
 
 BIO_SIGNAL_TYPE = "$SAA_SignalType_Biological;"
+GAME_PROBE_SECONDS = 15  # process-probe cadence; catches exits with no Shutdown event
 
 DEFAULT_JOURNAL_DIR = (
     Path.home() / "Saved Games" / "Frontier Developments" / "Elite Dangerous"
@@ -144,6 +145,13 @@ class JournalWatcher:
             handler(event)
         if event.get("timestamp"):
             self.state.update(last_journal_event=event["timestamp"])
+        # A live journal line can only come from a running game; Shutdown is
+        # the game announcing the opposite (its handler just set it False).
+        if self._live and etype and etype != "Shutdown":
+            self.state.update(game_running=True)
+
+    def _on_shutdown(self, e):
+        self.state.update(game_running=False)
 
     def _on_commander(self, e):
         self.state.update(commander=e.get("Name"))
@@ -1134,6 +1142,13 @@ class JournalWatcher:
         self._live = True
         self._fetch_community_bio(self.state.system_address, self.state.system)
 
+    def _probe_game(self):
+        """Reconcile game_running with the process table. Journal events flip
+        it True instantly; this probe is what notices the game going away."""
+        alive = launcher.is_running()
+        if alive is not None and alive != self.state.game_running:
+            self.state.update(game_running=alive)
+
     def run_forever(self):
         self.bootstrap()
         try:
@@ -1144,11 +1159,15 @@ class JournalWatcher:
         # Bootstrap set the current system without a live event, so fetch its
         # community bio data now.
         self._fetch_community_bio(self.state.system_address, self.state.system)
+        last_probe = 0.0
         while True:
             try:
                 self._ensure_journal_dir()
                 self._poll_journal()
                 self._refresh_status_files()
+                if time.monotonic() - last_probe >= GAME_PROBE_SECONDS:
+                    last_probe = time.monotonic()
+                    self._probe_game()
             except Exception:
                 pass
             time.sleep(POLL_SECONDS)
