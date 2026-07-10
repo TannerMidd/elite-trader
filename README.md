@@ -16,9 +16,9 @@ cockpit mode · route plotting inside the game itself.
 > directed and play-tested by me against my own live game. It's a personal
 > project built for my own use — shared as-is, and anyone is welcome to use it.
 
-[**Download**](../../releases) · [**Demo video**](docs/EliteTrader-demo.mp4) · [**Wiki**](../../wiki) · [**Getting Started**](../../wiki/Getting-Started) · [**Troubleshooting**](../../wiki/Troubleshooting-and-FAQ)
+[**Download**](../../releases) · [**Demo video**](https://tannermidd.github.io/elite-trader/) · [**Wiki**](../../wiki) · [**Getting Started**](../../wiki/Getting-Started) · [**Troubleshooting**](../../wiki/Troubleshooting-and-FAQ)
 
-[<img src="https://raw.githubusercontent.com/wiki/TannerMidd/elite-trader/demo-preview.gif" alt="Elite Trader demo — live status, trade routes, markets, exobiology & analytics" width="900">](docs/EliteTrader-demo.mp4)
+[<img src="https://raw.githubusercontent.com/wiki/TannerMidd/elite-trader/demo-preview.gif" alt="Elite Trader demo — live status, trade routes, markets, exobiology & analytics" width="900">](https://tannermidd.github.io/elite-trader/)
 
 *▶ click the preview for the full 1:39 tour in HD*
 
