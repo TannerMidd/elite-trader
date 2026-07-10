@@ -127,6 +127,7 @@ class JournalWatcher:
         self._partial = ""
         self._status_mtimes = {}
         self._body_scans = {}  # body name -> details, current system only
+        self._body_ids = {}    # BodyID -> body name, current system only
         self._live = False  # False during bootstrap replay, True while tailing
         self._last_logged_balance = None
         self._bio_fetched = set()  # id64s we've queried Spansh for this session
@@ -187,6 +188,7 @@ class JournalWatcher:
     def _on_location(self, e):
         if e.get("StarSystem") != self.state.system:
             self._body_scans = {}
+            self._body_ids = {}
             self.state.update(bio_signals={})
         self.state.update(
             system=e.get("StarSystem"),
@@ -202,6 +204,7 @@ class JournalWatcher:
 
     def _on_fsdjump(self, e):
         self._body_scans = {}
+        self._body_ids = {}
         self.state.update(
             system=e.get("StarSystem"),
             system_address=e.get("SystemAddress"),
@@ -225,6 +228,7 @@ class JournalWatcher:
     def _on_carrierjump(self, e):
         if e.get("StarSystem") != self.state.system:
             self._body_scans = {}
+            self._body_ids = {}
             self.state.update(bio_signals={})
         self.state.update(
             system=e.get("StarSystem"),
@@ -325,6 +329,8 @@ class JournalWatcher:
         body = e.get("BodyName")
         if not body:
             return
+        if e.get("BodyID") is not None:
+            self._body_ids[e["BodyID"]] = body
         # First-in: the primary star's auto-scan reveals whether anyone has been
         # here before. WasDiscovered false on the entry star = the whole system
         # is yours to discover. Announce once per system, live only.
@@ -367,6 +373,9 @@ class JournalWatcher:
             "temp_k": round(e.get("SurfaceTemperature")) if e.get("SurfaceTemperature") else None,
             "landable": bool(e.get("Landable")),
             "volcanism": e.get("Volcanism") or "",
+            # Nobody had discovered this body before you scanned it — any bio
+            # you log here is almost certainly a first (5x at Vista Genomics).
+            "was_discovered": bool(e.get("WasDiscovered", True)),
         }
         self._body_scans[body] = details
         if body in self.state.bio_signals:
@@ -389,11 +398,30 @@ class JournalWatcher:
         self.state.update(explo_scans={})
         self._log_income(e, "exploration", e.get("TotalEarnings") or e.get("BaseValue"))
 
+    def _likely_first_log(self, genus, body):
+        """Best-effort guess at the Vista Genomics 'first logged' 5x bonus
+        (the journal never says at scan time — only SellOrganicData's Bonus
+        field confirms it). Two signals: if another commander already reported
+        this genus on this body via EDDN it is NOT yours; if nobody had even
+        discovered the body when you scanned it, it almost certainly is."""
+        if not body:
+            return False
+        community = self.state.bio_community or {}
+        if community.get("id64") == self.state.system_address:
+            entry = (community.get("bodies") or {}).get(body) or {}
+            if any(g.get("name") == genus for g in entry.get("genuses") or []):
+                return False
+        scan = self._body_scans.get(body) or {}
+        return scan.get("was_discovered") is False
+
     def _on_scanorganic(self, e):
         species = e.get("Species_Localised") or _clean_name(e.get("Species"))
         genus = e.get("Genus_Localised") or _clean_name(e.get("Genus"))
         variant = e.get("Variant_Localised")
         scan_type = e.get("ScanType")
+        # ScanOrganic carries the body as an ID; our own Scan records name it.
+        # state.body is only a fallback — it can be stale mid-session.
+        body = self._body_ids.get(e.get("Body")) or self.state.body
         if scan_type in ("Log", "Sample"):
             prev = self.state.bio_sampling or {}
             same = prev.get("species") == species
@@ -403,13 +431,17 @@ class JournalWatcher:
                 "progress": progress,
                 "colony_m": biovalues.GENUS_COLONY_M.get(genus),
                 "value": biovalues.species_value(species),
+                "first": self._likely_first_log(genus, body),
             })
         elif scan_type == "Analyse":
             value = biovalues.species_value(species) or biovalues.genus_info(genus).get("min_value") or 0
             vault = list(self.state.bio_vault)
             vault.append({
                 "species": species, "genus": genus, "variant": variant,
-                "value": value, "body": self.state.body,
+                "value": value, "body": body,
+                # Snapshot the estimate now: body flags and community data are
+                # both session-scoped, so deciding later would forget.
+                "first": self._likely_first_log(genus, body),
             })
             self.state.update(bio_vault=vault, bio_sampling=None)
 
@@ -930,7 +962,11 @@ class JournalWatcher:
 
         # Walk backwards until the essentials have been seen, then replay the
         # selected files in chronological order through the normal handlers.
-        needed = {"location": False, "loadout": False, "commander": False}
+        # The bio vault holds everything since your last Vista Genomics sale
+        # (or death), which on a long expedition can be many sessions back —
+        # while a file with samples has no newer sale/death, keep walking so
+        # unsold samples survive restarts (BOOTSTRAP_MAX_FILES still caps it).
+        needed = {"location": False, "loadout": False, "commander": False, "bio_boundary": False}
         selected = []
         for path in reversed(files[-BOOTSTRAP_MAX_FILES:]):
             selected.insert(0, path)
@@ -944,6 +980,8 @@ class JournalWatcher:
                 needed["loadout"] = True
             if '"event":"Commander"' in text or '"event":"LoadGame"' in text:
                 needed["commander"] = True
+            if '"event":"SellOrganicData"' in text or '"event":"Died"' in text:
+                needed["bio_boundary"] = True  # vault emptied here; older samples are sold
             if all(needed.values()) and len(selected) >= BOOTSTRAP_MIN_FILES:
                 break
 

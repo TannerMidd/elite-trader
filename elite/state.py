@@ -52,7 +52,7 @@ class AppState:
         # Exobiology (current system signals; vault persists until sold/death)
         self.bio_signals = {}   # body name -> {count, genuses:[...], body details}
         self.bio_sampling = None  # {"genus","species","variant","progress"}
-        self.bio_vault = []     # [{"species","genus","variant","value","body"}]
+        self.bio_vault = []     # [{"species","genus","variant","value","body","first"}]
         # Community-mapped genuses for the current system (Spansh galaxy dump)
         self.bio_community = {}  # {"id64", "system", "bodies": {body: {count, genuses}}}
 
@@ -266,7 +266,11 @@ class AppState:
                     "sampling": self.bio_sampling,
                     "vault": {
                         "items": list(self.bio_vault),
-                        "total": sum(i.get("value") or 0 for i in self.bio_vault),
+                        # First-logged species pay 5x at Vista Genomics.
+                        "total": sum(
+                            (i.get("value") or 0) * (5 if i.get("first") else 1)
+                            for i in self.bio_vault
+                        ),
                     },
                 },
                 "exploration": self._exploration_snapshot(),
