@@ -16,9 +16,9 @@ cockpit mode · route plotting inside the game itself.
 > directed and play-tested by me against my own live game. It's a personal
 > project built for my own use — shared as-is, and anyone is welcome to use it.
 
-[**Download**](../../releases) · [**Demo video**](https://raw.githubusercontent.com/wiki/TannerMidd/elite-trader/EliteTrader-demo.mp4) · [**Wiki**](../../wiki) · [**Getting Started**](../../wiki/Getting-Started) · [**Troubleshooting**](../../wiki/Troubleshooting-and-FAQ)
+[**Download**](../../releases) · [**Demo video**](docs/EliteTrader-demo.mp4) · [**Wiki**](../../wiki) · [**Getting Started**](../../wiki/Getting-Started) · [**Troubleshooting**](../../wiki/Troubleshooting-and-FAQ)
 
-[<img src="https://raw.githubusercontent.com/wiki/TannerMidd/elite-trader/demo-thumb.jpg" alt="Watch the Elite Trader demo video" width="900">](https://raw.githubusercontent.com/wiki/TannerMidd/elite-trader/EliteTrader-demo.mp4)
+[<img src="https://raw.githubusercontent.com/wiki/TannerMidd/elite-trader/demo-thumb.jpg" alt="Watch the Elite Trader demo video" width="900">](docs/EliteTrader-demo.mp4)
 
 *▶ click for the 1:39 video tour*
 
