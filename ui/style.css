@@ -1689,7 +1689,8 @@ body.panel-mode #fp-boot.hidden { display: none; }
 }
 .go-launch:active { transform: scale(.97); }
 .go-launch-label { position: relative; z-index: 1; }
-/* Ignition engaged: crawling hazard stripes while we wait for telemetry */
+/* Ignition engaged: crawling hazard stripes while we wait for telemetry.
+   The button stays live — pressing it again aborts the sequence. */
 #game-offline.launching .go-launch,
 .go-launch:disabled {
   background: repeating-linear-gradient(135deg, #241505 0 12px, #170e04 12px 24px);
@@ -1697,8 +1698,8 @@ body.panel-mode #fp-boot.hidden { display: none; }
   color: var(--orange);
   animation: go-crawl 1.2s linear infinite;
   filter: none;
-  cursor: default;
 }
+.go-launch:disabled { cursor: default; }
 #game-offline.launching .go-launch::after { display: none; }
 
 /* Indeterminate launch-sequence bar along the banner's bottom edge */
