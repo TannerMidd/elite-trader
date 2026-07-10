@@ -66,7 +66,7 @@ Frontier Developments plc.
 
 ### 🧬 Explore & exobiology — [wiki](../../wiki/Exploration-and-Exobiology)
 - **Bio signals** for the current system — with genuses **other commanders already mapped** (via Spansh) shown before you even honk, and predictions where nobody has.
-- **Exobiology route** ("Billionaire's Boulevard") from your position, **filterable by genus**; sampling progress + unsold-samples vault with Vista Genomics values.
+- **Exobiology route** ("Billionaire's Boulevard") from your position, **filterable by genus**; sampling progress + unsold-samples vault with Vista Genomics values, including **★ likely first-log detection** (the 5× bonus, predicted from body discovery state + community data).
 - **Road to Riches**, **neutron plotter**, unsold cartographic value tracker, and **◈ TRACK** progress banners that auto-advance as you jump.
 
 ### ⚔️ Combat & missions
@@ -78,7 +78,7 @@ Frontier Developments plc.
 - **Blueprint planner** — pin a blueprint + grade, get a live shopping list vs. your materials, deficits with **material-trader conversion math**, nearest raw/manufactured/encoded traders, and a callout when your list completes.
 
 ### 🖥️ Cockpit — [wiki](../../wiki/Flight-Panel-Mode)
-- **Flight panel mode**: a touch-first cockpit display for a mounted tablet — every page themed like an MFD, swipe or touch-bar navigation, one-tap best-loop.
+- **Flight panel**: the default view — a touch-first cockpit display for a mounted tablet, with a nav rail, a persistent status strip, swipe navigation, one-tap best-loop and optional fullscreen. (✕ EXIT switches to the classic desktop layout.)
 - **Voice callouts** for what actually matters: *fuel-scoop warnings along your plotted route* (never strand in a dry stretch again), interdictions, hull damage, first discoveries, rebuy coverage, waypoints.
 - **Arrange mode** — drag cards to reorder any page; layouts saved per device.
 - **Autoplot (Windows)** — ◎ plots the route in the game itself using your own keybinds, verified against `NavRoute.json`. [wiki](../../wiki/Autoplot)
@@ -109,7 +109,7 @@ Then:
    if anything's off, **Settings → Journal folder** validates as you type.
 2. **Database tab → Build Database** (once, ~15 min) — every station market in
    the galaxy, then kept fresh in real time by EDDN. [How it works →](../../wiki/Market-Database)
-3. **Open the LAN URL on a tablet** and tap **◈ PANEL**.
+3. **Open the LAN URL on a tablet** — it starts in the flight panel; tap **⛶ FULL** for fullscreen.
 
 ## Good to know
 

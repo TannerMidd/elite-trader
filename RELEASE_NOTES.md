@@ -1,28 +1,45 @@
-## Elite Trader v1.10.1 — security hardening
+## Elite Trader v1.11.0 — the new flight panel
 
-A small, focused release: GitHub's CodeQL security scan was run against the
-whole codebase and **every finding (19) is fixed**. No features changed —
-everything from v1.10.0 works exactly as before.
+The tablet cockpit got a ground-up redesign — and it's now the app's default
+view. Plus: the exobiology vault now knows which of your samples are likely
+**first logs** and prices in their 5× bonus.
 
-### 🔒 What was hardened
-Elite Trader serves its UI to your whole LAN (that's how the tablet panel
-works), so the API deserves the same care as a public web app:
+### 🛩️ Flight panel, redesigned (and now the default)
+- **New cockpit shell**: a left icon rail for the eight pages, and a
+  persistent status strip on every page — current system, station,
+  destination, fuel & cargo bars, a live clock and your CMDR name.
+- **Every page restyled**: corner-bracketed MFD cards, glowing readouts,
+  proper cockpit typography (Chakra Petch + IBM Plex Mono, bundled — works
+  offline), a boot splash and subtle scanlines. Swipe navigation, arrange
+  mode and everything else work as before.
+- **The panel is now what opens first.** ✕ EXIT switches to the classic
+  desktop layout (and the app remembers your choice); ◈ PANEL brings it back.
+- **Fullscreen is a button now** (⛶ FULL in the rail) instead of being forced
+  on entry — browsers often blocked the old automatic attempt anyway.
+- On phones and portrait screens the rail becomes a bottom bar.
 
-- **Error messages can never leak internals.** Only messages written for the
-  player are ever sent back by the API; anything unexpected is logged on the
-  machine running the app and the client just sees a generic error.
-- **No more path probing via the journal-folder check.** The live "is this
-  folder right?" validation in Settings now only inspects places a journal
-  folder can plausibly live (your user profile / Saved Games / the
-  auto-detected folder). Anything else shows as "can't check from here" —
-  SAVE still works for exotic setups.
-- **A search-query regex could be made slow on purpose** (a classic
-  denial-of-service trick); it now runs in linear time no matter what's
-  typed into module search.
+### 🧬 First-log detection for exobiology (the 5× bonus)
+Being the *first commander ever to log a species on a body* pays **5×** at
+Vista Genomics. The game only tells you when you sell — Elite Trader now
+predicts it the moment you finish sampling:
+- **★ FIRST LOG ×5** badges in the unsold-samples vault and on the
+  sampling-in-progress card, with the boosted value priced into every total
+  (including the BIO SAMPLES tile on the status page).
+- How it's judged: the body was **undiscovered when you scanned it** and no
+  other commander has reported that genus there via the community data
+  network. Hover any ★ for the explanation; it's confirmed on sale.
+- The bio-signals table marks **undiscovered bodies with a ★** — land there
+  and every species you log is almost certainly a first.
+- Sold values were already counted correctly (the game reports the bonus in
+  the sale event); the estimates now match them.
 
 ### 🐛 Also
-- Update-check errors now say what went wrong by name (e.g. `ConnectTimeout`)
-  instead of dumping a wall of connection internals into the Settings panel.
+- **Unsold samples survive restarts on long expeditions.** Startup now reads
+  your journal back to the last Vista Genomics sale (or death), so samples
+  completed many sessions ago no longer vanish from the vault.
+- Vault entries now name the body they were sampled on reliably (previously
+  the label could lag behind where you actually were).
+- README screenshots retaken in the new flight-panel design.
 
 ---
 
