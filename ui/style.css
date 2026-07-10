@@ -16,6 +16,37 @@
   --card-shadow: 0 2px 10px rgba(0, 0, 0, .25);
 }
 
+/* Cockpit typefaces (self-hosted so the panel works offline). Only the flight
+   panel uses them, so the browser never downloads them on the desktop UI. */
+@font-face {
+  font-family: "Chakra Petch"; font-style: normal; font-weight: 400; font-display: swap;
+  src: url("fonts/chakra-petch-400.woff2") format("woff2");
+}
+@font-face {
+  font-family: "Chakra Petch"; font-style: normal; font-weight: 500; font-display: swap;
+  src: url("fonts/chakra-petch-500.woff2") format("woff2");
+}
+@font-face {
+  font-family: "Chakra Petch"; font-style: normal; font-weight: 600; font-display: swap;
+  src: url("fonts/chakra-petch-600.woff2") format("woff2");
+}
+@font-face {
+  font-family: "Chakra Petch"; font-style: normal; font-weight: 700; font-display: swap;
+  src: url("fonts/chakra-petch-700.woff2") format("woff2");
+}
+@font-face {
+  font-family: "IBM Plex Mono"; font-style: normal; font-weight: 400; font-display: swap;
+  src: url("fonts/ibm-plex-mono-400.woff2") format("woff2");
+}
+@font-face {
+  font-family: "IBM Plex Mono"; font-style: normal; font-weight: 500; font-display: swap;
+  src: url("fonts/ibm-plex-mono-500.woff2") format("woff2");
+}
+@font-face {
+  font-family: "IBM Plex Mono"; font-style: normal; font-weight: 600; font-display: swap;
+  src: url("fonts/ibm-plex-mono-600.woff2") format("woff2");
+}
+
 * { box-sizing: border-box; }
 
 body {
@@ -819,67 +850,159 @@ footer {
 /* ---------- flight panel mode (tablet cockpit display) ---------- */
 body.panel-mode .topbar,
 body.panel-mode footer,
-body.panel-mode .tabs { display: none; }
+body.panel-mode .tabs,
+body.panel-mode .location { display: none; }
 body.panel-mode.fp-status-page main { display: none; }
 body.panel-mode {
-  background: #060708;
+  background: radial-gradient(1200px 700px at 70% -10%, #0c0e12, #060708) fixed #060708;
   overscroll-behavior: none;
+  font-family: "Chakra Petch", "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
+  padding-left: 100px;   /* clear the nav rail */
 }
+body.panel-mode input,
+body.panel-mode select,
+body.panel-mode textarea,
+body.panel-mode button { font-family: inherit; }
 
-/* Bottom touch nav: every standard tab is reachable in panel mode */
+/* Left nav rail: icon + label per page, voice/exit pinned at the bottom */
 #fp-nav { display: none; }
 body.panel-mode #fp-nav {
   display: flex;
+  flex-direction: column;
   position: fixed;
-  bottom: 0;
+  top: 0;
   left: 0;
-  right: 0;
+  bottom: 0;
+  width: 100px;
   z-index: 30;
-  background: #0b0c0e;
-  border-top: 2px solid var(--orange);
-  padding: 6px 6px calc(6px + env(safe-area-inset-bottom, 0px));
-  gap: 4px;
+  background: linear-gradient(180deg, #0b0c0f, #08090b);
+  border-right: 1px solid #1d222b;
+  padding: 12px 0 10px;
 }
-#fp-nav button {
-  position: relative;
-  overflow: hidden;
+.fp-nav-brand {
+  display: flex;
+  justify-content: center;
+  padding: 2px 0 12px;
+  border-bottom: 1px solid #1d222b;
+}
+.fp-nav-brand img { display: block; filter: drop-shadow(0 0 8px rgba(255, 113, 0, .35)); }
+.fp-nav-pages {
   flex: 1;
-  min-height: 58px;
-  background: var(--panel);
-  border: 1px solid var(--border);
-  border-radius: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding-top: 8px;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+.fp-nav-pages button {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+  padding: 11px 4px 9px;
+  min-height: 64px;
+  background: transparent;
+  border: none;
+  border-left: 3px solid transparent;
+  border-right: 3px solid transparent;
   color: var(--dim);
-  font-size: clamp(10px, 1.7vw, 14px);
-  font-weight: 700;
-  letter-spacing: 1px;
   cursor: pointer;
   touch-action: manipulation;
-  transition: color .15s, border-color .15s, background .15s, box-shadow .2s, transform .08s;
+  transition: color .15s, background .15s, border-color .15s;
 }
-#fp-nav button::after {
-  content: "";
-  position: absolute;
-  top: 0;
-  left: 22%;
-  right: 22%;
-  height: 3px;
-  border-radius: 0 0 3px 3px;
-  background: var(--orange);
-  transform: scaleX(0);
-  transition: transform .22s var(--ease);
-}
-#fp-nav button.active {
+.fp-nav-pages .fp-ni { font-size: 19px; line-height: 1; font-variant-emoji: text; }
+.fp-nav-pages .fp-nl { font-size: 9px; letter-spacing: 2.5px; font-weight: 700; }
+.fp-nav-pages button.active {
   color: var(--orange);
-  border-color: var(--orange);
-  background: var(--panel-2);
-  box-shadow: 0 0 14px rgba(255, 113, 0, .18);
+  border-left-color: var(--orange);
+  background: linear-gradient(90deg, rgba(255, 113, 0, .12), transparent);
 }
-#fp-nav button.active::after { transform: scaleX(1); }
-#fp-nav button:active { background: var(--panel-2); transform: scale(.97); }
+.fp-nav-pages button.active .fp-ni { text-shadow: 0 0 12px rgba(255, 113, 0, .6); }
+.fp-nav-pages button:active { background: rgba(255, 113, 0, .08); }
+.fp-nav-foot {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 10px 4px;
+  border-top: 1px solid #1d222b;
+}
+.fp-railbtn {
+  font-variant-emoji: text;
+  min-height: 46px;
+  background: #101114;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--dim);
+  font-size: 10px;
+  letter-spacing: 1.5px;
+  font-weight: 700;
+  cursor: pointer;
+  touch-action: manipulation;
+  transition: color .15s, border-color .15s;
+}
+.fp-railbtn.on { color: var(--orange); border-color: var(--orange); }
+.fp-railbtn:active { background: var(--panel-2); }
+
+/* Persistent status strip: system / station / destination + fuel, cargo,
+   clock and commander — visible on every panel page */
+#fp-strip { display: none; }
+body.panel-mode #fp-strip {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 18px;
+  position: sticky;
+  top: 0;
+  z-index: 25;
+  padding: 10px 20px;
+  border-bottom: 2px solid var(--orange);
+  background: linear-gradient(180deg, #0c0d10, #08090b);
+  overflow: hidden;
+}
+.fps-sweep {
+  position: absolute;
+  bottom: -2px;
+  left: 0;
+  height: 2px;
+  width: 22%;
+  background: linear-gradient(90deg, transparent, #ffd9b0, transparent);
+  animation: fp-sweep 5s var(--ease) infinite;
+}
+.fps-block { display: flex; flex-direction: column; gap: 1px; min-width: 110px; max-width: 240px; overflow: hidden; }
+.fps-system-block { flex: 1; min-width: 180px; max-width: none; }
+.fps-label { font-size: 9px; letter-spacing: 3px; color: var(--dim); font-weight: 600; white-space: nowrap; }
+.fps-system {
+  font-family: "IBM Plex Mono", Consolas, monospace;
+  font-size: 17px;
+  font-weight: 600;
+  color: var(--orange);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-shadow: 0 0 12px rgba(255, 113, 0, .45);
+}
+.fps-value { font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.fps-dest { color: var(--orange-soft); }
+.fps-right {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  margin-left: auto;
+}
+.fps-mini { display: flex; flex-direction: column; gap: 3px; width: 92px; }
+.fps-mini-head { display: flex; justify-content: space-between; font-size: 8px; letter-spacing: 2px; color: var(--dim); font-weight: 600; }
+.fps-mini-head span:last-child { font-family: "IBM Plex Mono", Consolas, monospace; letter-spacing: 0; color: var(--text); }
+.fps-minibar { height: 5px; background: var(--panel); border: 1px solid var(--border); border-radius: 999px; overflow: hidden; }
+.fps-minibar > div { height: 100%; width: 0; background: var(--orange); border-radius: 999px; transition: width .6s var(--ease), background-color .3s; }
+.fps-clock { font-family: "IBM Plex Mono", Consolas, monospace; font-size: 15px; letter-spacing: 1px; }
+.fps-cmdr { font-size: 11px; letter-spacing: 2px; color: var(--dim); }
 
 /* Touch-friendly scaling for the standard tabs while in panel mode */
 body.panel-mode main {
-  padding-bottom: 96px;
+  padding: 20px 22px 32px;
   max-width: none;
   font-size: 16px;
 }
@@ -895,42 +1018,66 @@ body.panel-mode .linkrow a { padding: 12px 18px; font-size: 14px; }
 body.panel-mode .jumps li, body.panel-mode .cargo-list li { padding: 11px 4px; font-size: 15px; }
 
 /* Cockpit theme for every panel-mode page: the same MFD design language as
-   the status page (orange rails, letter-spaced glowing labels, chunky solid
-   controls) applied to the standard cards the other pages are built from. */
+   the status page (corner-bracketed cards, letter-spaced glowing labels,
+   chunky solid controls) applied to the standard cards the pages are built
+   from. */
 body.panel-mode main .card {
-  background: linear-gradient(180deg, #101114, #0b0c0f);
-  border: 1px solid #22262d;
-  border-left: 3px solid var(--orange);
-  border-radius: 8px;
+  position: relative;
+  background: linear-gradient(180deg, #101114, #0a0b0e);
+  border: 1px solid #1f242c;
+  border-radius: 6px;
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, .025), 0 4px 18px rgba(0, 0, 0, .4);
-  padding: clamp(12px, 1.8vw, 18px);
+  padding: clamp(13px, 1.8vw, 18px);
+}
+body.panel-mode main .card::before,
+.fp-corners::before {
+  content: "";
+  position: absolute;
+  top: -1px;
+  left: -1px;
+  width: 13px;
+  height: 13px;
+  border-top: 2px solid var(--orange);
+  border-left: 2px solid var(--orange);
+  border-radius: 6px 0 0 0;
+  pointer-events: none;
+}
+body.panel-mode main .card::after,
+.fp-corners::after {
+  content: "";
+  position: absolute;
+  bottom: -1px;
+  right: -1px;
+  width: 13px;
+  height: 13px;
+  border-bottom: 2px solid var(--orange);
+  border-right: 2px solid var(--orange);
+  border-radius: 0 0 6px 0;
+  pointer-events: none;
 }
 body.panel-mode main .label {
-  color: var(--orange-soft);
+  color: var(--orange);
   letter-spacing: 3px;
-  font-size: clamp(11px, 1.5vw, 13px);
+  font-size: clamp(11px, 1.5vw, 12.5px);
+  font-weight: 700;
   text-transform: uppercase;
   border-bottom: 1px solid rgba(255, 113, 0, .28);
-  padding-bottom: 7px;
-  margin-bottom: 10px;
-  text-shadow: 0 0 10px rgba(255, 113, 0, .25);
+  padding-bottom: 8px;
+  margin-bottom: 12px;
+  text-shadow: 0 0 10px rgba(255, 113, 0, .3);
 }
 body.panel-mode main .label .dim {
   color: var(--dim);
   letter-spacing: 1px;
+  font-weight: 400;
   text-transform: none;
   text-shadow: none;
 }
-
-/* Location chrome above the pages: echo the status page's glowing readout */
-body.panel-mode .location .system-row h1 {
-  font-size: clamp(26px, 4.5vw, 40px);
-  text-shadow: 0 0 16px rgba(255, 113, 0, .4);
-}
 body.panel-mode .stat .value {
+  font-family: "IBM Plex Mono", Consolas, monospace;
   color: var(--orange);
   font-size: clamp(18px, 2.6vw, 24px);
-  font-weight: 700;
+  font-weight: 600;
 }
 
 /* Controls: solid MFD buttons and chunky inputs, matching .fp-btn */
@@ -949,10 +1096,11 @@ body.panel-mode .route-form input,
 body.panel-mode .route-form select,
 body.panel-mode .plot-form input,
 body.panel-mode #market-filter {
-  background: var(--panel-2);
+  background: #111318;
   border-radius: 6px;
-  font-size: clamp(16px, 2vw, 18px);
+  font-size: clamp(15px, 2vw, 17px);
 }
+body.panel-mode .route-form input[type="number"] { font-family: "IBM Plex Mono", Consolas, monospace; }
 body.panel-mode .route-form label {
   font-size: clamp(11px, 1.4vw, 12px);
   letter-spacing: 2px;
@@ -971,12 +1119,15 @@ body.panel-mode th {
 }
 body.panel-mode td { border-bottom-color: #1d2026; }
 body.panel-mode td.num, body.panel-mode .profit, body.panel-mode .profit-cell {
+  font-family: "IBM Plex Mono", Consolas, monospace;
   font-variant-numeric: tabular-nums;
 }
 
 /* Result cards (.hop), link pills and list rows pick up the cockpit accents */
 body.panel-mode .hop {
-  background: linear-gradient(180deg, #101114, #0b0c0f);
+  background: linear-gradient(180deg, #101114, #0a0b0e);
+  border-left: 3px solid var(--orange);
+  border-radius: 6px;
   padding: 14px 16px;
 }
 body.panel-mode .hop .route-line b { font-size: clamp(16px, 2.2vw, 19px); }
@@ -990,8 +1141,10 @@ body.panel-mode .linkrow a {
   align-items: center;
 }
 body.panel-mode .guide-item {
-  background: linear-gradient(180deg, #101114, #0b0c0f);
+  background: linear-gradient(180deg, #101114, #0a0b0e);
+  border: 1px solid #1f242c;
   border-left: 3px solid var(--orange);
+  border-radius: 6px;
 }
 body.panel-mode .jumps li, body.panel-mode .cargo-list li { border-bottom-color: #1d2026; }
 body.panel-mode .route-summary .profit { font-size: clamp(18px, 2.6vw, 24px); }
@@ -1017,8 +1170,8 @@ body.panel-mode .route-summary .profit { font-size: clamp(18px, 2.6vw, 24px); }
 .fp-arrange {
   display: none;
   position: fixed;
-  right: 12px;
-  bottom: 92px;
+  right: 14px;
+  bottom: 14px;
   z-index: 31;
   width: 54px;
   height: 54px;
@@ -1164,153 +1317,268 @@ section.card.arr-drag {
 .banner-settings-btn { margin-left: 8px; font-weight: 700; }
 
 #flight-panel {
-  min-height: 100vh;
-  padding: clamp(12px, 3vw, 32px);
-  padding-bottom: 96px;
+  padding: 20px 22px 32px;
   display: flex;
   flex-direction: column;
-  gap: clamp(8px, 1.6vh, 18px);
-  max-width: 1100px;
+  gap: 16px;
+  max-width: 1280px;
   margin: 0 auto;
   -webkit-user-select: none;
   user-select: none;
   transition: transform .28s var(--ease);
 }
 
-.fp-head {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-  border-bottom: 2px solid var(--orange);
-  padding-bottom: 10px;
+.fp-grid {
+  display: grid;
+  grid-template-columns: 1.15fr .85fr;
+  gap: 16px;
+  align-items: start;
 }
-.fp-brand { color: var(--dim); letter-spacing: 3px; font-size: clamp(11px, 1.6vw, 14px); }
-.fp-brand b { color: var(--orange); }
-.fp-cmdr { margin-left: auto; color: var(--dim); font-size: clamp(11px, 1.6vw, 14px); }
+.fp-main { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.fp-side { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
 
 .fp-btn {
   background: var(--orange);
   color: #14100a;
   border: none;
   border-radius: 6px;
+  font-family: inherit;
   font-weight: 800;
   letter-spacing: 2px;
-  font-size: clamp(14px, 2vw, 18px);
-  padding: 14px 26px;
+  font-size: clamp(14px, 1.6vw, 15px);
+  padding: 0 26px;
   min-height: 52px;
   cursor: pointer;
   touch-action: manipulation;
   transition: background .15s, transform .08s;
 }
 .fp-btn:active { background: var(--orange-soft); transform: scale(.97); }
-.fp-btn-small { min-height: 40px; padding: 8px 18px; font-size: 12px; }
 
-.fp-system-label { color: var(--dim); letter-spacing: 4px; font-size: clamp(10px, 1.4vw, 13px); }
+.fp-system-label { color: var(--dim); letter-spacing: 4px; font-size: clamp(10px, 1.2vw, 11px); font-weight: 600; }
 .fp-system {
+  font-family: "IBM Plex Mono", Consolas, monospace;
   color: var(--orange);
-  font-size: clamp(30px, 7vw, 64px);
-  font-weight: 700;
+  font-size: clamp(28px, 4.6vw, 44px);
+  font-weight: 600;
   line-height: 1.05;
-  text-shadow: 0 0 18px rgba(255, 113, 0, 0.45);
+  text-shadow: 0 0 24px rgba(255, 113, 0, .5);
   overflow-wrap: anywhere;
+  animation: fp-flicker 9s linear infinite;
 }
-.fp-sub { font-size: clamp(15px, 2.6vw, 24px); letter-spacing: 1px; }
-.fp-dest { color: var(--orange-soft); }
-.fp-status { color: var(--dim); min-height: 1.4em; }
+.fp-sub { font-size: clamp(15px, 2vw, 19px); letter-spacing: 1px; }
+.fp-dest { color: var(--orange-soft); font-size: clamp(13px, 1.7vw, 15px); }
+.fp-status { color: var(--dim); font-size: clamp(13px, 1.7vw, 15px); min-height: 1.4em; }
 .fp-status.error { color: var(--bad); }
 
-.fp-gauges { display: grid; grid-template-columns: 1fr 1fr; gap: clamp(10px, 2vw, 22px); }
+/* Tracked-route progress under the destination line */
+.fp-routeline { display: flex; align-items: center; gap: 10px; margin-top: 2px; }
+.fp-routebar { flex: 1; height: 4px; background: var(--panel); border-radius: 999px; overflow: hidden; }
+.fp-routebar > div { height: 100%; width: 0; background: var(--orange); border-radius: 999px; transition: width .6s var(--ease); }
+.fp-routetext { font-family: "IBM Plex Mono", Consolas, monospace; font-size: 12px; color: var(--dim); white-space: nowrap; }
+
+.fp-gauges { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 .fp-gauge {
-  border: 1px solid var(--border);
-  border-left: 3px solid var(--orange);
-  border-radius: 8px;
-  background: var(--panel);
-  padding: clamp(10px, 1.6vw, 16px);
+  position: relative;
+  background: linear-gradient(180deg, #101114, #0a0b0e);
+  border: 1px solid #1f242c;
+  border-radius: 6px;
+  padding: 14px 16px;
 }
-.fp-label { color: var(--dim); letter-spacing: 3px; font-size: clamp(10px, 1.4vw, 13px); margin-bottom: 6px; }
+.fp-label { color: var(--dim); letter-spacing: 3px; font-size: clamp(10px, 1.2vw, 11px); font-weight: 600; margin-bottom: 8px; }
 .fp-bar {
-  height: clamp(14px, 2.4vh, 22px);
-  background: var(--panel-2);
+  height: 16px;
+  background: #111318;
   border: 1px solid var(--border);
   border-radius: 999px;
   overflow: hidden;
 }
-.fp-bar > div { height: 100%; background: var(--orange); transition: width .6s var(--ease), background-color .3s; }
-.fp-gvalue { margin-top: 6px; font-size: clamp(16px, 2.6vw, 24px); font-weight: 650; font-variant-numeric: tabular-nums; }
-
-.fp-tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: clamp(10px, 2vw, 22px); }
-.fp-tile {
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  background: var(--panel);
-  padding: clamp(10px, 1.6vw, 16px);
-}
-.fp-tile .fp-value {
-  font-size: clamp(20px, 3.4vw, 34px);
-  font-weight: 700;
-  color: var(--orange);
+.fp-bar > div { height: 100%; background: linear-gradient(90deg, #b35000, var(--orange)); border-radius: 999px; transition: width .6s var(--ease), background-color .3s; }
+.fp-gvalue {
+  margin-top: 8px;
+  font-family: "IBM Plex Mono", Consolas, monospace;
+  font-size: clamp(17px, 2vw, 21px);
+  font-weight: 600;
+  white-space: nowrap;
   font-variant-numeric: tabular-nums;
 }
 
-.fp-section { margin-top: clamp(4px, 1vh, 10px); }
-.fp-jumps { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 10px; }
+.fp-tiles { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.fp-tiles-row { grid-template-columns: repeat(4, 1fr); }
+.fp-tile {
+  background: linear-gradient(180deg, #101114, #0a0b0e);
+  border: 1px solid #1f242c;
+  border-radius: 6px;
+  padding: 12px 16px;
+  min-width: 0;
+}
+.fp-tile-wide { grid-column: span 2; display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+.fp-tile-wide .fp-label { margin-bottom: 0; }
+.fp-tile .fp-value {
+  margin-top: 4px;
+  font-family: "IBM Plex Mono", Consolas, monospace;
+  font-size: clamp(19px, 2.2vw, 26px);
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-variant-numeric: tabular-nums;
+}
+.fp-tile-wide .fp-value { margin-top: 0; }
+.fp-tile .fp-value.orange { color: var(--orange); }
+
+/* Section rules: label + fading hairline */
+.fp-rule { display: flex; align-items: center; gap: 14px; margin-top: 4px; }
+.fp-rule > span { font-size: 10px; letter-spacing: 3px; color: var(--orange); font-weight: 700; white-space: nowrap; }
+.fp-rule > i { flex: 1; height: 1px; background: linear-gradient(90deg, rgba(255, 113, 0, .4), transparent); }
+
+.fp-jumps { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 12px; }
 .fp-jump {
   display: flex;
   justify-content: space-between;
   align-items: center;
   gap: 10px;
-  background: var(--panel);
-  border: 1px solid var(--border);
+  background: linear-gradient(180deg, #101114, #0a0b0e);
+  border: 1px solid #1f242c;
   border-left: 3px solid var(--orange);
-  border-radius: 8px;
+  border-radius: 6px;
   color: var(--text);
-  font-size: clamp(15px, 2.2vw, 20px);
-  padding: 16px 18px;
-  min-height: 56px;
+  font-size: clamp(14px, 1.7vw, 15px);
+  padding: 12px 16px;
+  min-height: 58px;
   cursor: pointer;
   text-align: left;
   touch-action: manipulation;
   transition: border-color .15s, background .15s, transform .08s;
 }
 .fp-jump:active { border-color: var(--orange); background: var(--panel-2); transform: scale(.985); }
-.fp-jump-dist { color: var(--dim); font-size: 0.8em; white-space: nowrap; }
+.fp-jump-dist { font-family: "IBM Plex Mono", Consolas, monospace; color: var(--dim); font-size: 12px; white-space: nowrap; }
 
-.fp-plotrow { display: flex; gap: 10px; }
+.fp-plotrow { display: flex; gap: 10px; margin-top: 8px; }
 .fp-plotrow input {
   flex: 1;
-  background: var(--panel-2);
+  min-width: 0;
+  background: #111318;
   border: 1px solid var(--border);
   border-radius: 6px;
   color: var(--text);
-  font-size: clamp(16px, 2.2vw, 20px);
-  padding: 14px 16px;
+  font-family: inherit;
+  font-size: 16px;
+  padding: 0 16px;
   min-height: 52px;
 }
 .fp-plotrow input:focus { outline: none; border-color: var(--orange); box-shadow: var(--focus-ring); }
 
 /* panel quick wins (F8) */
-.fp-btn-ghost {
-  background: var(--panel);
-  color: var(--dim);
-  border: 1px solid var(--border);
-}
-.fp-btn-ghost.on { background: var(--panel-2); color: var(--orange); border-color: var(--orange); }
 .fp-bestloop-btn {
   width: 100%;
-  background: var(--panel-2);
+  background: rgba(255, 113, 0, .1);
   color: var(--orange);
   border: 1px solid var(--orange);
-  letter-spacing: 2px;
+  min-height: 54px;
+  letter-spacing: 3px;
+  animation: fp-pulse-glow 3.2s ease-in-out infinite;
 }
 .fp-bestloop-btn:active { background: #241a0c; }
-.fp-bestloop-btn:disabled { color: var(--dim); border-color: var(--border); background: var(--panel); }
+.fp-bestloop-btn:disabled { color: var(--dim); border-color: var(--border); background: var(--panel); animation: none; }
 .fp-loops { display: flex; flex-direction: column; gap: 10px; }
 .fp-loop {
-  background: var(--panel);
-  border: 1px solid var(--border);
+  background: linear-gradient(180deg, #101114, #0a0b0e);
+  border: 1px solid #1f242c;
   border-left: 3px solid var(--orange);
-  border-radius: 8px;
+  border-radius: 6px;
   padding: 12px 14px;
+}
+
+/* Scanline + vignette overlays: pure decoration, never intercept touches */
+#fp-scan, #fp-vignette, #fp-boot { display: none; }
+body.panel-mode #fp-scan {
+  display: block;
+  position: fixed;
+  inset: 0;
+  z-index: 55;
+  pointer-events: none;
+  background: repeating-linear-gradient(0deg, rgba(0, 0, 0, .13) 0px, rgba(0, 0, 0, .13) 1px, transparent 1px, transparent 3px);
+  animation: fp-scan-drift 14s linear infinite;
+  mix-blend-mode: multiply;
+}
+body.panel-mode #fp-vignette {
+  display: block;
+  position: fixed;
+  inset: 0;
+  z-index: 56;
+  pointer-events: none;
+  background: radial-gradient(120% 90% at 50% 40%, transparent 62%, rgba(0, 0, 0, .42));
+}
+
+/* Boot splash: plays once each time the panel is entered */
+body.panel-mode #fp-boot {
+  display: flex;
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  pointer-events: none;
+  background: #060708;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 18px;
+  animation: fp-boot-fade 1.7s ease forwards;
+}
+body.panel-mode #fp-boot.hidden { display: none; }
+#fp-boot img { filter: drop-shadow(0 0 16px rgba(255, 113, 0, .5)); }
+.fp-boot-title { font-size: 13px; letter-spacing: 6px; color: var(--orange); font-weight: 700; }
+.fp-boot-bar { width: 260px; height: 3px; background: var(--panel); border-radius: 999px; overflow: hidden; }
+.fp-boot-bar > div { height: 100%; width: 0; background: var(--orange); animation: fp-boot-line 1.2s ease forwards; }
+.fp-boot-sub { font-family: "IBM Plex Mono", Consolas, monospace; font-size: 11px; color: var(--dim); letter-spacing: 2px; }
+
+/* Narrow screens (phones / portrait): the rail becomes a bottom bar */
+@media (max-width: 700px) {
+  body.panel-mode { padding-left: 0; }
+  body.panel-mode #fp-nav {
+    top: auto;
+    right: 0;
+    width: auto;
+    flex-direction: row;
+    align-items: stretch;
+    padding: 4px 4px calc(4px + env(safe-area-inset-bottom, 0px));
+    border-right: none;
+    border-top: 1px solid #1d222b;
+  }
+  .fp-nav-brand { display: none; }
+  body.panel-mode .fp-nav-pages {
+    flex-direction: row;
+    padding-top: 0;
+    overflow-x: auto;
+    overflow-y: hidden;
+  }
+  .fp-nav-pages .fp-nl { font-size: 8px; letter-spacing: 1px; }
+  .fp-nav-pages button {
+    flex: 1;
+    min-width: 52px;
+    min-height: 56px;
+    padding: 8px 2px 6px;
+    border-left: none;
+    border-right: none;
+    border-bottom: 3px solid transparent;
+    border-top: 3px solid transparent;
+  }
+  .fp-nav-pages button.active {
+    border-left-color: transparent;
+    border-bottom-color: var(--orange);
+    background: linear-gradient(0deg, rgba(255, 113, 0, .12), transparent);
+  }
+  .fp-nav-foot {
+    flex-direction: row;
+    padding: 0 0 0 6px;
+    border-top: none;
+    border-left: 1px solid #1d222b;
+    align-items: stretch;
+  }
+  .fp-railbtn { min-height: 56px; padding: 0 7px; font-size: 8.5px; letter-spacing: 1px; }
+  body.panel-mode main, #flight-panel { padding: 14px 12px 100px; }
+  .fp-grid { grid-template-columns: 1fr; }
+  .fp-tiles-row { grid-template-columns: 1fr 1fr; }
+  body.panel-mode .fp-arrange { bottom: 96px; }
 }
 .fp-loop-line {
   display: flex;
@@ -1327,7 +1595,48 @@ section.card.arr-drag {
 .footer-links a { padding: 3px 10px; font-size: 11.5px; color: var(--dim); }
 .footer-links a:hover { color: var(--orange); }
 
+/* "Likely first log" badge (5x exobiology bonus) */
+.bio-first {
+  color: var(--good);
+  font-size: 0.72em;
+  font-weight: 700;
+  letter-spacing: 1px;
+  white-space: nowrap;
+  cursor: help;
+}
+
 /* ---------- motion ---------- */
+
+/* flight-panel cockpit ambience */
+@keyframes fp-sweep {
+  from { transform: translateX(-100%); }
+  to { transform: translateX(420%); }
+}
+@keyframes fp-flicker {
+  0%, 100% { opacity: 1; }
+  92% { opacity: 1; }
+  93% { opacity: .72; }
+  94% { opacity: 1; }
+  97% { opacity: .85; }
+  98% { opacity: 1; }
+}
+@keyframes fp-scan-drift {
+  from { background-position: 0 0; }
+  to { background-position: 0 240px; }
+}
+@keyframes fp-pulse-glow {
+  0%, 100% { box-shadow: 0 0 12px rgba(255, 113, 0, .25); }
+  50% { box-shadow: 0 0 22px rgba(255, 113, 0, .5); }
+}
+@keyframes fp-boot-fade {
+  0% { opacity: 1; }
+  78% { opacity: 1; }
+  100% { opacity: 0; visibility: hidden; }
+}
+@keyframes fp-boot-line {
+  from { width: 0; }
+  to { width: 100%; }
+}
 
 @keyframes pane-in {
   from { opacity: 0; transform: translateY(6px); }

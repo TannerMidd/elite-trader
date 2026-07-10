@@ -150,19 +150,50 @@ const PANEL_PAGES = ["status", "trade", "commodities", "bio", "guides", "analyti
 function setPanelMode(on) {
   document.body.classList.toggle("panel-mode", on);
   localStorage.setItem("panelMode", on ? "1" : "0");
-  try {
-    if (on && document.documentElement.requestFullscreen) {
-      document.documentElement.requestFullscreen();
-    } else if (!on && document.fullscreenElement) {
-      document.exitFullscreen();
-    }
-  } catch (e) { /* fullscreen is a nicety, not a requirement */ }
+  // Fullscreen is opt-in via the rail's ⛶ FULL button; leaving the panel
+  // always drops back out of it.
+  if (!on && document.fullscreenElement) {
+    document.exitFullscreen().catch(() => {});
+  }
   if (on) {
+    runPanelBoot();
     setPanelPage(localStorage.getItem("panelPage") || "status");
   } else {
     $("flight-panel").classList.add("hidden");
   }
 }
+
+function toggleFullscreen() {
+  if (document.fullscreenElement) {
+    document.exitFullscreen().catch(() => {});
+  } else if (document.documentElement.requestFullscreen) {
+    document.documentElement.requestFullscreen().catch(() => {});
+  }
+}
+
+/* One-shot boot splash when the panel is entered. The CSS animation fades it
+   out; re-hiding it afterwards keeps it out of the way of screen readers and
+   lets the next entry replay the animation from the start. */
+let bootTimer = null;
+function runPanelBoot() {
+  const boot = $("fp-boot");
+  if (!boot) return;
+  clearTimeout(bootTimer);
+  boot.classList.add("hidden");
+  void boot.offsetWidth;  // restart the CSS animations
+  boot.classList.remove("hidden");
+  bootTimer = setTimeout(() => boot.classList.add("hidden"), 1800);
+}
+
+/* The status strip's clock (HH:MM:SS, local time) */
+setInterval(() => {
+  if (!document.body.classList.contains("panel-mode")) return;
+  const el = $("fp-clock");
+  if (!el) return;
+  const d = new Date();
+  const p = (n) => String(n).padStart(2, "0");
+  el.textContent = `${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
+}, 1000);
 
 /* The element that represents a panel page: the flight panel for "status",
    otherwise that tab's pane (the location card above it stays put, like chrome). */
@@ -202,9 +233,10 @@ function panelSwipe(dx) {
 }
 
 function initPanelNav() {
-  document.querySelectorAll("#fp-nav button").forEach((b) =>
+  // Scoped to [data-page]: the rail also holds the voice and exit buttons,
+  // which have their own handlers.
+  document.querySelectorAll("#fp-nav button[data-page]").forEach((b) =>
     b.addEventListener("click", () => {
-      if (b.dataset.page === "__exit") { setPanelMode(false); return; }
       const current = localStorage.getItem("panelPage") || "status";
       const delta = PANEL_PAGES.indexOf(b.dataset.page) - PANEL_PAGES.indexOf(current);
       setPanelPage(b.dataset.page, Math.sign(delta));
@@ -373,24 +405,40 @@ function startCardDrag(ev, card) {
 
 function renderPanel() {
   if (!document.body.classList.contains("panel-mode")) return;
-  $("fp-cmdr").textContent = state.commander ? "CMDR " + state.commander : "";
-  $("fp-system").textContent = state.system || "—";
-  $("fp-station").textContent = state.docked && state.station
+  const stationTxt = state.docked && state.station
     ? `DOCKED · ${state.station}`
     : (state.body && state.body !== state.system ? `IN SPACE · ${state.body}` : "IN SPACE");
+
+  $("fp-cmdr").textContent = state.commander ? "CMDR " + state.commander : "";
+  $("fp-system").textContent = state.system || "—";
+  $("fp-station").textContent = stationTxt;
   $("fp-dest").textContent = state.destination ? `DESTINATION · ${state.destination}` : "";
 
   const fuelPct = state.fuel_capacity > 0 ? Math.min(100, (state.fuel_main / state.fuel_capacity) * 100) : 0;
+  const fuelTxt = state.fuel_main != null
+    ? `${state.fuel_main.toFixed(1)} / ${(state.fuel_capacity || 0).toFixed(0)} t` : "—";
   const fill = $("fp-fuel-fill");
   fill.style.width = fuelPct + "%";
-  fill.style.background = fuelPct < 25 ? "var(--bad)" : "var(--orange)";
-  $("fp-fuel").textContent = state.fuel_main != null
-    ? `${state.fuel_main.toFixed(1)} / ${(state.fuel_capacity || 0).toFixed(0)} t` : "—";
+  fill.style.background = fuelPct < 25 ? "var(--bad)" : "";
+  $("fp-fuel").textContent = fuelTxt;
 
   const cargoPct = state.cargo_capacity > 0 ? Math.min(100, (state.cargo_tons / state.cargo_capacity) * 100) : 0;
-  $("fp-cargo-fill").style.width = cargoPct + "%";
-  $("fp-cargo").textContent = state.cargo_tons != null
+  const cargoTxt = state.cargo_tons != null
     ? `${Math.round(state.cargo_tons)} / ${state.cargo_capacity || 0} t` : "—";
+  $("fp-cargo-fill").style.width = cargoPct + "%";
+  $("fp-cargo").textContent = cargoTxt;
+
+  // Persistent status strip (visible on every panel page)
+  $("fp-strip-system").textContent = state.system || "—";
+  $("fp-strip-station").textContent = stationTxt;
+  $("fp-strip-dest-block").classList.toggle("hidden", !state.destination);
+  $("fp-strip-dest").textContent = state.destination || "";
+  const stripFuel = $("fp-strip-fuel-fill");
+  stripFuel.style.width = fuelPct + "%";
+  stripFuel.style.background = fuelPct < 25 ? "var(--bad)" : "";
+  $("fp-strip-fuel").textContent = fuelTxt.replace(/ /g, "");
+  $("fp-strip-cargo-fill").style.width = cargoPct + "%";
+  $("fp-strip-cargo").textContent = cargoTxt.replace(/ /g, "");
 
   $("fp-credits").textContent = state.credits != null ? shortCr(state.credits) + " cr" : "—";
   const legal = $("fp-legal");
@@ -536,6 +584,7 @@ function syncRouteToPosition() {
 }
 
 function renderRouteProgress() {
+  renderPanelRouteLine();
   const wrap = $("route-progress");
   if (!wrap) return;
   if (!activeRoute) {
@@ -587,6 +636,24 @@ function renderRouteProgress() {
   stop.setAttribute("aria-label", "Stop tracking route");
   stop.addEventListener("click", stopRoute);
   main.appendChild(stop);
+}
+
+/* Compact progress line under the destination on the flight panel's status
+   page: a bar plus "WAYPOINT n / m" while a tracked route is active. */
+function renderPanelRouteLine() {
+  const line = $("fp-routeline");
+  if (!line) return;
+  if (!activeRoute || !activeRoute.waypoints.length) {
+    line.classList.add("hidden");
+    return;
+  }
+  const total = activeRoute.waypoints.length;
+  const done = Math.min(activeRoute.index, total);
+  line.classList.remove("hidden");
+  $("fp-route-fill").style.width = (total ? Math.round((done / total) * 100) : 0) + "%";
+  $("fp-route-text").textContent = done >= total
+    ? "ROUTE COMPLETE"
+    : `WAYPOINT ${done + 1} / ${total} · ${activeRoute.waypoints[done].system.toUpperCase()}`;
 }
 
 /* A small "track this route" button for a list of waypoint systems. */
@@ -704,7 +771,7 @@ function renderSession(sess) {
   setText("fp-sess-crhr", crhrTxt);
   setText("fp-sess-jumps", jumpsTxt);
   setText("fp-sess-ly", lyTxt);
-  setText("fp-sess-since", durTxt);
+  setText("fp-sess-since", durTxt ? "· " + durTxt.toUpperCase() : "");
   colorSign("fp-sess-earned", earned);
 
   // Analytics session card (live parts; trade profit/tons filled by loadAnalytics)
@@ -1345,6 +1412,16 @@ function fmtRange(lo, hi) {
   return lo === hi ? m(lo) : m(lo) + "–" + m(hi);
 }
 
+// The Vista Genomics "first logged" bonus: being the FIRST commander ever to
+// scan a species on a body pays 5x. The journal only confirms it when you
+// sell, so this is a strong estimate: the body was undiscovered when you
+// scanned it, and no other commander has reported that genus there via EDDN.
+const BIO_FIRST_TIP = "You're almost certainly the first commander to log this species here " +
+  "(the body was undiscovered and nobody has reported it) — Vista Genomics pays 5× for a first log. " +
+  "Confirmed only when you sell.";
+const BIO_FIRST_BODY_TIP = "Undiscovered body — you were first here, so any species you log " +
+  "is almost certainly a first log (5× at Vista Genomics).";
+
 function renderBio() {
   const bio = state.bio || {};
 
@@ -1375,10 +1452,12 @@ function renderBio() {
   if (samp) {
     sampCard.classList.remove("hidden");
     const pct = Math.round(100 * (samp.progress || 0) / 3);
+    const sampPay = samp.value != null ? samp.value * (samp.first ? 5 : 1) : null;
     $("bio-sampling").innerHTML =
       `<div class="route-line"><b>${esc(samp.species)}</b>` +
       (samp.variant ? `<span class="dim">${esc(samp.variant)}</span>` : "") +
-      `<span class="profit">${samp.value != null ? "+" + fmtNum(samp.value) + " cr" : ""}</span></div>` +
+      (samp.first ? `<span class="bio-first" title="${BIO_FIRST_TIP}">★ FIRST LOG ×5</span>` : "") +
+      `<span class="profit">${sampPay != null ? "+" + fmtNum(sampPay) + " cr" : ""}</span></div>` +
       `<div class="commodities">sample ${samp.progress}/3` +
       (samp.colony_m ? ` · move ≥ ${samp.colony_m} m between samples` : "") + `</div>` +
       `<div class="seedbar"><div style="height:100%;width:${pct}%;background:var(--good)"></div></div>`;
@@ -1388,7 +1467,7 @@ function renderBio() {
 
   // Vault
   const vault = bio.vault || { items: [], total: 0 };
-  $("bio-vault-total").textContent = vault.items.length ? fmtNum(vault.total) + " cr" : "";
+  $("bio-vault-total").textContent = vault.items.length ? "≈" + fmtNum(vault.total) + " cr" : "";
   $("bio-vault-empty").classList.toggle("hidden", vault.items.length > 0);
   const ul = $("bio-vault");
   const vsig = JSON.stringify(vault.items);
@@ -1396,9 +1475,12 @@ function renderBio() {
     ul.dataset.sig = vsig;
     ul.innerHTML = "";
     for (const s of vault.items) {
+      const pay = (s.value || 0) * (s.first ? 5 : 1);
       const li = document.createElement("li");
-      li.innerHTML = `<span>${esc(s.species)}${s.body ? ` <span class="sub">${esc(s.body)}</span>` : ""}</span>` +
-        `<span class="count">+${fmtNum(s.value)} cr</span>`;
+      li.innerHTML = `<span>${esc(s.species)}` +
+        (s.first ? ` <span class="bio-first" title="${BIO_FIRST_TIP}">★ FIRST LOG ×5</span>` : "") +
+        `${s.body ? ` <span class="sub">${esc(s.body)}</span>` : ""}</span>` +
+        `<span class="count">+${fmtNum(pay)} cr</span>`;
       ul.appendChild(li);
     }
   }
@@ -1432,7 +1514,9 @@ function renderBio() {
     const genuses = known || community || predicted || `<span class="dim">${b.count ? "not mapped yet" : ""}</span>`;
     const tr = document.createElement("tr");
     tr.innerHTML =
-      `<td>${esc(b.body)}${b.landable === false ? ' <span class="sub">not landable</span>' : ""}` +
+      `<td>${esc(b.body)}` +
+      `${b.was_discovered === false ? ` <span class="bio-first" title="${BIO_FIRST_BODY_TIP}">★</span>` : ""}` +
+      `${b.landable === false ? ' <span class="sub">not landable</span>' : ""}` +
       `${b.source === "community" ? ' <span class="sub">◇ community</span>' : ""}</td>` +
       `<td class="num">${b.count || "?"}</td>` +
       `<td>${genuses}</td>` +
@@ -2905,7 +2989,17 @@ document.addEventListener("DOMContentLoaded", () => {
   $("fp-bestloop").addEventListener("click", findBestLoop);
   $("fp-voice").addEventListener("click", () => setVoice(!voiceOn, true));
   setVoice(voiceOn);  // reflect persisted state on the toggle (no speech yet)
-  if (localStorage.getItem("panelMode") === "1") setPanelMode(true);
+  $("fp-full").addEventListener("click", toggleFullscreen);
+  document.addEventListener("fullscreenchange", () => {
+    const on = !!document.fullscreenElement;
+    const btn = $("fp-full");
+    btn.classList.toggle("on", on);
+    btn.setAttribute("aria-pressed", String(on));
+    btn.title = on ? "Leave fullscreen" : "Expand to fullscreen";
+  });
+  // The flight panel is the default view; EXIT switches to the desktop
+  // layout and that choice sticks for next launch.
+  if (localStorage.getItem("panelMode") !== "0") setPanelMode(true);
 
   // "open in app" toggle: only meaningful inside the desktop (pywebview) window.
   const toggle = $("inapp-toggle");

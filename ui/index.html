@@ -40,76 +40,124 @@
     </div>
   </div>
 </div>
+<header id="fp-strip" aria-label="Ship status">
+  <div class="fps-sweep" aria-hidden="true"></div>
+  <div class="fps-block fps-system-block">
+    <span class="fps-label">CURRENT SYSTEM</span>
+    <span class="fps-system" id="fp-strip-system">—</span>
+  </div>
+  <div class="fps-block">
+    <span class="fps-label">STATION</span>
+    <span class="fps-value" id="fp-strip-station">—</span>
+  </div>
+  <div class="fps-block hidden" id="fp-strip-dest-block">
+    <span class="fps-label">DESTINATION</span>
+    <span class="fps-value fps-dest" id="fp-strip-dest"></span>
+  </div>
+  <div class="fps-right">
+    <div class="fps-mini">
+      <div class="fps-mini-head"><span>FUEL</span><span id="fp-strip-fuel">—</span></div>
+      <div class="fps-minibar"><div id="fp-strip-fuel-fill"></div></div>
+    </div>
+    <div class="fps-mini">
+      <div class="fps-mini-head"><span>CARGO</span><span id="fp-strip-cargo">—</span></div>
+      <div class="fps-minibar"><div id="fp-strip-cargo-fill"></div></div>
+    </div>
+    <span class="fps-clock" id="fp-clock">--:--:--</span>
+    <span class="fps-cmdr" id="fp-cmdr"></span>
+  </div>
+</header>
+
 <div id="route-progress" class="route-progress hidden"></div>
 
 <div id="flight-panel" class="hidden">
-  <div class="fp-head">
-    <span class="fp-brand">ELITE <b>TRADER</b> · FLIGHT PANEL</span>
-    <span class="fp-cmdr" id="fp-cmdr"></span>
-    <button id="fp-voice" class="fp-btn fp-btn-small fp-btn-ghost" aria-pressed="false" title="Speak callouts (fuel scooping, low fuel, interdiction, hull damage, first discovery, waypoints)">🔊 VOICE</button>
-    <button id="panel-exit" class="fp-btn fp-btn-small">EXIT</button>
-  </div>
-  <div class="fp-system-label">CURRENT SYSTEM</div>
-  <div class="fp-system" id="fp-system">—</div>
-  <div class="fp-sub" id="fp-station">—</div>
-  <div class="fp-sub fp-dest" id="fp-dest"></div>
+  <div class="fp-grid">
+    <div class="fp-main">
+      <div class="fp-system-label">CURRENT SYSTEM</div>
+      <div class="fp-system" id="fp-system">—</div>
+      <div class="fp-sub" id="fp-station">—</div>
+      <div class="fp-sub fp-dest" id="fp-dest"></div>
+      <div class="fp-routeline hidden" id="fp-routeline">
+        <div class="fp-routebar"><div id="fp-route-fill"></div></div>
+        <span class="fp-routetext" id="fp-route-text"></span>
+      </div>
 
-  <div class="fp-gauges">
-    <div class="fp-gauge">
-      <div class="fp-label">FUEL</div>
-      <div class="fp-bar"><div id="fp-fuel-fill"></div></div>
-      <div class="fp-gvalue" id="fp-fuel">—</div>
+      <form id="fp-plot-form" class="fp-plotrow">
+        <input type="text" id="fp-plot-input" placeholder="Plot route to system…" autocomplete="off">
+        <button type="submit" id="fp-plot-btn" class="fp-btn">◎ PLOT</button>
+      </form>
+      <div id="fp-plot-status" class="fp-sub fp-status"></div>
+
+      <button id="fp-bestloop" class="fp-btn fp-bestloop-btn">◈ BEST LOOP FROM HERE</button>
+      <div id="fp-loop-status" class="fp-sub fp-status"></div>
+      <div id="fp-loop-results" class="fp-loops"></div>
     </div>
-    <div class="fp-gauge">
-      <div class="fp-label">CARGO</div>
-      <div class="fp-bar"><div id="fp-cargo-fill"></div></div>
-      <div class="fp-gvalue" id="fp-cargo">—</div>
+
+    <div class="fp-side">
+      <div class="fp-gauges">
+        <div class="fp-gauge fp-corners">
+          <div class="fp-label">FUEL</div>
+          <div class="fp-bar"><div id="fp-fuel-fill"></div></div>
+          <div class="fp-gvalue" id="fp-fuel">—</div>
+        </div>
+        <div class="fp-gauge fp-corners">
+          <div class="fp-label">CARGO</div>
+          <div class="fp-bar"><div id="fp-cargo-fill"></div></div>
+          <div class="fp-gvalue" id="fp-cargo">—</div>
+        </div>
+      </div>
+      <div class="fp-tiles">
+        <div class="fp-tile"><div class="fp-label">CREDITS</div><div class="fp-value orange" id="fp-credits">—</div></div>
+        <div class="fp-tile"><div class="fp-label">LEGAL</div><div class="fp-value" id="fp-legal">—</div></div>
+        <div class="fp-tile"><div class="fp-label">REBUY</div><div class="fp-value" id="fp-rebuy" title="Your ship's insurance cost">—</div></div>
+        <div class="fp-tile"><div class="fp-label">EXPLO DATA</div><div class="fp-value orange" id="fp-explo">—</div></div>
+        <div class="fp-tile fp-tile-wide"><div class="fp-label">BIO SAMPLES</div><div class="fp-value orange" id="fp-bio">—</div></div>
+      </div>
     </div>
   </div>
 
-  <div class="fp-tiles">
-    <div class="fp-tile"><div class="fp-label">CREDITS</div><div class="fp-value" id="fp-credits">—</div></div>
-    <div class="fp-tile"><div class="fp-label">LEGAL</div><div class="fp-value" id="fp-legal">—</div></div>
-    <div class="fp-tile"><div class="fp-label">REBUY</div><div class="fp-value" id="fp-rebuy" title="Your ship's insurance cost">—</div></div>
-    <div class="fp-tile"><div class="fp-label">EXPLO DATA</div><div class="fp-value" id="fp-explo">—</div></div>
-    <div class="fp-tile"><div class="fp-label">BIO SAMPLES</div><div class="fp-value" id="fp-bio">—</div></div>
-  </div>
-
-  <div class="fp-label fp-section">THIS SESSION · <span id="fp-sess-since"></span></div>
-  <div class="fp-tiles">
+  <div class="fp-rule"><span>THIS SESSION <span id="fp-sess-since"></span></span><i></i></div>
+  <div class="fp-tiles fp-tiles-row">
     <div class="fp-tile"><div class="fp-label">EARNED</div><div class="fp-value" id="fp-sess-earned">—</div></div>
     <div class="fp-tile"><div class="fp-label">CR / HR</div><div class="fp-value" id="fp-sess-crhr">—</div></div>
     <div class="fp-tile"><div class="fp-label">JUMPS</div><div class="fp-value" id="fp-sess-jumps">—</div></div>
     <div class="fp-tile"><div class="fp-label">DISTANCE</div><div class="fp-value" id="fp-sess-ly">—</div></div>
   </div>
 
-  <div class="fp-label fp-section">RECENT JUMPS · TAP TO RE-PLOT</div>
+  <div class="fp-rule"><span>RECENT JUMPS · TAP TO RE-PLOT</span><i></i></div>
   <div class="fp-jumps" id="fp-jumps"></div>
-
-  <form id="fp-plot-form" class="fp-plotrow">
-    <input type="text" id="fp-plot-input" placeholder="Plot route to system…" autocomplete="off">
-    <button type="submit" id="fp-plot-btn" class="fp-btn">PLOT</button>
-  </form>
-  <div id="fp-plot-status" class="fp-sub fp-status"></div>
-
-  <button id="fp-bestloop" class="fp-btn fp-bestloop-btn">◈ BEST LOOP FROM HERE</button>
-  <div id="fp-loop-status" class="fp-sub fp-status"></div>
-  <div id="fp-loop-results" class="fp-loops"></div>
 </div>
 
 <button id="fp-arrange" class="fp-arrange" title="Drag cards to reorder this page; the layout is remembered on this device" aria-pressed="false">⇅</button>
 
 <nav id="fp-nav" aria-label="Flight panel pages">
-  <button data-page="status" class="active">STATUS</button>
-  <button data-page="trade">TRADE</button>
-  <button data-page="commodities">MARKET</button>
-  <button data-page="bio">EXPLORE</button>
-  <button data-page="guides">GUIDES</button>
-  <button data-page="analytics">STATS</button>
-  <button data-page="local">LOCAL</button>
-  <button data-page="database">DB</button>
-  <button data-page="__exit">✕</button>
+  <div class="fp-nav-brand"><img src="icon.svg" alt="" width="42" height="42"></div>
+  <div class="fp-nav-pages">
+    <button data-page="status" class="active"><span class="fp-ni" aria-hidden="true">◈</span><span class="fp-nl">STATUS</span></button>
+    <button data-page="trade"><span class="fp-ni" aria-hidden="true">⇄</span><span class="fp-nl">TRADE</span></button>
+    <button data-page="commodities"><span class="fp-ni" aria-hidden="true">▦</span><span class="fp-nl">MARKET</span></button>
+    <button data-page="bio"><span class="fp-ni" aria-hidden="true">⬡</span><span class="fp-nl">EXPLORE</span></button>
+    <button data-page="guides"><span class="fp-ni" aria-hidden="true">✦</span><span class="fp-nl">GUIDES</span></button>
+    <button data-page="analytics"><span class="fp-ni" aria-hidden="true">∿</span><span class="fp-nl">STATS</span></button>
+    <button data-page="local"><span class="fp-ni" aria-hidden="true">⌖</span><span class="fp-nl">LOCAL</span></button>
+    <button data-page="database"><span class="fp-ni" aria-hidden="true">▤</span><span class="fp-nl">DB</span></button>
+  </div>
+  <div class="fp-nav-foot">
+    <button id="fp-voice" class="fp-railbtn" aria-pressed="false" title="Speak callouts (fuel scooping, low fuel, interdiction, hull damage, first discovery, waypoints)">🔊 VOICE</button>
+    <button id="fp-full" class="fp-railbtn" aria-pressed="false" title="Expand to fullscreen">⛶ FULL</button>
+    <button id="panel-exit" class="fp-railbtn" title="Switch to the desktop layout">✕ EXIT</button>
+  </div>
 </nav>
+
+<div id="fp-scan" aria-hidden="true"></div>
+<div id="fp-vignette" aria-hidden="true"></div>
+
+<div id="fp-boot" class="hidden" aria-hidden="true">
+  <img src="icon.svg" alt="" width="72" height="72">
+  <div class="fp-boot-title">ELITE TRADER · FLIGHT PANEL</div>
+  <div class="fp-boot-bar"><div></div></div>
+  <div class="fp-boot-sub">SYSTEMS ONLINE</div>
+</div>
 
 <main>
   <section class="card location">
@@ -264,7 +312,7 @@
 
   <div class="tabpane hidden" id="tab-bio">
     <section class="card" data-arr="biosignals">
-      <div class="label">BIO SIGNALS — CURRENT SYSTEM <span class="dim">◇ = genuses others already mapped (Spansh) · map a body yourself (DSS) to confirm · values are estimates</span></div>
+      <div class="label">BIO SIGNALS — CURRENT SYSTEM <span class="dim">◇ = genuses others already mapped (Spansh) · ★ = undiscovered body, logs there pay 5× · values are estimates</span></div>
       <div class="table-wrap">
         <table id="bio-table" class="hidden">
           <thead>
@@ -296,7 +344,7 @@
 
     <section class="card" data-arr="vault">
       <div class="card-head">
-        <div class="label">UNSOLD SAMPLES <span class="dim">estimated Vista Genomics value · first footfall pays 5×</span></div>
+        <div class="label">UNSOLD SAMPLES <span class="dim">estimated Vista Genomics value · ★ = likely first log, pays 5× (confirmed when you sell)</span></div>
         <div class="value orange" id="bio-vault-total"></div>
       </div>
       <ul id="bio-vault" class="cargo-list"></ul>
