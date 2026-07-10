@@ -1000,9 +1000,10 @@ body.panel-mode #fp-strip {
 .fps-clock { font-family: "IBM Plex Mono", Consolas, monospace; font-size: 15px; letter-spacing: 1px; }
 .fps-cmdr { font-size: 11px; letter-spacing: 2px; color: var(--dim); }
 
-/* Touch-friendly scaling for the standard tabs while in panel mode */
+/* Touch-friendly scaling for the standard tabs while in panel mode.
+   The bottom padding keeps the last rows clear of the floating ⇅ button. */
 body.panel-mode main {
-  padding: 20px 22px 32px;
+  padding: 20px 22px 90px;
   max-width: none;
   font-size: 16px;
 }
@@ -1597,7 +1598,9 @@ body.panel-mode #fp-boot.hidden { display: none; }
     align-items: stretch;
   }
   .fp-railbtn { min-height: 56px; padding: 0 7px; font-size: 8.5px; letter-spacing: 1px; }
-  body.panel-mode main, #flight-panel { padding: 14px 12px 100px; }
+  /* clear the bottom nav bar, and (for main) the floating ⇅ above it */
+  #flight-panel { padding: 14px 12px 100px; }
+  body.panel-mode main { padding: 14px 12px 160px; }
   .fp-grid { grid-template-columns: 1fr; }
   .fp-tiles-row { grid-template-columns: 1fr 1fr; }
   body.panel-mode .fp-arrange { bottom: 96px; }

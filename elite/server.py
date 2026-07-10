@@ -690,6 +690,13 @@ def create_app(state):
         system = (body.get("system") or "").strip()
         if not system:
             return jsonify({"error": "No system name given."}), 400
+        # Autoplot types into the live game window; if we positively know the
+        # game is down, say so instead of hunting for a window that isn't there.
+        # (None = not probed yet — let autoplot try and report what it finds.)
+        if state.game_running is False:
+            return jsonify({
+                "error": "The game is offline — press ▲ LAUNCH ELITE DANGEROUS first, then plot."
+            }), 409
         # Imported lazily so an input-emulation problem can't take the server down.
         from . import autoplot
 

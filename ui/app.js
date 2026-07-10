@@ -1132,7 +1132,7 @@ async function findTraders() {
 /* ---------- game-offline banner + launch button ---------- */
 
 const LAUNCH_IDLE_LABEL = "▲ LAUNCH ELITE DANGEROUS";
-const LAUNCH_IDLE_STATUS = "Game offline — the cockpit is showing your last session's data";
+const LAUNCH_IDLE_STATUS = "Game offline — showing your last session's data";
 let launchSentAt = 0;
 let launchStageTimer = null;
 
@@ -1166,6 +1166,9 @@ async function launchGame() {
   if (launchSentAt) {
     // Second press while spooling = abort the wait (QA found the game can be
     // exited mid-load, which would otherwise leave the sequence hanging).
+    // A short grace period first: an accidental double-tap on a touchscreen
+    // must not "abort" a launch that is genuinely underway.
+    if (Date.now() - launchSentAt < 2000) return;
     resetLaunchUI("Sequence aborted — launch again when ready.");
     return;
   }
