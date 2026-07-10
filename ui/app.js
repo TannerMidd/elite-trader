@@ -124,18 +124,23 @@ let voiceOn = localStorage.getItem("voice") === "1";
    enabled on this device, callouts play server-synthesized audio — every
    device hears the same human-sounding voice. Browser TTS is the fallback. */
 let ttsReady = false;
-const neuralVoiceEnabled = () => ttsReady && localStorage.getItem("neuralVoice") !== "0";
+// Experimental: opt-in per device even once the voice is installed.
+const neuralVoiceEnabled = () => ttsReady && localStorage.getItem("neuralVoice") === "1";
 let calloutAudio = null;
+
+function playNeural(text) {
+  if (calloutAudio) calloutAudio.pause();  // don't stack stale callouts
+  // Cache-buster: same phrase + different active voice = same URL, and
+  // Chromium's media cache will happily replay the old voice otherwise.
+  calloutAudio = new Audio("/api/speak?text=" + encodeURIComponent(text) + "&r=" + Date.now());
+  return calloutAudio.play();
+}
 
 function speak(text, force) {
   if ((!voiceOn && !force) || !text) return;
   if (neuralVoiceEnabled()) {
     try {
-      if (calloutAudio) calloutAudio.pause();  // don't stack stale callouts
-      // Cache-buster: same phrase + different active voice = same URL, and
-      // Chromium's media cache will happily replay the old voice otherwise.
-      calloutAudio = new Audio("/api/speak?text=" + encodeURIComponent(text) + "&r=" + Date.now());
-      calloutAudio.play().catch(() => speakBrowser(text));
+      playNeural(text).catch(() => speakBrowser(text));
       return;
     } catch (e) { /* fall through to the browser voice */ }
   }
@@ -3048,31 +3053,34 @@ function buildTtsSetting() {
       row.className = "setting";
       const cb = document.createElement("input");
       cb.type = "checkbox";
-      cb.checked = localStorage.getItem("neuralVoice") !== "0";
+      cb.checked = localStorage.getItem("neuralVoice") === "1";
       cb.addEventListener("change", () => localStorage.setItem("neuralVoice", cb.checked ? "1" : "0"));
       const sw = document.createElement("span");
       sw.className = "switch";
-      txt.innerHTML = "<b>Neural voice</b><div class=\"dim\">Human-sounding callouts, synthesized on " +
-        "this PC by Piper. The voice is shared by every device; the on/off switch is per device.</div>";
+      txt.innerHTML = "<b>Neural voice <span class=\"chip exp-chip\">EXPERIMENTAL</span></b>" +
+        "<div class=\"dim\">Human-sounding callouts, synthesized on this PC by Piper. " +
+        "The voice is shared by every device; this on/off switch is per device.</div>";
       row.append(cb, sw, txt);
       const test = document.createElement("button");
       test.className = "primary small";
       test.textContent = "TEST";
-      test.title = "Play a sample callout with the neural voice";
-      test.addEventListener("click", () => speak("Neural voice online. All systems nominal. o7", true));
+      test.title = "Play a sample callout with the neural voice (even while the switch is off)";
+      test.addEventListener("click", () =>
+        playNeural("Neural voice online. All systems nominal. o7").catch(() => {}));
       wrap.append(row, sel, test);
       return;
     }
     const row = document.createElement("div");
     row.className = "setting tts-static";
     if (st && st.downloading) {
-      txt.innerHTML = `<b>Neural voice</b><div class="dim">Downloading the voice… ${Math.round((st.progress || 0) * 100)}% — callouts switch over automatically when it finishes.</div>`;
+      txt.innerHTML = `<b>Neural voice <span class="chip exp-chip">EXPERIMENTAL</span></b><div class="dim">Downloading the voice… ${Math.round((st.progress || 0) * 100)}% — flip the switch on when it finishes.</div>`;
       row.appendChild(txt);
       wrap.appendChild(row);
       setTimeout(() => loadTtsStatus().then(render), 2000);
       return;
     }
-    txt.innerHTML = "<b>Neural voice</b><div class=\"dim\">Replace the robotic browser voice with a " +
+    txt.innerHTML = "<b>Neural voice <span class=\"chip exp-chip\">EXPERIMENTAL</span></b>" +
+      "<div class=\"dim\">Replace the robotic browser voice with a " +
       "human-sounding one, synthesized locally on this PC — every device on your LAN hears it. " +
       "One-time download (Piper TTS + the voice you pick), fully offline afterwards." +
       (st && st.error ? ` <span class="bad-text">${esc(st.error)}</span>` : "") +

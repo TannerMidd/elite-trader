@@ -792,6 +792,7 @@ td .sub { color: var(--dim); font-size: 11px; }
   padding: 8px 10px;
 }
 .bad-text { color: var(--bad); }
+.exp-chip { margin-left: 6px; font-weight: 700; letter-spacing: 1px; vertical-align: 1px; }
 .setting.saved { background: rgba(111, 191, 115, .1); }
 .setting.disabled { opacity: .5; cursor: default; }
 .setting > input { display: none; }
