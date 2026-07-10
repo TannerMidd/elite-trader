@@ -1363,8 +1363,8 @@ section.card.arr-drag {
   line-height: 1.05;
   text-shadow: 0 0 24px rgba(255, 113, 0, .5);
   overflow-wrap: anywhere;
-  animation: fp-flicker 9s linear infinite;
 }
+body.crt-fx .fp-system { animation: fp-flicker 9s linear infinite; }
 .fp-sub { font-size: clamp(15px, 2vw, 19px); letter-spacing: 1px; }
 .fp-dest { color: var(--orange-soft); font-size: clamp(13px, 1.7vw, 15px); }
 .fp-status { color: var(--dim); font-size: clamp(13px, 1.7vw, 15px); min-height: 1.4em; }
@@ -1489,9 +1489,11 @@ section.card.arr-drag {
   padding: 12px 14px;
 }
 
-/* Scanline + vignette overlays: pure decoration, never intercept touches */
+/* Scanline + vignette overlays: pure decoration, never intercept touches.
+   Gated behind the per-device "CRT effects" setting — the drifting scanlines
+   can shimmer on some displays, so they're opt-in. */
 #fp-scan, #fp-vignette, #fp-boot { display: none; }
-body.panel-mode #fp-scan {
+body.panel-mode.crt-fx #fp-scan {
   display: block;
   position: fixed;
   inset: 0;
@@ -1501,7 +1503,7 @@ body.panel-mode #fp-scan {
   animation: fp-scan-drift 14s linear infinite;
   mix-blend-mode: multiply;
 }
-body.panel-mode #fp-vignette {
+body.panel-mode.crt-fx #fp-vignette {
   display: block;
   position: fixed;
   inset: 0;

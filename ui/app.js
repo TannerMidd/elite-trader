@@ -2910,10 +2910,38 @@ async function loadSettings() {
   } catch (e) { /* offline */ }
 }
 
+/* CRT ambience (scanlines + readout flicker) is a per-device display choice:
+   it lives in this browser's localStorage, not the server settings. Off by
+   default — the drifting scanlines can shimmer on some screens. */
+function applyCrtFx() {
+  document.body.classList.toggle("crt-fx", localStorage.getItem("crtFx") === "1");
+}
+
+function buildCrtSetting() {
+  const row = document.createElement("label");
+  row.className = "setting";
+  const cb = document.createElement("input");
+  cb.type = "checkbox";
+  cb.checked = localStorage.getItem("crtFx") === "1";
+  cb.addEventListener("change", () => {
+    localStorage.setItem("crtFx", cb.checked ? "1" : "0");
+    applyCrtFx();
+  });
+  const sw = document.createElement("span");
+  sw.className = "switch";
+  const txt = document.createElement("div");
+  txt.className = "setting-text";
+  txt.innerHTML = "<b>CRT effects</b><div class=\"dim\">Retro scanlines and readout " +
+    "flicker in the flight panel. Saved on this device only — they can shimmer on some screens.</div>";
+  row.append(cb, sw, txt);
+  return row;
+}
+
 function renderSettings(values, info) {
   const list = $("settings-list");
   if (!list) return;
   list.innerHTML = "";
+  list.appendChild(buildCrtSetting());
   for (const def of SETTINGS_DEFS) {
     const supported = !def.requires || info[def.requires];
     const row = document.createElement("label");
@@ -3114,6 +3142,7 @@ document.addEventListener("DOMContentLoaded", () => {
   $("fp-bestloop").addEventListener("click", findBestLoop);
   $("fp-voice").addEventListener("click", () => setVoice(!voiceOn, true));
   setVoice(voiceOn);  // reflect persisted state on the toggle (no speech yet)
+  applyCrtFx();
   $("fp-full").addEventListener("click", toggleFullscreen);
   document.addEventListener("fullscreenchange", () => {
     const on = !!document.fullscreenElement;
