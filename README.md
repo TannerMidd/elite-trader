@@ -18,9 +18,7 @@ cockpit mode · route plotting inside the game itself.
 
 [**Download**](../../releases) · [**Demo video**](https://tannermidd.github.io/elite-trader/) · [**Wiki**](../../wiki) · [**Getting Started**](../../wiki/Getting-Started) · [**Troubleshooting**](../../wiki/Troubleshooting-and-FAQ)
 
-[<img src="https://raw.githubusercontent.com/wiki/TannerMidd/elite-trader/demo-preview.gif" alt="Elite Trader demo — live status, trade routes, markets, exobiology & analytics" width="900">](https://tannermidd.github.io/elite-trader/)
-
-*▶ click the preview for the full 1:39 tour in HD*
+<img src="docs/screenshots/trade-routes.png" alt="Trade route loops ranked by profit per hour" width="900">
 
 </div>
 
@@ -65,8 +63,6 @@ Frontier Developments plc.
 - **Commodity search** (best buy/sell near you), **WHERE TO SELL?** for your current hold, **mining advisor** with nearest ring hotspots, **outfitting/shipyard search**.
 - **System stations viewer** — every station in any system: pads, economy, faction, services, and its full EDDN-fresh market table.
 - **Price history sparklines** for stations you visit or watch.
-
-<div align="center"><img src="docs/screenshots/trade-routes.png" alt="Trade route loops ranked by profit per hour" width="900"></div>
 
 ### 🧬 Explore & exobiology — [wiki](../../wiki/Exploration-and-Exobiology)
 - **Bio signals** for the current system — with genuses **other commanders already mapped** (via Spansh) shown before you even honk, and predictions where nobody has.
