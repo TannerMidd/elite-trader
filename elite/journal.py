@@ -3,6 +3,7 @@ session logs, then tails the newest journal + Status/Cargo/Market json files."""
 
 import json
 import os
+import re
 import sys
 import threading
 import time
@@ -80,6 +81,18 @@ def _clean_name(raw):
     if name.endswith("_name"):
         name = name[: -len("_name")]
     return name.replace("_", " ").title()
+
+
+def _pretty_panel_name(raw):
+    """Prettify station/destination tokens the game never localises, like
+    "$EXT_PANEL_ColonisationShip; Nansen Claim" → "Colonisation Ship Nansen
+    Claim". Plain names pass through untouched."""
+    if not raw or not raw.startswith("$"):
+        return raw
+    token, _, rest = raw.partition(";")
+    token = token.strip("$").removeprefix("EXT_PANEL_")
+    words = re.sub(r"(?<=[a-z])(?=[A-Z])", " ", token).replace("_", " ").title()
+    return f"{words} {rest.strip()}".strip()
 
 
 def find_journal_dir():
@@ -256,7 +269,7 @@ class JournalWatcher:
             system=e.get("StarSystem"),
             system_address=e.get("SystemAddress"),
             docked=True,
-            station=e.get("StationName"),
+            station=_pretty_panel_name(e.get("StationName_Localised") or e.get("StationName")),
             station_type=e.get("StationType"),
             station_market_id=e.get("MarketID"),
             dist_from_star_ls=e.get("DistFromStarLS"),
@@ -807,7 +820,7 @@ class JournalWatcher:
                 self._last_logged_balance = balance
                 self._log_balance_point(marketdb.now_epoch(), balance)
         dest = data.get("Destination") or {}
-        updates["destination"] = dest.get("Name") or None
+        updates["destination"] = _pretty_panel_name(dest.get("Name_Localised") or dest.get("Name")) or None
         self.state.update(**updates)
         if balance is not None:
             self._check_rebuy()

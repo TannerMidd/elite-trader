@@ -35,7 +35,7 @@ _VOICE_BASE = "https://huggingface.co/rhasspy/piper-voices/resolve/v1.0.0/en"
 
 # Curated voice catalog: every model is pinned to a SHA-256 (from the repo's
 # LFS pointers), so the download endpoint can only ever fetch these files.
-DEFAULT_VOICE = "en_GB-cori-high"
+DEFAULT_VOICE = "en_GB-alba-medium"  # the Scottish voice ships as the default
 VOICES = {
     "en_GB-cori-high": {
         "label": "Cori — British female", "hf": "en_GB/cori/high", "mb": 109,

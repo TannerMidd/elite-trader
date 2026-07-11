@@ -14,6 +14,10 @@
   --ease: cubic-bezier(.22, .61, .36, 1);
   --focus-ring: 0 0 0 3px rgba(255, 113, 0, .18);
   --card-shadow: 0 2px 10px rgba(0, 0, 0, .25);
+  /* Per-device size preferences (Settings → Display); JS sets these from
+     localStorage. Whole-app zoom is applied as body.style.zoom instead. */
+  --strip-scale: 1;
+  --helper-scale: 1;
 }
 
 /* Cockpit typefaces (self-hosted so the panel works offline). Only the flight
@@ -169,7 +173,7 @@ main {
 .dim { color: var(--dim); }
 .orange { color: var(--orange); }
 .hidden { display: none !important; }
-.empty { padding: 8px 2px; font-size: 13px; }
+.empty { padding: 8px 2px; font-size: calc(13px * var(--helper-scale)); }
 
 /* tabs */
 .tabs {
@@ -442,7 +446,7 @@ th:hover { color: var(--orange); }
 th.sorted { color: var(--orange); }
 .num { text-align: right; }
 td.num { font-variant-numeric: tabular-nums; }
-td .sub { color: var(--dim); font-size: 11px; }
+td .sub { color: var(--dim); font-size: calc(11px * var(--helper-scale)); }
 .trend { font-size: 9px; vertical-align: middle; }
 .spark { vertical-align: middle; }
 .sparkcell { min-width: 68px; }
@@ -529,8 +533,9 @@ td .sub { color: var(--dim); font-size: 11px; }
 }
 #market-filter:focus { outline: none; border-color: var(--orange); box-shadow: var(--focus-ring); }
 
-/* jump history & cargo */
-.jumps, .cargo-list { list-style: none; margin: 4px 0; padding: 0; }
+/* jump history & cargo — contained like .table-wrap so 20 rows can't
+   stretch the whole page (panel-mode rows are ~68px tall) */
+.jumps, .cargo-list { list-style: none; margin: 4px 0; padding: 0; max-height: 430px; overflow-y: auto; }
 .jumps li, .cargo-list li {
   display: flex;
   align-items: center;
@@ -822,7 +827,20 @@ td .sub { color: var(--dim); font-size: 11px; }
 .setting > input:checked + .switch::after { transform: translateX(18px); background: var(--orange); }
 .setting > input:focus-visible + .switch { box-shadow: var(--focus-ring); }
 .setting-text b { font-weight: 600; }
-.setting-text .dim { font-size: 12.5px; margin-top: 2px; }
+.setting-text .dim { font-size: calc(12.5px * var(--helper-scale)); margin-top: 2px; }
+/* Per-device helper-text size (Settings → Display): scales every dim hint /
+   sub-line relative to its surrounding text. Explicit-size rules above carry
+   the multiplier themselves so they don't shadow this one. */
+span.dim, div.dim, .sub { font-size: calc(1em * var(--helper-scale)); }
+/* Display sliders in the settings card (.setting > input {display:none}
+   hides the switch checkboxes — ranges must opt back in) */
+.setting > input[type="range"] {
+  display: block;
+  width: 150px;
+  margin-top: 4px;
+  accent-color: var(--orange);
+}
+.setting .range-val { color: var(--orange-soft); font-variant-numeric: tabular-nums; font-weight: 600; }
 .update-check-row { display: flex; align-items: center; gap: 12px; padding: 12px 8px 4px; flex-wrap: wrap; }
 .settings-info { margin-top: 12px; font-size: 12px; border-top: 1px solid var(--border); padding-top: 10px; }
 .settings-info .path { color: var(--text); font-family: ui-monospace, "Cascadia Code", Consolas, monospace; font-size: 11.5px; }
@@ -988,12 +1006,12 @@ body.panel-mode #fp-strip {
   background: linear-gradient(90deg, transparent, #ffd9b0, transparent);
   animation: fp-sweep 5s var(--ease) infinite;
 }
-.fps-block { display: flex; flex-direction: column; gap: 1px; min-width: 110px; max-width: 240px; overflow: hidden; }
+.fps-block { display: flex; flex-direction: column; gap: 1px; min-width: 110px; max-width: calc(240px * var(--strip-scale)); overflow: hidden; }
 .fps-system-block { flex: 1; min-width: 180px; max-width: none; }
-.fps-label { font-size: 9px; letter-spacing: 3px; color: var(--dim); font-weight: 600; white-space: nowrap; }
+.fps-label { font-size: calc(9px * var(--strip-scale)); letter-spacing: 3px; color: var(--dim); font-weight: 600; white-space: nowrap; }
 .fps-system {
   font-family: "IBM Plex Mono", Consolas, monospace;
-  font-size: 17px;
+  font-size: calc(17px * var(--strip-scale));
   font-weight: 600;
   color: var(--orange);
   white-space: nowrap;
@@ -1001,7 +1019,7 @@ body.panel-mode #fp-strip {
   text-overflow: ellipsis;
   text-shadow: 0 0 12px rgba(255, 113, 0, .45);
 }
-.fps-value { font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.fps-value { font-size: calc(13px * var(--strip-scale)); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .fps-dest { color: var(--orange-soft); }
 .fps-right {
   display: flex;
@@ -1011,13 +1029,13 @@ body.panel-mode #fp-strip {
   justify-content: flex-end;
   margin-left: auto;
 }
-.fps-mini { display: flex; flex-direction: column; gap: 3px; width: 92px; }
-.fps-mini-head { display: flex; justify-content: space-between; font-size: 8px; letter-spacing: 2px; color: var(--dim); font-weight: 600; }
+.fps-mini { display: flex; flex-direction: column; gap: 3px; width: calc(92px * var(--strip-scale)); }
+.fps-mini-head { display: flex; justify-content: space-between; font-size: calc(8px * var(--strip-scale)); letter-spacing: 2px; color: var(--dim); font-weight: 600; }
 .fps-mini-head span:last-child { font-family: "IBM Plex Mono", Consolas, monospace; letter-spacing: 0; color: var(--text); }
-.fps-minibar { height: 5px; background: var(--panel); border: 1px solid var(--border); border-radius: 999px; overflow: hidden; }
+.fps-minibar { height: calc(5px * var(--strip-scale)); background: var(--panel); border: 1px solid var(--border); border-radius: 999px; overflow: hidden; }
 .fps-minibar > div { height: 100%; width: 0; background: var(--orange); border-radius: 999px; transition: width .6s var(--ease), background-color .3s; }
-.fps-clock { font-family: "IBM Plex Mono", Consolas, monospace; font-size: 15px; letter-spacing: 1px; }
-.fps-cmdr { font-size: 11px; letter-spacing: 2px; color: var(--dim); }
+.fps-clock { font-family: "IBM Plex Mono", Consolas, monospace; font-size: calc(15px * var(--strip-scale)); letter-spacing: 1px; }
+.fps-cmdr { font-size: calc(11px * var(--strip-scale)); letter-spacing: 2px; color: var(--dim); }
 
 /* Touch-friendly scaling for the standard tabs while in panel mode.
    The bottom padding keeps the last rows clear of the floating ⇅ button. */

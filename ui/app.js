@@ -124,8 +124,8 @@ let voiceOn = localStorage.getItem("voice") === "1";
    enabled on this device, callouts play server-synthesized audio — every
    device hears the same human-sounding voice. Browser TTS is the fallback. */
 let ttsReady = false;
-// Experimental: opt-in per device even once the voice is installed.
-const neuralVoiceEnabled = () => ttsReady && localStorage.getItem("neuralVoice") === "1";
+// On by default once the voice is installed; per-device opt-out.
+const neuralVoiceEnabled = () => ttsReady && localStorage.getItem("neuralVoice") !== "0";
 let calloutAudio = null;
 
 function playNeural(text) {
@@ -133,6 +133,7 @@ function playNeural(text) {
   // Cache-buster: same phrase + different active voice = same URL, and
   // Chromium's media cache will happily replay the old voice otherwise.
   calloutAudio = new Audio("/api/speak?text=" + encodeURIComponent(text) + "&r=" + Date.now());
+  calloutAudio.volume = voiceVolume();
   return calloutAudio.play();
 }
 
@@ -153,6 +154,7 @@ function speakBrowser(text) {
     const u = new SpeechSynthesisUtterance(text);
     u.rate = 1.05;
     u.pitch = 1;
+    u.volume = voiceVolume();
     window.speechSynthesis.cancel();  // don't queue stale callouts
     window.speechSynthesis.speak(u);
   } catch (e) { /* speech is a nicety */ }
@@ -2482,10 +2484,9 @@ async function searchStations(ev) {
 /* ---------- colonization ---------- */
 
 function renderColonisation() {
-  const card = $("colonisation-card");
   const list = $("colonisation-list");
   const depots = (state.colonisation || []).filter((d) => !d.complete && !d.failed);
-  card.classList.toggle("hidden", depots.length === 0);
+  $("colonisation-empty").classList.toggle("hidden", depots.length > 0);
   const sig = JSON.stringify(depots);
   if (list.dataset.sig === sig) return;
   list.dataset.sig = sig;
@@ -2993,6 +2994,91 @@ function applyCrtFx() {
   document.body.classList.toggle("crt-fx", localStorage.getItem("crtFx") === "1");
 }
 
+/* Per-device size preferences: whole-app zoom plus finer dials for the two
+   things squinted at most — the status strip and the small helper text. */
+const DISPLAY_DEFAULTS = { uiScale: 100, stripScale: 100, helperScale: 100, voiceVolume: 100 };
+
+function displayVal(key) {
+  const v = parseInt(localStorage.getItem(key), 10);
+  return Number.isFinite(v) ? v : DISPLAY_DEFAULTS[key];
+}
+
+function applyDisplaySettings() {
+  document.body.style.zoom = displayVal("uiScale") / 100;
+  const root = document.documentElement.style;
+  root.setProperty("--strip-scale", displayVal("stripScale") / 100);
+  root.setProperty("--helper-scale", displayVal("helperScale") / 100);
+}
+
+function voiceVolume() {
+  return Math.max(0, Math.min(1, displayVal("voiceVolume") / 100));
+}
+
+function buildSliderSetting({ key, label, desc, min, max, step, unit, onRelease }) {
+  const row = document.createElement("label");
+  row.className = "setting";
+  const input = document.createElement("input");
+  input.type = "range";
+  input.min = min; input.max = max; input.step = step;
+  input.value = displayVal(key);
+  const txt = document.createElement("div");
+  txt.className = "setting-text";
+  const title = document.createElement("b");
+  const val = document.createElement("span");
+  val.className = "range-val";
+  const sync = () => { val.textContent = ` ${input.value}${unit}`; };
+  title.textContent = label;
+  title.appendChild(val);
+  const hint = document.createElement("div");
+  hint.className = "dim";
+  hint.textContent = desc + " Double-click the slider to reset.";
+  txt.append(title, hint);
+  sync();
+  input.addEventListener("input", () => {
+    localStorage.setItem(key, input.value);
+    sync();
+    applyDisplaySettings();
+  });
+  if (onRelease) input.addEventListener("change", () => onRelease(Number(input.value)));
+  input.addEventListener("dblclick", () => {
+    input.value = DISPLAY_DEFAULTS[key];
+    localStorage.setItem(key, input.value);
+    sync();
+    applyDisplaySettings();
+  });
+  row.append(input, txt);
+  return row;
+}
+
+function buildDisplaySettings() {
+  return [
+    buildSliderSetting({
+      key: "uiScale", label: "Interface size", unit: "%",
+      min: 80, max: 140, step: 5,
+      desc: "Zooms the whole app on this device — every page, desktop and panel mode alike.",
+    }),
+    buildSliderSetting({
+      key: "stripScale", label: "Status bar text", unit: "%",
+      min: 100, max: 160, step: 5,
+      desc: "Size of the top status strip in panel mode: system, station, fuel, cargo, clock.",
+    }),
+    buildSliderSetting({
+      key: "helperScale", label: "Helper text", unit: "%",
+      min: 100, max: 150, step: 5,
+      desc: "Size of the small grey hints and descriptions, like this one.",
+    }),
+  ];
+}
+
+function buildVoiceVolumeSetting() {
+  return buildSliderSetting({
+    key: "voiceVolume", label: "Voice volume", unit: "%",
+    min: 0, max: 100, step: 5,
+    desc: "Callout loudness on this device — applies to the neural and browser voices alike.",
+    onRelease: (v) => { if (v > 0) speak(`Voice volume ${v} percent.`, true); },
+  });
+}
+
 function buildCrtSetting() {
   const row = document.createElement("label");
   row.className = "setting";
@@ -3053,11 +3139,11 @@ function buildTtsSetting() {
       row.className = "setting";
       const cb = document.createElement("input");
       cb.type = "checkbox";
-      cb.checked = localStorage.getItem("neuralVoice") === "1";
+      cb.checked = localStorage.getItem("neuralVoice") !== "0";
       cb.addEventListener("change", () => localStorage.setItem("neuralVoice", cb.checked ? "1" : "0"));
       const sw = document.createElement("span");
       sw.className = "switch";
-      txt.innerHTML = "<b>Neural voice <span class=\"chip exp-chip\">EXPERIMENTAL</span></b>" +
+      txt.innerHTML = "<b>Neural voice</b>" +
         "<div class=\"dim\">Human-sounding callouts, synthesized on this PC by Piper. " +
         "The voice is shared by every device; this on/off switch is per device.</div>";
       row.append(cb, sw, txt);
@@ -3073,13 +3159,13 @@ function buildTtsSetting() {
     const row = document.createElement("div");
     row.className = "setting tts-static";
     if (st && st.downloading) {
-      txt.innerHTML = `<b>Neural voice <span class="chip exp-chip">EXPERIMENTAL</span></b><div class="dim">Downloading the voice… ${Math.round((st.progress || 0) * 100)}% — flip the switch on when it finishes.</div>`;
+      txt.innerHTML = `<b>Neural voice</b><div class="dim">Downloading the voice… ${Math.round((st.progress || 0) * 100)}% — callouts switch over automatically when it finishes.</div>`;
       row.appendChild(txt);
       wrap.appendChild(row);
       setTimeout(() => loadTtsStatus().then(render), 2000);
       return;
     }
-    txt.innerHTML = "<b>Neural voice <span class=\"chip exp-chip\">EXPERIMENTAL</span></b>" +
+    txt.innerHTML = "<b>Neural voice</b>" +
       "<div class=\"dim\">Replace the robotic browser voice with a " +
       "human-sounding one, synthesized locally on this PC — every device on your LAN hears it. " +
       "One-time download (Piper TTS + the voice you pick), fully offline afterwards." +
@@ -3108,7 +3194,9 @@ function renderSettings(values, info) {
   if (!list) return;
   list.innerHTML = "";
   list.appendChild(buildTtsSetting());
+  list.appendChild(buildVoiceVolumeSetting());
   list.appendChild(buildCrtSetting());
+  for (const row of buildDisplaySettings()) list.appendChild(row);
   for (const def of SETTINGS_DEFS) {
     const supported = !def.requires || info[def.requires];
     const row = document.createElement("label");
@@ -3310,6 +3398,7 @@ document.addEventListener("DOMContentLoaded", () => {
   $("fp-voice").addEventListener("click", () => setVoice(!voiceOn, true));
   setVoice(voiceOn);  // reflect persisted state on the toggle (no speech yet)
   applyCrtFx();
+  applyDisplaySettings();
   $("fp-full").addEventListener("click", toggleFullscreen);
   document.addEventListener("fullscreenchange", () => {
     const on = !!document.fullscreenElement;
