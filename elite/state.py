@@ -36,6 +36,8 @@ class AppState:
         self.cargo_tons = None
         self.legal_state = None
         self.destination = None
+        # Surface position while near/on a body (lat/long/body/radius), else None
+        self.pos = None
 
         # Is the game client itself running? None = not probed yet.
         self.game_running = None
@@ -55,6 +57,9 @@ class AppState:
         # Exobiology (current system signals; vault persists until sold/death)
         self.bio_signals = {}   # body name -> {count, genuses:[...], body details}
         self.bio_sampling = None  # {"genus","species","variant","progress"}
+        # Where each sample of the in-progress species was taken, for the
+        # clonal-colony distance readout: [{"lat","lon","body"}, ...]
+        self.bio_sample_points = []
         self.bio_vault = []     # [{"species","genus","variant","value","body","first"}]
         # Community-mapped genuses for the current system (Spansh galaxy dump)
         self.bio_community = {}  # {"id64", "system", "bodies": {body: {count, genuses}}}
@@ -68,6 +73,9 @@ class AppState:
         # Active missions (MissionID -> details) and engineering materials
         self.missions = {}
         self.materials = {"Raw": {}, "Manufactured": {}, "Encoded": {}}
+
+        # The most recent full Loadout journal event, for EDSY/SLEF export
+        self.loadout_raw = None
 
         # Combat: session counters + kills per faction while that faction has
         # active massacre missions (drives the stack-progress card).
@@ -134,7 +142,29 @@ class AppState:
         # Worst of the recent jumps → a conservative "jumps of fuel" projection.
         return max(self.fuel_used_samples) if self.fuel_used_samples else None
 
-    def _nav_snapshot(self):
+    def _synth_snapshot(self):
+        """FSD-injection (jumponium) readiness from the raw-material inventory."""
+        from . import flight
+
+        raw = {sym: m.get("count", 0) for sym, m in self.materials.get("Raw", {}).items()}
+        return flight.fsd_injections(raw)
+
+    def _sampling_snapshot(self):
+        """The in-progress organic scan plus the live clonal-colony distance:
+        how far the commander has moved from each previous sample point."""
+        if not self.bio_sampling:
+            return None
+        from . import flight
+
+        samp = dict(self.bio_sampling)
+        clearance = flight.sample_clearance(
+            self.bio_sample_points, self.pos, samp.get("colony_m")
+        )
+        if clearance:
+            samp.update(clearance)
+        return samp
+
+    def _nav_snapshot(self, synth=None):
         from . import flight
 
         ahead = flight.route_ahead(self.nav_route, self.system_address, self.system)
@@ -145,7 +175,8 @@ class AppState:
         # No fuel nagging while docked — you're safe and can refuel.
         advisory = (
             None if self.docked
-            else flight.fuel_advisory(ahead, self.fuel_main, self.fuel_capacity, fpj)
+            else flight.fuel_advisory(ahead, self.fuel_main, self.fuel_capacity, fpj,
+                                      synth=synth)
         )
         return {
             "system": self.system,
@@ -253,6 +284,11 @@ class AppState:
             "top": entries[:8],
         }
 
+    def get_loadout(self):
+        """The raw Loadout journal event (for EDSY/SLEF export), or None."""
+        with self._lock:
+            return dict(self.loadout_raw) if self.loadout_raw else None
+
     def snapshot(self):
         with self._lock:
             market = None
@@ -261,6 +297,7 @@ class AppState:
                 market["is_current_station"] = (
                     self.docked and self.market.get("market_id") == self.station_market_id
                 )
+            synth = self._synth_snapshot()
             return {
                 "commander": self.commander,
                 "ship_type": self.ship_type,
@@ -270,6 +307,7 @@ class AppState:
                 "max_jump_range": self.max_jump_range,
                 "fuel_capacity": self.fuel_capacity,
                 "rebuy": self.rebuy,
+                "has_loadout": self.loadout_raw is not None,
                 "system": self.system,
                 "star_pos": self.star_pos,
                 "body": self.body,
@@ -288,7 +326,7 @@ class AppState:
                 "market": market,
                 "bio": {
                     "system_signals": self._bio_signals_snapshot(),
-                    "sampling": self.bio_sampling,
+                    "sampling": self._sampling_snapshot(),
                     "vault": {
                         "items": list(self.bio_vault),
                         # First-logged species pay 5x at Vista Genomics.
@@ -306,9 +344,10 @@ class AppState:
                     self.missions.values(), key=lambda m: m.get("expiry_ts") or float("inf")
                 ),
                 "materials": self._materials_snapshot(),
+                "synth": synth,
                 "session": self._session_snapshot(),
                 "combat": self._combat_snapshot(),
-                "nav": self._nav_snapshot(),
+                "nav": self._nav_snapshot(synth=synth),
                 "alerts": list(self.alerts),
                 "last_journal_event": self.last_journal_event,
                 "journal_dir_found": self.journal_dir_found,

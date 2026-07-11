@@ -66,17 +66,20 @@ Frontier Developments plc.
 
 ### 🧬 Explore & exobiology — [wiki](../../wiki/Exploration-and-Exobiology)
 - **Bio signals** for the current system — with genuses **other commanders already mapped** (via Spansh) shown before you even honk, and predictions where nobody has.
+- **Sampling navigator** — a live on-surface distance readout against the genus's colony range, with a spoken "clear to sample" when you've walked far enough from every previous sample.
 - **Exobiology route** ("Billionaire's Boulevard") from your position, **filterable by genus**; sampling progress + unsold-samples vault with Vista Genomics values, including **★ likely first-log detection** (the 5× bonus, predicted from body discovery state + community data).
 - **Where to sell your data** — the deep-space "get me home": nearest ports with Universal Cartographics & Vista Genomics (fleet carriers flagged), with jump estimates at your range. A **data-at-risk guard** warns (and speaks) when your unsold pile is worth many rebuys.
 - **Road to Riches**, **neutron plotter**, unsold cartographic value tracker, and **◈ TRACK** progress banners that auto-advance as you jump.
 
 ### ⚔️ Combat & missions
 - **Massacre stack tracker** — per-target-faction progress with the correct math (kills count for every giver at once), payouts, and a callout when the stack completes.
-- Session kills, bounty & bond claims; **mission board** with expiry countdowns and cargo-match warnings; **colonization depot** needs and sourcing.
+- Session kills, bounty & bond claims; **mission board** with expiry countdowns, cargo-match warnings and live **delivery progress** (wing missions included); **colonization depot** needs and sourcing.
+- **Interstellar Factors finder** — the nearest stations that clear your bounties and fines, one tap from plotting.
 - **Rebuy safety net** — amber below 2× rebuy, red when you can't cover one, spoken warning as you cross each line.
 
 ### 🔧 Engineering
 - **Blueprint planner** — pin a blueprint + grade, get a live shopping list vs. your materials, deficits with **material-trader conversion math**, nearest raw/manufactured/encoded traders, and a callout when your list completes.
+- **Your current ship in a builder** — open the live loadout in EDSY or copy SLEF for Coriolis/Inara; **jumponium readiness** (FSD-injection counts) on the materials card, echoed in fuel-strand warnings.
 
 ### 🖥️ Cockpit — [wiki](../../wiki/Flight-Panel-Mode)
 - **Flight panel**: the default view — a touch-first cockpit display for a mounted tablet, with a nav rail, a persistent status strip, swipe navigation, one-tap best-loop and optional fullscreen. (✕ EXIT switches to the classic desktop layout.)

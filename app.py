@@ -39,6 +39,20 @@ def instance_already_running(port):
         return False
 
 
+def start_window():
+    """Show the desktop window. pywebview defaults to private mode, which
+    wipes localStorage every launch — that silently reset the per-device
+    interface-size sliders (and any other browser-side preference) in the
+    main window. Persist the profile in data\\webview next to the rest."""
+    import webview
+
+    from elite import marketdb
+
+    storage = marketdb.DATA_DIR / "webview"
+    storage.mkdir(parents=True, exist_ok=True)
+    webview.start(private_mode=False, storage_path=str(storage))
+
+
 class WindowApi:
     """Bridge so links clicked inside the pywebview window open in the real browser."""
 
@@ -77,7 +91,7 @@ def main():
 
             webview.create_window("Elite Trader", local_url, js_api=WindowApi(),
                                   width=1060, height=800, min_size=(760, 560))
-            webview.start()
+            start_window()
         return
 
     state = AppState()
@@ -111,7 +125,7 @@ def main():
                 height=800,
                 min_size=(760, 560),
             )
-            webview.start()
+            start_window()
     except KeyboardInterrupt:
         pass
     finally:

@@ -460,6 +460,14 @@
     <section class="card" data-arr="builds">
       <div class="label">SHIP BUILDS <span class="dim">starting points by role · open in a ship builder</span></div>
       <div class="guide-grid">
+        <div class="guide-item" id="build-current">
+          <b>⬢ Your current ship</b>
+          <p id="build-current-desc">Open your live loadout in a ship builder to plan the next module or
+          engineering upgrade — fills in when the game reports a loadout (launch or switch ships).</p>
+          <a class="extlink hidden" id="build-edsy" target="_blank" rel="noopener">Open in EDSY ↗</a>
+          <button class="extlink hidden" id="build-slef" type="button"
+            title="Copy your loadout as SLEF JSON — paste it into the import box on Coriolis or Inara">⧉ Copy SLEF</button>
+        </div>
         <div class="guide-item">
           <b>Exploration</b>
           <p>Max jump range, fuel scoop, DSS, AFMU, SRV. Diamondback Explorer / Krait Phantom / Anaconda.</p>
@@ -574,6 +582,17 @@
       <div id="massacre-list"></div>
     </section>
 
+    <section class="card" id="iff-card" data-arr="iff">
+      <div class="label">PAY OFF BOUNTIES &amp; FINES <span class="dim">nearest Interstellar Factors contact · via Spansh</span></div>
+      <form id="iff-form" class="route-form">
+        <button type="submit" id="iff-go" class="primary">FIND NEAREST</button>
+      </form>
+      <div id="iff-status" class="dim">Picked up a bounty or a fine? An <b>Interstellar Factors</b> contact clears
+        your record from any station that hosts one (for a 25% cut) — no trip back to the issuing faction's space.
+        Your current legal state shows in the LEGAL readout up top.</div>
+      <div id="iff-results"></div>
+    </section>
+
     <section class="card" id="colonisation-card" data-arr="colonisation">
       <div class="label">COLONIZATION PROJECTS <span class="dim">construction depots you've visited · what's still needed and where to buy it</span></div>
       <div id="colonisation-list"></div>
@@ -636,6 +655,8 @@
         <div class="label">ENGINEERING MATERIALS <span class="dim">raw · manufactured · encoded · from your journal</span></div>
         <div class="value dim" id="materials-total"></div>
       </div>
+      <div id="synth-line" class="dim synth-line hidden"
+        title="FSD injection ('jumponium'): synthesize a one-jump range boost from raw materials — Basic +25%, Standard +50%, Premium +100%. Craft it in the ship's right-hand panel → Inventory → Synthesis. The counts show how many of each you could make right now."></div>
       <div id="materials-groups" class="materials"></div>
       <div id="materials-empty" class="dim empty">No materials recorded yet — the game logs your full inventory when you next launch it.</div>
     </section>

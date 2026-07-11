@@ -769,6 +769,7 @@ function render() {
   renderMissions(state.missions);
   renderMassacre();
   renderMaterials(state.materials);
+  refreshLoadoutExport();
   // Re-plan pinned blueprints when the material inventory changes.
   const matTotal = (state.materials && state.materials.total) || 0;
   if (engMatsSig !== matTotal) { engMatsSig = matTotal; loadEngineering(); }
@@ -903,7 +904,13 @@ function renderMissions(missions) {
     const rem = m.expiry_ts ? m.expiry_ts - Date.now() / 1000 : null;
     const expired = rem != null && rem <= 0;
     const soon = rem != null && rem > 0 && rem < 3600;
-    const need = m.commodity_symbol ? (m.count || 0) : 0;
+    // With depot tracking, what matters aboard is the REMAINING amount, not
+    // the original mission total (148 already delivered ≠ still owed).
+    const need = m.commodity_symbol
+      ? (m.to_deliver != null && m.delivered != null
+          ? Math.max(0, m.to_deliver - m.delivered)
+          : (m.count || 0))
+      : 0;
     const have = need ? (cargo[m.commodity_symbol] || 0) : 0;
     const short = need && have < need;
 
@@ -918,6 +925,9 @@ function renderMissions(missions) {
       `<div class="mission-sub">` +
       (m.dest_system ? `<span class="arrow">→</span> ${esc(m.dest_station || "?")}, <b>${esc(m.dest_system)}</b> ` : "") +
       (m.commodity ? `· <span class="${short ? "warn" : ""}">${short ? "⚠ " : ""}${fmtNum(have)}/${fmtNum(need)} ${esc(m.commodity)}</span> ` : "") +
+      // Haulage depot progress (CargoDepot events; wing missions update from
+      // wingmates' deliveries too).
+      (m.to_deliver ? `· <span class="${(m.delivered || 0) >= m.to_deliver ? "good" : ""}">${fmtNum(m.delivered || 0)}/${fmtNum(m.to_deliver)} delivered</span> ` : "") +
       (m.faction ? `· ${esc(m.faction)} ` : "") +
       (rem != null ? `· <span class="${expired ? "warn" : soon ? "soon" : "dim"}">${expired ? "EXPIRED" : "expires " + fmtDuration(rem)}</span>` : "") +
       `</div>`;
@@ -1286,7 +1296,7 @@ async function findSellPoints(ev) {
           `<td>${esc(s.station)}${s.carrier ? ' <span class="chip" title="Fleet carriers move — this position may be stale. Check before committing to the trip.">CARRIER</span>' : ""}</td>` +
           `<td class="dim">${esc(s.system)}</td>` +
           `<td class="num">${fmtNum(s.distance)} ly</td>` +
-          (range ? `<td class="num">${Math.max(1, Math.ceil(s.distance / range))}</td>` : "") +
+          (range ? `<td class="num">${s.distance > 0 ? Math.max(1, Math.ceil(s.distance / range)) : 0}</td>` : "") +
           `<td class="num">${s.dist_ls != null ? fmtNum(Math.round(s.dist_ls)) + " ls" : "—"}</td>` +
           `<td>${s.large_pad ? "L" : "M/S"}</td>`;
         const td = document.createElement("td");
@@ -1308,6 +1318,98 @@ async function findSellPoints(ev) {
   }
 }
 
+/* ---------- interstellar factors (pay off bounties & fines) ---------- */
+
+async function findInterstellarFactors(ev) {
+  ev.preventDefault();
+  const btn = $("iff-go");
+  const status = $("iff-status");
+  const out = $("iff-results");
+  btn.disabled = true;
+  status.classList.remove("error");
+  status.textContent = "Searching outward from your position… (~5s)";
+  out.innerHTML = "";
+  try {
+    const resp = await fetch("/api/interstellar-factors");
+    const data = await resp.json();
+    if (!resp.ok) throw new Error(data.error || "Search failed");
+    const rows = data.stations || [];
+    if (!rows.length) {
+      status.textContent = "None found nearby — try again from a more populated system.";
+      return;
+    }
+    status.textContent = `Nearest Interstellar Factors from ${data.reference || "your position"}:`;
+    const range = state && state.max_jump_range > 0 ? state.max_jump_range : null;
+    const wrap = document.createElement("div");
+    wrap.className = "table-wrap";
+    const table = document.createElement("table");
+    table.innerHTML =
+      "<thead><tr><th>Station</th><th>System</th><th class=\"num\">Jump</th>" +
+      (range ? `<th class="num" title="At your ship's ${range.toFixed(1)} ly jump range">≈ Jumps</th>` : "") +
+      "<th class=\"num\">Star dist</th><th>Pad</th><th></th></tr></thead>";
+    const tbody = document.createElement("tbody");
+    for (const s of rows) {
+      const tr = document.createElement("tr");
+      tr.innerHTML =
+        `<td>${esc(s.station)}</td>` +
+        `<td class="dim">${esc(s.system)}</td>` +
+        `<td class="num">${fmtNum(s.distance)} ly</td>` +
+        (range ? `<td class="num">${s.distance > 0 ? Math.max(1, Math.ceil(s.distance / range)) : 0}</td>` : "") +
+        `<td class="num">${s.dist_ls != null ? fmtNum(Math.round(s.dist_ls)) + " ls" : "—"}</td>` +
+        `<td>${s.large_pad ? "L" : "M/S"}</td>`;
+      const td = document.createElement("td");
+      td.className = "num";
+      td.appendChild(plotButton(s.system));
+      tr.appendChild(td);
+      tbody.appendChild(tr);
+    }
+    table.appendChild(tbody);
+    wrap.appendChild(table);
+    out.appendChild(wrap);
+  } catch (err) {
+    status.classList.add("error");
+    status.textContent = String(err.message || err);
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+/* ---------- current-ship export (EDSY link + SLEF copy) ---------- */
+
+let loadoutSig = null;   // ship identity last exported, to refetch on changes
+let loadoutSlef = "";    // SLEF JSON for the copy button
+
+async function refreshLoadoutExport() {
+  const a = $("build-edsy"), btn = $("build-slef"), desc = $("build-current-desc");
+  if (!a) return;
+  const sig = state.has_loadout
+    ? [state.ship_type, state.ship_name, state.ship_ident, state.rebuy,
+       state.max_jump_range, state.cargo_capacity].join("|")
+    : "none";
+  if (sig === loadoutSig) return;
+  loadoutSig = sig;
+  if (!state.has_loadout) {
+    a.classList.add("hidden");
+    btn.classList.add("hidden");
+    return;
+  }
+  try {
+    const resp = await fetch("/api/loadout-export");
+    const data = await resp.json();
+    if (!resp.ok) throw new Error(data.error || "Export failed");
+    const label = [state.ship_name || state.ship_type, state.ship_ident ? "(" + state.ship_ident + ")" : ""]
+      .filter(Boolean).join(" ");
+    desc.textContent = `${label || "Your ship"} — open the live build in EDSY to plan the next ` +
+      "module or engineering upgrade, or copy SLEF and paste it into Coriolis / Inara.";
+    a.href = data.edsy_url;
+    a.classList.remove("hidden");
+    loadoutSlef = data.slef;
+    btn.classList.remove("hidden");
+  } catch (e) {
+    loadoutSig = null; // retry on the next state change
+  }
+}
+
 /* ---------- engineering materials (F6) ---------- */
 
 function renderMaterials(mats) {
@@ -1316,6 +1418,19 @@ function renderMaterials(mats) {
   const total = mats.total || 0;
   $("materials-empty").classList.toggle("hidden", total > 0);
   $("materials-total").textContent = total ? total + " items" : "";
+
+  // Jumponium readiness: how many FSD-injection synths the raw pile covers.
+  const synth = state.synth;
+  const line = $("synth-line");
+  if (line) {
+    line.classList.toggle("hidden", !synth || !total);
+    if (synth && total) {
+      line.innerHTML = `<b>FSD INJECTION</b> <span class="dim">(jumponium · one-jump range boost)</span> · ` +
+        `basic ×${synth.basic} <span class="dim">(+25%)</span> · ` +
+        `standard ×${synth.standard} <span class="dim">(+50%)</span> · ` +
+        `premium ×${synth.premium} <span class="dim">(+100%)</span>`;
+    }
+  }
   const sig = JSON.stringify(mats);
   if (groups.dataset.sig === sig) return;
   groups.dataset.sig = sig;
@@ -1627,7 +1742,8 @@ function renderBio() {
   const ex = state.exploration || { total: 0, count: 0, top: [] };
   $("explo-total").textContent = ex.count ? "≈" + fmtNum(ex.total) + " cr" : "";
   $("explo-summary").textContent = ex.count
-    ? `${ex.count} bodies scanned · ${ex.mapped} mapped · ${ex.firsts} first discoveries`
+    ? `${ex.count} ${ex.count === 1 ? "body" : "bodies"} scanned · ${ex.mapped} mapped` +
+      ` · ${ex.firsts} first ${ex.firsts === 1 ? "discovery" : "discoveries"}`
     : "";
   $("explo-empty").classList.toggle("hidden", ex.count > 0);
   const exUl = $("explo-top");
@@ -1651,6 +1767,22 @@ function renderBio() {
     sampCard.classList.remove("hidden");
     const pct = Math.round(100 * (samp.progress || 0) / 3);
     const sampPay = samp.value != null ? samp.value * (samp.first ? 5 : 1) : null;
+    // Live clonal-colony distance: how far you've moved from the nearest
+    // previous sample vs. the genus's required spacing. Green = clear.
+    let distHtml = "";
+    if (samp.min_dist_m != null) {
+      const need = samp.colony_m;
+      const clear = samp.clear === true;
+      const pctd = need ? Math.min(100, Math.round(100 * samp.min_dist_m / need)) : 0;
+      distHtml =
+        `<div class="samp-dist${clear ? " samp-ok" : ""}">` +
+        `<span class="samp-dist-num">${fmtNum(samp.min_dist_m)} m</span>` +
+        (need ? `<span class="dim">of ${fmtNum(need)} m needed</span>` : "") +
+        (clear ? `<span class="samp-badge">✓ CLEAR TO SAMPLE</span>`
+          : samp.clear === false ? `<span class="samp-badge samp-wait">KEEP MOVING</span>` : "") +
+        `</div>` +
+        (need ? `<div class="seedbar"><div style="height:100%;width:${pctd}%;background:${clear ? "var(--good)" : "var(--orange)"}"></div></div>` : "");
+    }
     $("bio-sampling").innerHTML =
       `<div class="route-line"><b>${esc(samp.species)}</b>` +
       (samp.variant ? `<span class="dim">${esc(samp.variant)}</span>` : "") +
@@ -1658,7 +1790,8 @@ function renderBio() {
       `<span class="profit">${sampPay != null ? "+" + fmtNum(sampPay) + " cr" : ""}</span></div>` +
       `<div class="commodities">sample ${samp.progress}/3` +
       (samp.colony_m ? ` · move ≥ ${samp.colony_m} m between samples` : "") + `</div>` +
-      `<div class="seedbar"><div style="height:100%;width:${pct}%;background:var(--good)"></div></div>`;
+      `<div class="seedbar"><div style="height:100%;width:${pct}%;background:var(--good)"></div></div>` +
+      distHtml;
   } else {
     sampCard.classList.add("hidden");
   }
@@ -2644,9 +2777,20 @@ function shortCr(n) {
   return String(Math.round(n));
 }
 
+/* Centered placeholder inside an SVG chart so an empty card explains itself. */
+function chartEmptyNote(svg, msg) {
+  const W = svg.clientWidth || 900, H = 120;
+  svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
+  svgEl("text", { x: W / 2, y: H / 2, "text-anchor": "middle", fill: "var(--dim)", "font-size": 13 }, svg)
+    .textContent = msg;
+}
+
 function drawBalanceChart(svg, points) {
   svg.innerHTML = "";
-  if (points.length < 2) return;
+  if (points.length < 2) {
+    chartEmptyNote(svg, "No balance history yet — it records as you play (and big journal imports fill it in).");
+    return;
+  }
   const W = svg.clientWidth || 900, H = 220, padL = 56, padR = 70, padY = 18;
   svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
   const ts = points.map((p) => p.ts), vs = points.map((p) => p.balance);
@@ -2692,7 +2836,10 @@ function drawBalanceChart(svg, points) {
 
 function drawDailyChart(svg, days) {
   svg.innerHTML = "";
-  if (!days.length) return;
+  if (!days.length) {
+    chartEmptyNote(svg, "No trading days recorded yet — sell some cargo and daily profit shows here.");
+    return;
+  }
   const W = svg.clientWidth || 900, H = 200, padL = 56, padR = 16, padY = 16, gap = 2;
   svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
   const vals = days.map((d) => d.profit);
@@ -3481,6 +3628,8 @@ document.addEventListener("DOMContentLoaded", () => {
   $("os-form").addEventListener("submit", searchStations);
   $("cargo-sell-btn").addEventListener("click", findCargoSell);
   $("sd-form").addEventListener("submit", findSellPoints);
+  $("iff-form").addEventListener("submit", findInterstellarFactors);
+  $("build-slef").addEventListener("click", (ev) => loadoutSlef && copyText(loadoutSlef, ev.currentTarget));
   $("launch-game").addEventListener("click", launchGame);
   $("exo-form").addEventListener("submit", searchExobio);
   buildExoGenusChips();

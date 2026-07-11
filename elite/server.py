@@ -8,7 +8,7 @@ from pathlib import Path
 from flask import Flask, jsonify, request, send_file, send_from_directory
 from werkzeug.serving import make_server
 
-from . import alerts, biovalues, launcher, links, marketdb, routes, settings, spansh, tts
+from . import alerts, biovalues, launcher, links, marketdb, routes, settings, shipexport, spansh, tts
 from .eddn import LISTENER
 from .errors import UserFacingError
 from .seed import SEEDER
@@ -316,6 +316,40 @@ def create_app(state):
                 rows = [r for r in rows if not r["carrier"]]
             out[key] = rows[:5]
         return jsonify({"reference": ref, **out})
+
+    @app.get("/api/interstellar-factors")
+    def api_interstellar_factors():
+        """Nearest stations with an Interstellar Factors contact — the service
+        that clears bounties and fines (for a 25% cut) without flying to the
+        issuing faction's space."""
+        snap = state.snapshot()
+        ref = request.args.get("system") or snap.get("system")
+        try:
+            rows = spansh.service_stations(
+                ref, "Interstellar Factors Contact", size=12, coords=snap.get("star_pos")
+            )
+        except spansh.SpanshError as exc:
+            return error_response(exc, 502)
+        # Carriers don't offer IF; drop any oddities the search returns.
+        return jsonify({"reference": ref,
+                        "stations": [r for r in rows if not r["carrier"]][:6]})
+
+    @app.get("/api/loadout-export")
+    def api_loadout_export():
+        """The current ship as an EDSY import link + SLEF JSON (Coriolis/Inara),
+        from the last Loadout journal event."""
+        loadout = state.get_loadout()
+        if not loadout:
+            return error_response(
+                UserFacingError("No ship loadout seen yet — it arrives when you "
+                                "launch the game or switch ships."), 404)
+        return jsonify({
+            "ship_type": loadout.get("Ship"),
+            "ship_name": loadout.get("ShipName"),
+            "ship_ident": loadout.get("ShipIdent"),
+            "edsy_url": shipexport.edsy_url(loadout),
+            "slef": shipexport.slef(loadout),
+        })
 
     @app.post("/api/launch-game")
     def api_launch_game():

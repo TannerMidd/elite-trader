@@ -9,7 +9,7 @@ import threading
 import time
 from pathlib import Path
 
-from . import biovalues, exploration, launcher, marketdb
+from . import biovalues, exploration, flight, launcher, marketdb
 
 BIO_SIGNAL_TYPE = "$SAA_SignalType_Biological;"
 GAME_PROBE_SECONDS = 15  # process-probe cadence; catches exits with no Shutdown event
@@ -149,6 +149,7 @@ class JournalWatcher:
         self._first_disc_system = None  # system a first-discovery alert fired for
         self._risk_level = 0       # unsold-data risk tier already called out
         self._rebuy_level = 0      # 0 = covered, 1 = below 2x rebuy, 2 = below 1x
+        self._sample_clear_said = True  # per-sample-point "clear to sample" callout
 
     # ---------- event handling ----------
 
@@ -207,6 +208,9 @@ class JournalWatcher:
             max_jump_range=e.get("MaxJumpRange"),
             fuel_capacity=fuel_cap,
             rebuy=e.get("Rebuy"),
+            # Keep the whole event: it's the ship's full module list, which is
+            # exactly what EDSY/Coriolis/Inara import (see shipexport.py).
+            loadout_raw=dict(e),
         )
         self._check_rebuy()
 
@@ -457,7 +461,16 @@ class JournalWatcher:
             prev = self.state.bio_sampling or {}
             same = prev.get("species") == species
             progress = 1 if scan_type == "Log" else (min(3, (prev.get("progress") or 1) + 1) if same else 2)
-            self.state.update(bio_sampling={
+            # Remember where this sample was taken (live Status.json position):
+            # the next sample must be >= the genus's colony distance from every
+            # previous one, and the distance readout measures against these.
+            # A Log or a species switch starts a fresh set.
+            points = list(self.state.bio_sample_points) if (scan_type == "Sample" and same) else []
+            pos = self.state.pos
+            if pos and pos.get("lat") is not None:
+                points.append({"lat": pos["lat"], "lon": pos["lon"], "body": pos.get("body")})
+            self._sample_clear_said = not points  # re-arm the callout for this point
+            self.state.update(bio_sample_points=points, bio_sampling={
                 "genus": genus, "species": species, "variant": variant,
                 "progress": progress,
                 "colony_m": biovalues.GENUS_COLONY_M.get(genus),
@@ -475,7 +488,8 @@ class JournalWatcher:
                 # both session-scoped, so deciding later would forget.
                 "first": first,
             })
-            self.state.update(bio_vault=vault, bio_sampling=None)
+            self.state.update(bio_vault=vault, bio_sampling=None, bio_sample_points=[])
+            self._sample_clear_said = True
             self.state.add_collected(value * (5 if first else 1))
             self._check_data_risk()
 
@@ -557,7 +571,7 @@ class JournalWatcher:
     def _on_sellorganicdata(self, e):
         total = sum((b.get("Value") or 0) + (b.get("Bonus") or 0) for b in e.get("BioData") or [])
         self._log_income(e, "exobiology", total)
-        self.state.update(bio_vault=[], bio_sampling=None)
+        self.state.update(bio_vault=[], bio_sampling=None, bio_sample_points=[])
         self._check_data_risk()  # pile shrank: re-arm the at-risk ladder
 
     def _on_missioncompleted(self, e):
@@ -662,6 +676,39 @@ class JournalWatcher:
         }
         self.state.update(missions=missions)
 
+    def _update_mission(self, mission_id, **fields):
+        """Merge fields into a tracked mission; unknown ids are ignored (wing
+        depot events can reference missions accepted before we watched)."""
+        mission = self.state.missions.get(mission_id)
+        if not mission:
+            return
+        missions = dict(self.state.missions)
+        missions[mission_id] = {**mission, **fields}
+        self.state.update(missions=missions)
+
+    def _on_cargodepot(self, e):
+        """Progress on haulage missions (delivery/collection, wing shared):
+        'X of Y delivered' for the mission board. Fires on your own deliveries
+        (UpdateType Collect/Deliver) and on wingmates' (WingUpdate)."""
+        self._update_mission(
+            e.get("MissionID"),
+            collected=e.get("ItemsCollected"),
+            delivered=e.get("ItemsDelivered"),
+            to_deliver=e.get("TotalItemsToDeliver"),
+        )
+
+    def _on_missionredirected(self, e):
+        """The game retargets a mission (e.g. all cargo delivered -> report to
+        the reward station). Keep the board's destination current; absent
+        fields must not clobber the ones we have."""
+        fields = {}
+        if e.get("NewDestinationSystem"):
+            fields["dest_system"] = e["NewDestinationSystem"]
+        if e.get("NewDestinationStation"):
+            fields["dest_station"] = e["NewDestinationStation"]
+        if fields:
+            self._update_mission(e.get("MissionID"), **fields)
+
     def _remove_mission(self, mission_id):
         if mission_id is None or mission_id not in self.state.missions:
             return
@@ -760,7 +807,8 @@ class JournalWatcher:
 
     def _on_died(self, e):
         # Exobio samples and unsold cartographic data are lost on death.
-        self.state.update(bio_vault=[], bio_sampling=None, explo_scans={})
+        self.state.update(bio_vault=[], bio_sampling=None, bio_sample_points=[],
+                          explo_scans={})
 
     # ---------- status json files ----------
 
@@ -821,9 +869,43 @@ class JournalWatcher:
                 self._log_balance_point(marketdb.now_epoch(), balance)
         dest = data.get("Destination") or {}
         updates["destination"] = _pretty_panel_name(dest.get("Name_Localised") or dest.get("Name")) or None
+        # Surface position (present only near/on a body): drives the exobio
+        # sample-distance readout. The game omits the keys when not applicable.
+        if data.get("Latitude") is not None and data.get("Longitude") is not None:
+            updates["pos"] = {
+                "lat": data["Latitude"],
+                "lon": data["Longitude"],
+                "body": data.get("BodyName"),
+                "radius_m": data.get("PlanetRadius"),
+                "heading": data.get("Heading"),
+                "alt_m": data.get("Altitude"),
+            }
+        else:
+            updates["pos"] = None
         self.state.update(**updates)
+        self._check_sample_clear()
         if balance is not None:
             self._check_rebuy()
+
+    def _check_sample_clear(self):
+        """One-shot spoken callout when the commander has walked/driven far
+        enough from every previous sample of the species in progress. Re-armed
+        each time a new sample is taken (see _on_scanorganic)."""
+        if self._sample_clear_said or not self._live:
+            return
+        samp = self.state.bio_sampling
+        if not samp or not samp.get("colony_m"):
+            return
+        clearance = flight.sample_clearance(
+            self.state.bio_sample_points, self.state.pos, samp["colony_m"]
+        )
+        if clearance and clearance["clear"]:
+            self._sample_clear_said = True
+            self.state.push_alert(
+                "info", "sample_clear",
+                f"Clear to sample. You are far enough from your previous {samp.get('genus') or 'sample'}.",
+                f"⬡ CLEAR TO SAMPLE · {samp.get('species') or ''} · ≥{samp['colony_m']} m",
+            )
 
     def _apply_navroute(self, data):
         """NavRoute.json holds the full plotted route (each system's StarClass),
