@@ -1,49 +1,45 @@
-## Elite Trader v1.14.0 — the field companion update
+## Elite Trader v1.15.0 — every commander's cockpit
 
-Five new tools that close the gaps between this app and the games' best
-standalone helpers — plus a fix for the disappearing interface-size settings.
+This one is about serving every stage of the game — from your first engineer
+invite to fleet-carrier logistics — without burying anyone in cards they
+don't use. You choose what your screens show.
 
-### 🧬 Exobiology — sampling navigator
-- **Live sample-distance readout.** While a genetic scan is in progress, the
-  sampling card now shows how far you've moved from your previous samples —
-  "310 m of 500 m needed · KEEP MOVING" — and flips to **✓ CLEAR TO SAMPLE**
-  (with a spoken callout) the moment you've cleared the genus's colony
-  distance from *every* earlier sample. No more guessing, no more third
-  samples that refuse to register.
+### 🎛 Make it yours
+- **Hide any card, on any page.** ⇅ ARRANGE now customizes as well as
+  reorders: every card gets a **⊘ HIDE** button, hidden cards dim while
+  arranging (**⊕ SHOW** brings them back) and disappear afterwards. Saved
+  per device — a lean tablet cockpit and a kitchen-sink desktop can coexist.
+- **New 🔧 ENGINEERING page.** Everything about upgrading your gear —
+  engineers, materials, Odyssey locker, blueprint planner — moved off the
+  (very long) Local page into its own tab, on desktop and in the flight
+  panel's rail alike. Any layout choices you'd made follow automatically.
 
-### 🔧 Your ship, in a ship builder
-- **Open in EDSY** — the Ship Builds card now starts with *your current
-  ship*: one tap opens your live loadout (modules, engineering and all) in
-  EDSY to plan the next upgrade.
-- **Copy SLEF** — copies the community-standard loadout JSON; paste it into
-  the import box on Coriolis or Inara.
+### 🧑‍🔬 Engineers
+- **Engineer tracker** — everyone the game knows about, grouped
+  *Unlocked* (with grade pips), *Invited* (go visit — one tap plots the
+  trip) and *Known*, each with home system and what they upgrade. Unlock
+  requirements link to Inara, where they're kept current.
 
-### ⚖️ Pay off bounties & fines
-- New **Interstellar Factors finder** on the Local page: the nearest stations
-  that clear your bounties and fines (for a 25% cut), with jump estimates at
-  your ship's range and one-tap route plotting.
+### 🚀 Fleet
+- **Your Ships** — the whole fleet from your last shipyard visit: where
+  each ship is parked, its value, transfer cost and time, and a ⚠ HOT flag
+  for wanted hulls.
+- **Fleet Carrier panel** — tritium gauge, balance, free space, and the
+  scheduled jump with a countdown. Appears only if you own one; costs
+  everyone else nothing.
 
-### 📦 Smarter mission board
-- Haulage missions now show **live depot progress** — "148/540 delivered" —
-  including deliveries made by wingmates on wing missions.
-- The **cargo warning compares against what's still owed**, not the original
-  mission total.
-- When a mission **redirects** (all cargo delivered → report to the reward
-  stop), the board's destination follows.
+### 🥾 Odyssey
+- **On-foot locker** — goods, assets, data and consumables from
+  ShipLocker.json, ready for bartender trades and suit/weapon engineering.
+  Hidden automatically for Horizons-only commanders.
 
-### 🧪 Jumponium readiness
-- The materials card counts how many **FSD injections** you can synthesize
-  right now — basic (+25%), standard (+50%), premium (+100%).
-- When the fuel guard warns of a strand risk, it now also tells you if a
-  range boost is ready — a bigger jump can reach a scoopable star in fewer
-  jumps of fuel.
+### ☄ Neutron pre-flight check
+- The neutron plotter now states your tank's jump budget and flags
+  **⚠ dry legs** — waypoint legs that would drain a full tank — before you
+  commit. Neutron stars can't be scooped; now the plot says so up front.
 
-### 🛠 Fixes
-- **Interface-size settings now stick in the desktop window.** The embedded
-  window ran in private mode, silently wiping the display sliders (and every
-  other per-device preference) each launch. Browsers and tablets were never
-  affected. Thanks to **CMDR Drago** for the report — o7.
-- Empty analytics charts now say why they're empty instead of showing a
-  blank box.
-- "≈ Jumps" shows 0 for stations in your current system; small copy fixes
-  ("1 body scanned").
+### 🛠 Fixes & polish
+- Ship names render in game style — "Krait Mk II", not "Krait Mkii".
+- Nine flight-panel pages fit short tablets — the DB rail entry no longer
+  clips off-screen at 768px.
+- Durations longer than two days read as "3d 4h" instead of "76h".

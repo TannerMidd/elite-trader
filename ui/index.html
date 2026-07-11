@@ -146,7 +146,7 @@
   <div class="fp-jumps" id="fp-jumps"></div>
 </div>
 
-<button id="fp-arrange" class="fp-arrange" title="Drag cards to reorder this page; the layout is remembered on this device" aria-pressed="false">⇅</button>
+<button id="fp-arrange" class="fp-arrange" title="Customize this page: drag cards to reorder, ⊘ hides cards you don't use. Saved on this device." aria-pressed="false">⇅</button>
 
 <nav id="fp-nav" aria-label="Flight panel pages">
   <div class="fp-nav-brand"><img src="icon.svg" alt="" width="42" height="42"></div>
@@ -157,6 +157,7 @@
     <button data-page="bio"><span class="fp-ni" aria-hidden="true">⬡</span><span class="fp-nl">EXPLORE</span></button>
     <button data-page="guides"><span class="fp-ni" aria-hidden="true">✦</span><span class="fp-nl">GUIDES</span></button>
     <button data-page="analytics"><span class="fp-ni" aria-hidden="true">∿</span><span class="fp-nl">STATS</span></button>
+    <button data-page="engineering"><span class="fp-ni" aria-hidden="true">⌬</span><span class="fp-nl">ENG</span></button>
     <button data-page="local"><span class="fp-ni" aria-hidden="true">⌖</span><span class="fp-nl">LOCAL</span></button>
     <button data-page="database"><span class="fp-ni" aria-hidden="true">▤</span><span class="fp-nl">DB</span></button>
   </div>
@@ -211,9 +212,10 @@
     <button class="tab" data-tab="bio">EXPLORE</button>
     <button class="tab" data-tab="guides">GUIDES</button>
     <button class="tab" data-tab="analytics">ANALYTICS</button>
+    <button class="tab" data-tab="engineering">ENGINEERING</button>
     <button class="tab" data-tab="local">LOCAL</button>
     <button class="tab" data-tab="database">DATABASE</button>
-    <button class="tab-arrange" id="arrange-btn" title="Drag cards to reorder this page; the layout is remembered on this device" aria-pressed="false">⇅ ARRANGE</button>
+    <button class="tab-arrange" id="arrange-btn" title="Customize this page: drag cards to reorder, ⊘ hides cards you don't use. Saved on this device." aria-pressed="false">⇅ ARRANGE</button>
   </nav>
 
   <div class="tabpane" id="tab-trade">
@@ -564,6 +566,22 @@
   </div>
 
   <div class="tabpane hidden" id="tab-local">
+    <section class="card hidden" id="fc-card" data-arr="carrier">
+      <div class="card-head">
+        <div class="label">FLEET CARRIER <span class="dim" id="fc-ident"></span></div>
+        <div class="value orange" id="fc-balance"></div>
+      </div>
+      <div class="fc-row" id="fc-fuel-row">
+        <span class="dim">TRITIUM</span>
+        <div class="seedbar fc-fuelbar"><div id="fc-fuel-fill"></div></div>
+        <span id="fc-fuel-text">—</span>
+        <span class="dim" id="fc-space"></span>
+      </div>
+      <div id="fc-jump" class="fc-jump hidden"></div>
+      <div class="dim" id="fc-note">Tritium fuels carrier jumps (up to 500 ly each). Restock from your cargo hold
+        at the carrier's TRITIUM DEPOT, and keep the reserve topped up before long expeditions.</div>
+    </section>
+
     <section class="card" id="missions-card" data-arr="missions">
       <div class="card-head">
         <div class="label">ACTIVE MISSIONS <span class="dim">from your journal · red = expiring soon · ⚠ = cargo not aboard</span></div>
@@ -591,6 +609,16 @@
         your record from any station that hosts one (for a 25% cut) — no trip back to the issuing faction's space.
         Your current legal state shows in the LEGAL readout up top.</div>
       <div id="iff-results"></div>
+    </section>
+
+    <section class="card" id="ships-card" data-arr="ships">
+      <div class="card-head">
+        <div class="label">YOUR SHIPS <span class="dim">current + stored fleet · refreshed each shipyard visit</span></div>
+        <div class="value dim" id="ships-count"></div>
+      </div>
+      <div id="ships-list"></div>
+      <div id="ships-empty" class="dim empty">Open any station's shipyard once and your whole fleet appears here —
+        which ship is where, what it's worth, and what a transfer costs.</div>
     </section>
 
     <section class="card" id="colonisation-card" data-arr="colonisation">
@@ -650,6 +678,21 @@
       </section>
     </div>
 
+  </div>
+
+  <div class="tabpane hidden" id="tab-engineering">
+    <section class="card" id="engineers-card" data-arr="engineers">
+      <div class="card-head">
+        <div class="label">ENGINEERS <span class="dim">who upgrades your gear · from your journal</span></div>
+        <div class="value dim" id="engineers-count"></div>
+      </div>
+      <div id="engineers-list"></div>
+      <div id="engineers-empty" class="dim empty">No engineer progress logged yet — the game reports it when you
+        next launch. <b>Engineers</b> are characters who upgrade modules far beyond shop quality; you unlock them
+        one by one. Unlock requirements live on
+        <a class="extlink" href="https://inara.cz/elite/engineers/" target="_blank" rel="noopener">Inara · Engineers ↗</a>.</div>
+    </section>
+
     <section class="card" id="materials-card" data-arr="materials">
       <div class="card-head">
         <div class="label">ENGINEERING MATERIALS <span class="dim">raw · manufactured · encoded · from your journal</span></div>
@@ -659,6 +702,14 @@
         title="FSD injection ('jumponium'): synthesize a one-jump range boost from raw materials — Basic +25%, Standard +50%, Premium +100%. Craft it in the ship's right-hand panel → Inventory → Synthesis. The counts show how many of each you could make right now."></div>
       <div id="materials-groups" class="materials"></div>
       <div id="materials-empty" class="dim empty">No materials recorded yet — the game logs your full inventory when you next launch it.</div>
+    </section>
+
+    <section class="card hidden" id="odyssey-card" data-arr="odyssey">
+      <div class="card-head">
+        <div class="label">ODYSSEY LOCKER <span class="dim">on-foot goods · assets · data — spent at bartenders and on-foot engineers for suit &amp; weapon upgrades</span></div>
+        <div class="value dim" id="odyssey-total"></div>
+      </div>
+      <div id="odyssey-groups" class="materials"></div>
     </section>
 
     <section class="card" id="engplan-card" data-arr="engplanner">

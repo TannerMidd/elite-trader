@@ -77,15 +77,18 @@ Frontier Developments plc.
 - **Interstellar Factors finder** — the nearest stations that clear your bounties and fines, one tap from plotting.
 - **Rebuy safety net** — amber below 2× rebuy, red when you can't cover one, spoken warning as you cross each line.
 
-### 🔧 Engineering
+### 🔧 Engineering — a dedicated page
+- **Engineer tracker** — everyone you've unlocked (grade pips), been invited by, or heard of; specialties, home systems, one-tap plotting.
 - **Blueprint planner** — pin a blueprint + grade, get a live shopping list vs. your materials, deficits with **material-trader conversion math**, nearest raw/manufactured/encoded traders, and a callout when your list completes.
-- **Your current ship in a builder** — open the live loadout in EDSY or copy SLEF for Coriolis/Inara; **jumponium readiness** (FSD-injection counts) on the materials card, echoed in fuel-strand warnings.
+- **Odyssey locker** — on-foot goods/assets/data for bartenders and suit engineering (auto-hidden on Horizons).
+- **Your current ship in a builder** — open the live loadout in EDSY or copy SLEF for Coriolis/Inara; **jumponium readiness** (FSD-injection counts), echoed in fuel-strand warnings.
 
 ### 🖥️ Cockpit — [wiki](../../wiki/Flight-Panel-Mode)
 - **Flight panel**: the default view — a touch-first cockpit display for a mounted tablet, with a nav rail, a persistent status strip, swipe navigation, one-tap best-loop and optional fullscreen. (✕ EXIT switches to the classic desktop layout.)
 - **Voice callouts** for what actually matters: *fuel-scoop warnings along your plotted route* (never strand in a dry stretch again), interdictions, hull damage, first discoveries, rebuy coverage, data-at-risk, waypoints. A human-sounding **neural voice** (Piper TTS, synthesized locally) is the default once its one-time download is done — six voices to pick from, volume and sizing dials in Settings.
 - **Game launch control** — when Elite isn't running, the panel says so and a ▲ LAUNCH button starts it on your PC (works from the tablet).
-- **Arrange mode** — drag cards to reorder any page; layouts saved per device.
+- **Make it yours** — drag cards to reorder any page, **hide the ones you don't use**; layouts saved per device, so the tablet stays lean while the desktop shows everything.
+- **Fleet at a glance** — stored ships (location, value, transfer cost) and a **fleet-carrier panel** (tritium, balance, scheduled jump) that only appears if you own one.
 - **Autoplot (Windows)** — ◎ plots the route in the game itself using your own keybinds, verified against `NavRoute.json`. [wiki](../../wiki/Autoplot)
 
 ### 📈 Analytics

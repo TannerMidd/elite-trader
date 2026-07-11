@@ -186,7 +186,7 @@ function setVoice(on, announce) {
 
 /* ---------- flight panel mode ---------- */
 
-const PANEL_PAGES = ["status", "trade", "commodities", "bio", "guides", "analytics", "local", "database"];
+const PANEL_PAGES = ["status", "trade", "commodities", "bio", "guides", "analytics", "engineering", "local", "database"];
 
 function setPanelMode(on) {
   document.body.classList.toggle("panel-mode", on);
@@ -381,6 +381,83 @@ function saveCardOrder(pane) {
   localStorage.setItem("cardOrder:" + pane.id, JSON.stringify(keys));
 }
 
+/* ---------- card visibility: hide cards you never use (per device) ----------
+   Complements arrange mode: every commander plays differently, and every card
+   someone else needs is noise to you. Hidden keys are stored per tab like the
+   order; hidden cards stay visible (dimmed) while arranging so they can be
+   restored, and are display:none otherwise. */
+
+/* The engineering cards used to live on LOCAL; carry any per-device order and
+   hidden choices for them over to the new tab so customizations survive. */
+function migrateEngineeringLayout() {
+  const moved = ["engineers", "materials", "odyssey", "engplanner"];
+  try {
+    const localHidden = JSON.parse(localStorage.getItem("cardHidden:tab-local")) || [];
+    const carried = localHidden.filter((k) => moved.includes(k));
+    if (carried.length) {
+      const engHidden = new Set(JSON.parse(localStorage.getItem("cardHidden:tab-engineering")) || []);
+      carried.forEach((k) => engHidden.add(k));
+      localStorage.setItem("cardHidden:tab-engineering", JSON.stringify([...engHidden]));
+      localStorage.setItem("cardHidden:tab-local",
+        JSON.stringify(localHidden.filter((k) => !moved.includes(k))));
+    }
+    const localOrder = JSON.parse(localStorage.getItem("cardOrder:tab-local"));
+    if (Array.isArray(localOrder) && localOrder.some((k) => moved.includes(k))) {
+      localStorage.setItem("cardOrder:tab-local",
+        JSON.stringify(localOrder.filter((k) => !moved.includes(k))));
+    }
+  } catch { /* fresh device — nothing to migrate */ }
+}
+
+function hiddenCardKeys(paneId) {
+  try {
+    const v = JSON.parse(localStorage.getItem("cardHidden:" + paneId));
+    return Array.isArray(v) ? v : [];
+  } catch { return []; }
+}
+
+function setCardHidden(pane, card, hide) {
+  const keys = new Set(hiddenCardKeys(pane.id));
+  if (hide) keys.add(arrKey(card)); else keys.delete(arrKey(card));
+  localStorage.setItem("cardHidden:" + pane.id, JSON.stringify([...keys]));
+  applyCardVisibility();
+  syncEyeButton(card);
+}
+
+function applyCardVisibility() {
+  document.querySelectorAll(".tabpane").forEach((pane) => {
+    const hidden = new Set(hiddenCardKeys(pane.id));
+    let anyVisible = false, anyHidden = false;
+    pane.querySelectorAll("section.card[data-arr], .two-col[data-arr] > section.card[data-arr]").forEach((card) => {
+      const off = hidden.has(arrKey(card));
+      card.classList.toggle("user-hidden", off);
+      if (off) anyHidden = true;
+      else if (!card.classList.contains("hidden")) anyVisible = true;
+    });
+    // If the whole page was hidden away, leave a way back.
+    let note = pane.querySelector(".all-hidden-note");
+    if (!anyVisible && anyHidden) {
+      if (!note) {
+        note = document.createElement("div");
+        note.className = "dim empty all-hidden-note";
+        note.textContent = "Every card on this page is hidden — tap ⇅ ARRANGE, then ⊕ SHOW to bring them back.";
+        pane.appendChild(note);
+      }
+    } else if (note) {
+      note.remove();
+    }
+  });
+}
+
+function syncEyeButton(card) {
+  const eye = card.querySelector(".arr-eye");
+  if (!eye) return;
+  const off = card.classList.contains("user-hidden");
+  eye.textContent = off ? "⊕ SHOW" : "⊘ HIDE";
+  eye.title = off ? "Show this card again on this device"
+    : "Hide this card on this device (restore it any time in arrange mode)";
+}
+
 function setArrangeMode(on) {
   document.body.classList.toggle("arranging", on);
   for (const btn of [$("arrange-btn"), $("fp-arrange")]) {
@@ -389,7 +466,7 @@ function setArrangeMode(on) {
     btn.setAttribute("aria-pressed", String(on));
   }
   $("arrange-btn").textContent = on ? "✓ DONE" : "⇅ ARRANGE";
-  document.querySelectorAll(".arr-handle").forEach((h) => h.remove());
+  document.querySelectorAll(".arr-handle, .arr-eye").forEach((h) => h.remove());
   if (!on) return;
   document.querySelectorAll(".tabpane section.card[data-arr]").forEach((card) => {
     const h = document.createElement("button");
@@ -399,6 +476,15 @@ function setArrangeMode(on) {
     h.setAttribute("aria-label", "Drag to reorder this card");
     h.addEventListener("pointerdown", (ev) => startCardDrag(ev, card));
     card.appendChild(h);
+    const eye = document.createElement("button");
+    eye.type = "button";
+    eye.className = "arr-eye";
+    eye.addEventListener("click", () => {
+      const pane = card.closest(".tabpane");
+      if (pane) setCardHidden(pane, card, !card.classList.contains("user-hidden"));
+    });
+    card.appendChild(eye);
+    syncEyeButton(card);
   });
 }
 
@@ -769,6 +855,10 @@ function render() {
   renderMissions(state.missions);
   renderMassacre();
   renderMaterials(state.materials);
+  renderEngineers();
+  renderStoredShips();
+  renderOdysseyLocker();
+  renderCarrier();
   refreshLoadoutExport();
   // Re-plan pinned blueprints when the material inventory changes.
   const matTotal = (state.materials && state.materials.total) || 0;
@@ -793,7 +883,8 @@ function colorSign(id, v) {
 
 function fmtDuration(secs) {
   if (secs == null || secs < 0) return "—";
-  const h = Math.floor(secs / 3600), m = Math.floor((secs % 3600) / 60);
+  const d = Math.floor(secs / 86400), h = Math.floor((secs % 86400) / 3600), m = Math.floor((secs % 3600) / 60);
+  if (d) return `${d}d ${h}h`;
   if (h) return `${h}h ${m}m`;
   if (m) return `${m}m`;
   return `${Math.floor(secs)}s`;
@@ -1450,6 +1541,168 @@ function renderMaterials(mats) {
     }
     col.appendChild(ul);
     groups.appendChild(col);
+  }
+}
+
+/* ---------- engineers (unlock progress) ---------- */
+
+const ENG_STAGE_LABEL = {
+  Unlocked: ["UNLOCKED", "ready to use — higher grades unlock as you craft with them"],
+  Invited: ["INVITED", "visit their workshop once to unlock them"],
+  Known: ["KNOWN", "meet their unlock terms first — requirements on Inara"],
+};
+
+function renderEngineers() {
+  const list = $("engineers-list");
+  if (!list) return;
+  const engineers = state.engineers || [];
+  $("engineers-empty").classList.toggle("hidden", engineers.length > 0);
+  const unlocked = engineers.filter((e) => e.progress === "Unlocked").length;
+  $("engineers-count").textContent = engineers.length
+    ? `${unlocked} of ${engineers.length} unlocked` : "";
+  const sig = JSON.stringify(engineers);
+  if (list.dataset.sig === sig) return;
+  list.dataset.sig = sig;
+  list.innerHTML = "";
+  for (const stage of ["Unlocked", "Invited", "Known"]) {
+    const rows = engineers.filter((e) => e.progress === stage);
+    if (!rows.length) continue;
+    const [label, blurb] = ENG_STAGE_LABEL[stage];
+    const sec = document.createElement("div");
+    sec.className = "eng-stage";
+    sec.innerHTML = `<div class="label">${label} <span class="dim">${rows.length} · ${blurb}</span></div>`;
+    for (const e of rows) {
+      const div = document.createElement("div");
+      div.className = "eng-row";
+      const pips = stage === "Unlocked" && e.rank
+        ? `<span class="eng-pips" title="Grade ${e.rank} of 5 unlocked">${"●".repeat(e.rank)}${"○".repeat(Math.max(0, 5 - e.rank))} G${e.rank}</span>`
+        : "";
+      div.innerHTML =
+        `<b>${esc(e.name)}</b>${e.on_foot ? ' <span class="chip" title="Odyssey on-foot engineer — upgrades suits and hand weapons">ON-FOOT</span>' : ""} ${pips}` +
+        `<span class="dim">${e.offers ? esc(e.offers) : ""}${e.system ? (e.offers ? " · " : "") + esc(e.system) : ""}</span>`;
+      if (e.system) div.appendChild(plotButton(e.system));
+      sec.appendChild(div);
+    }
+    list.appendChild(sec);
+  }
+}
+
+/* ---------- stored ships (fleet overview) ---------- */
+
+function renderStoredShips() {
+  const list = $("ships-list");
+  if (!list) return;
+  const st = state.stored_ships;
+  const shipsHere = (st && st.here) || [];
+  const remote = (st && st.remote) || [];
+  $("ships-empty").classList.toggle("hidden", !!st);
+  const total = shipsHere.length + remote.length + 1; // + the one you're flying
+  $("ships-count").textContent = st ? `${total} ships` : "";
+  const sig = JSON.stringify([st, state.ship_type, state.ship_name, state.system]);
+  if (list.dataset.sig === sig) return;
+  list.dataset.sig = sig;
+  list.innerHTML = "";
+  if (!st) return;
+
+  const addRow = (title, sub, system) => {
+    const div = document.createElement("div");
+    div.className = "ship-row";
+    div.innerHTML = `<b>${title}</b><span class="dim">${sub}</span>`;
+    if (system) div.appendChild(plotButton(system));
+    list.appendChild(div);
+  };
+
+  const flying = [state.ship_name, state.ship_type && `(${state.ship_type})`].filter(Boolean).join(" ");
+  addRow(esc(flying || "Current ship"), "with you now" + (state.system ? ` · ${esc(state.system)}` : ""), null);
+  for (const s of shipsHere) {
+    addRow(shipTitle(s), `stored at ${esc(st.station || "this station")} · ${esc(st.system || "")}` + shipTags(s), null);
+  }
+  for (const s of remote) {
+    const sub = `${esc(s.system || "?")}` +
+      (s.in_transit ? " · in transit" :
+        s.transfer_cr != null ? ` · transfer ${shortCr(s.transfer_cr)} cr · ${fmtDuration(s.transfer_s)}` : "") +
+      shipTags(s);
+    addRow(shipTitle(s), sub, s.system);
+  }
+  const note = document.createElement("div");
+  note.className = "dim";
+  note.textContent = `As of your shipyard visit at ${st.station || "?"} — transfers are paid at any shipyard and the ship flies itself to you.`;
+  list.appendChild(note);
+}
+
+function shipTitle(s) {
+  return esc([s.name, s.name ? `(${s.type})` : s.type].filter(Boolean).join(" "));
+}
+
+function shipTags(s) {
+  return (s.hot ? ' · <span class="warn" title="This ship is wanted — landing at a normal station risks fines or worse. Clean it at an Interstellar Factors contact.">⚠ HOT</span>' : "") +
+    (s.value != null ? ` · ${shortCr(s.value)} cr` : "");
+}
+
+/* ---------- odyssey locker (on-foot inventory) ---------- */
+
+function renderOdysseyLocker() {
+  const card = $("odyssey-card");
+  if (!card) return;
+  const locker = state.ship_locker;
+  card.classList.toggle("hidden", !locker || !locker.total);
+  if (!locker || !locker.total) return;
+  $("odyssey-total").textContent = locker.total + " items";
+  const groups = $("odyssey-groups");
+  const sig = JSON.stringify(locker);
+  if (groups.dataset.sig === sig) return;
+  groups.dataset.sig = sig;
+  groups.innerHTML = "";
+  for (const [key, label] of [["items", "GOODS"], ["components", "ASSETS"],
+                              ["data", "DATA"], ["consumables", "CONSUMABLES"]]) {
+    const items = locker[key] || [];
+    if (!items.length) continue;
+    const col = document.createElement("div");
+    col.className = "mat-group";
+    col.innerHTML = `<div class="label">${label} <span class="dim">${items.length}</span></div>`;
+    const ul = document.createElement("ul");
+    ul.className = "cargo-list";
+    for (const it of items) {
+      const li = document.createElement("li");
+      li.innerHTML = `<span>${esc(it.name)}</span><span class="count">${it.count}</span>`;
+      ul.appendChild(li);
+    }
+    col.appendChild(ul);
+    groups.appendChild(col);
+  }
+}
+
+/* ---------- fleet carrier ---------- */
+
+const FC_FUEL_MAX = 1000; // tritium tank capacity, tons
+
+function renderCarrier() {
+  const card = $("fc-card");
+  if (!card) return;
+  const fc = state.carrier;
+  card.classList.toggle("hidden", !fc);
+  if (!fc) return;
+  $("fc-ident").textContent = [fc.name, fc.callsign].filter(Boolean).join(" · ");
+  $("fc-balance").textContent = fc.balance != null ? shortCr(fc.balance) + " cr" : "";
+  const fuel = fc.fuel_t;
+  const pct = fuel != null ? Math.min(100, Math.round((fuel / FC_FUEL_MAX) * 100)) : 0;
+  const fill = $("fc-fuel-fill");
+  fill.style.width = pct + "%";
+  fill.style.background = fuel != null && fuel < 135 ? "var(--bad)" : "var(--good)"; // < ~one max jump + margin
+  $("fc-fuel-text").textContent = fuel != null ? `${fmtNum(fuel)} / ${FC_FUEL_MAX} t` : "—";
+  $("fc-space").textContent = fc.free_space != null
+    ? `· FREE SPACE ${fmtNum(fc.free_space)} t${fc.capacity ? " of " + fmtNum(fc.capacity) : ""}` : "";
+
+  const jumpEl = $("fc-jump");
+  const jump = fc.jump;
+  jumpEl.classList.toggle("hidden", !jump);
+  if (jump) {
+    const rem = jump.departure_ts ? jump.departure_ts - Date.now() / 1000 : null;
+    jumpEl.innerHTML =
+      `<span class="fc-jump-badge">◈ JUMP SCHEDULED</span> → <b>${esc(jump.system || "?")}</b>` +
+      (jump.body ? ` <span class="dim">${esc(jump.body)}</span>` : "") +
+      (rem != null ? ` · <span class="${rem <= 0 ? "dim" : "soon"}">${rem <= 0 ? "departing…" : "departs in " + fmtDuration(rem)}</span>` : "");
+    if (jump.system) jumpEl.appendChild(plotButton(jump.system));
   }
 }
 
@@ -2539,6 +2792,13 @@ async function planNeutron(ev) {
     if (!resp.ok) throw new Error(data.error || "Request failed");
     const wps = data.waypoints || [];
     status.textContent = `${data.total_jumps} jumps total across ${wps.length} waypoints — plot each waypoint as you reach the previous one.`;
+    // Pre-flight fuel check: neutron stars can't be scooped, so flag legs
+    // longer than the tank's estimated jump budget (worst recent burn).
+    const tankJumps = state && state.nav && state.nav.fuel_per_jump > 0 && state.fuel_capacity
+      ? Math.floor(state.fuel_capacity / state.nav.fuel_per_jump) : null;
+    if (wps.length && tankJumps) {
+      status.append(` ⛽ Your tank ≈${tankJumps} jumps at recent burn — neutron stars can't be scooped, so top off before flagged legs.`);
+    }
     if (wps.length) {
       status.append(" ");
       status.appendChild(trackButton("neutron", "Neutron: " + ($("nr-to").value.trim() || "route"),
@@ -2546,10 +2806,13 @@ async function planNeutron(ev) {
     }
     tbody.innerHTML = "";
     wps.forEach((w, i) => {
+      const dryLeg = tankJumps != null && w.jumps != null && w.jumps >= tankJumps;
       const tr = document.createElement("tr");
       tr.innerHTML =
         `<td>${i + 1}</td>` +
-        `<td>${esc(w.system)}${w.neutron ? ' <span class="orange">☄ neutron</span>' : ""}</td>` +
+        `<td>${esc(w.system)}${w.neutron ? ' <span class="orange">☄ neutron</span>' : ""}` +
+        (dryLeg ? ` <span class="warn" title="Reaching this waypoint takes ≈${w.jumps} jumps — about a full tank at your recent burn rate. Top off first and refuel at a normal (KGB FOAM) star along the way.">⚠ ${w.jumps}-jump leg — top off</span>` : "") +
+        `</td>` +
         `<td class="num">${w.distance_jumped != null ? Number(w.distance_jumped).toFixed(1) : ""}</td>` +
         `<td class="num">${w.distance_left != null ? Number(w.distance_left).toFixed(0) : ""}</td>` +
         `<td class="num">${w.jumps ?? ""}</td>`;
@@ -3634,7 +3897,9 @@ document.addEventListener("DOMContentLoaded", () => {
   $("exo-form").addEventListener("submit", searchExobio);
   buildExoGenusChips();
 
+  migrateEngineeringLayout();
   applyCardOrders();
+  applyCardVisibility();
   const toggleArrange = () => setArrangeMode(!document.body.classList.contains("arranging"));
   $("arrange-btn").addEventListener("click", toggleArrange);
   $("fp-arrange").addEventListener("click", toggleArrange);

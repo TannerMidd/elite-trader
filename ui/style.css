@@ -983,6 +983,12 @@ body.panel-mode #fp-nav {
 }
 .fp-nav-pages button.active .fp-ni { text-shadow: 0 0 12px rgba(255, 113, 0, .6); }
 .fp-nav-pages button:active { background: rgba(255, 113, 0, .08); }
+/* Short tablets: compress the rail so all nine pages stay visible (buttons
+   keep a >=44px touch target; without this the DB entry clips off-screen). */
+@media (max-height: 820px) {
+  .fp-nav-pages button { min-height: 52px; padding: 7px 4px 6px; gap: 3px; }
+  .fp-nav-pages .fp-ni { font-size: 17px; }
+}
 .fp-nav-foot {
   display: flex;
   flex-direction: column;
@@ -1258,12 +1264,12 @@ body.arranging .tabpane section.card[data-arr] {
 }
 /* While arranging, cards collapse to just their header so even table-heavy
    pages fit on screen and short drags reorder anything. */
-body.arranging .tabpane section.card[data-arr] > :not(.label):not(.card-head):not(.arr-handle) {
+body.arranging .tabpane section.card[data-arr] > :not(.label):not(.card-head):not(.arr-handle):not(.arr-eye) {
   display: none !important;
 }
 body.arranging .tabpane section.card[data-arr] {
   min-height: 62px;
-  padding-right: 130px;   /* keep the header clear of the DRAG handle */
+  padding-right: 250px;   /* keep the header clear of the HIDE + DRAG controls */
 }
 body.arranging .tabpane section.card[data-arr] .label { margin-bottom: 0; border-bottom: none; }
 body.arranging .tabpane section.card[data-arr] .card-head { margin-bottom: 0; }
@@ -1296,6 +1302,57 @@ body.arranging .two-col {
   user-select: none;
 }
 .arr-handle:active { cursor: grabbing; }
+/* card visibility (customize): user-hidden cards are gone outside arrange
+   mode, dimmed-but-present inside it so they can be restored */
+.tabpane .user-hidden { display: none !important; }
+body.arranging .tabpane section.card.user-hidden { display: block !important; opacity: .45; }
+.arr-eye {
+  position: absolute;
+  top: 8px;
+  right: 126px;
+  z-index: 5;
+  min-height: 44px;
+  padding: 8px 14px;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--orange-soft);
+  border: 1px solid var(--orange);
+  font-weight: 800;
+  font-size: 13px;
+  letter-spacing: 1px;
+  cursor: pointer;
+  user-select: none;
+}
+.all-hidden-note { padding: 18px 6px; }
+
+/* engineers card */
+.eng-stage { margin-top: 10px; }
+.eng-stage > .label { margin-bottom: 4px; }
+.eng-row {
+  display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap;
+  padding: 4px 0; font-size: 13.5px; border-bottom: 1px solid var(--border);
+}
+.eng-row:last-child { border-bottom: none; }
+.eng-pips { color: var(--good); font-size: 12px; letter-spacing: 1px; white-space: nowrap; }
+
+/* stored ships card */
+.ship-row {
+  display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap;
+  padding: 4px 0; font-size: 13.5px; border-bottom: 1px solid var(--border);
+}
+.ship-row:last-of-type { border-bottom: none; }
+.ship-row .warn { color: var(--bad); font-weight: 600; }
+
+/* fleet carrier card */
+.fc-row { display: flex; align-items: center; gap: 10px; margin: 8px 0; flex-wrap: wrap; }
+.fc-fuelbar { flex: 1; min-width: 140px; }
+#fc-fuel-fill { height: 100%; width: 0; background: var(--good); }
+.fc-jump { margin: 6px 0; display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.fc-jump-badge { color: var(--orange); font-weight: 700; letter-spacing: 1px; }
+.fc-jump .soon { color: var(--orange-soft); font-weight: 600; }
+
+/* neutron plotter dry-leg warning */
+#nr-table .warn { color: var(--bad); font-weight: 600; }
 section.card.arr-drag {
   outline: 2px solid var(--orange) !important;
   box-shadow: 0 10px 30px rgba(0, 0, 0, .6), 0 0 22px rgba(255, 113, 0, .25);

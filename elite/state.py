@@ -77,6 +77,15 @@ class AppState:
         # The most recent full Loadout journal event, for EDSY/SLEF export
         self.loadout_raw = None
 
+        # Engineer access (EngineerProgress): name -> {progress, rank, rank_progress}
+        self.engineers = {}
+        # Fleet overview from the last shipyard visit (StoredShips event)
+        self.stored_ships = None  # {"here": [...], "remote": [...], "station", "system", "updated"}
+        # Odyssey on-foot inventory (ShipLocker.json): goods/assets/data/consumables
+        self.ship_locker = None   # {"items": [...], "components": [...], "data": [...], "consumables": [...]}
+        # Fleet carrier (CarrierStats & friends); None until the player owns one
+        self.carrier = None
+
         # Combat: session counters + kills per faction while that faction has
         # active massacre missions (drives the stack-progress card).
         self.combat_kills = 0
@@ -289,6 +298,32 @@ class AppState:
         with self._lock:
             return dict(self.loadout_raw) if self.loadout_raw else None
 
+    _ENGINEER_STAGE = {"Unlocked": 0, "Invited": 1, "Known": 2}
+
+    def _engineers_snapshot(self):
+        """Engineer access enriched with home system + specialty, grouped for
+        the UI: unlocked first (highest rank leading), then invited, then known."""
+        from . import engineers as engref
+
+        out = []
+        for name, e in self.engineers.items():
+            ref = engref.info(name)
+            out.append({
+                "name": name,
+                "progress": e.get("progress"),
+                "rank": e.get("rank"),
+                "rank_progress": e.get("rank_progress"),
+                "system": ref.get("system"),
+                "offers": ref.get("offers"),
+                "on_foot": bool(ref.get("on_foot")),
+            })
+        out.sort(key=lambda e: (
+            self._ENGINEER_STAGE.get(e["progress"], 3),
+            -(e["rank"] or 0),
+            e["name"],
+        ))
+        return out
+
     def snapshot(self):
         with self._lock:
             market = None
@@ -345,6 +380,10 @@ class AppState:
                 ),
                 "materials": self._materials_snapshot(),
                 "synth": synth,
+                "engineers": self._engineers_snapshot(),
+                "stored_ships": dict(self.stored_ships) if self.stored_ships else None,
+                "ship_locker": dict(self.ship_locker) if self.ship_locker else None,
+                "carrier": dict(self.carrier) if self.carrier else None,
                 "session": self._session_snapshot(),
                 "combat": self._combat_snapshot(),
                 "nav": self._nav_snapshot(synth=synth),

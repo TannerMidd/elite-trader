@@ -73,14 +73,20 @@ def _candidate_journal_dirs():
         yield steam_root / _PROTON_SUFFIX
 
 
+_MK_SUFFIX = re.compile(r"\bMk(i{1,3}|iv|v)\b", re.IGNORECASE)
+
+
 def _clean_name(raw):
-    """Turn an internal name like '$gold_name;' into 'Gold'."""
+    """Turn an internal name like '$gold_name;' into 'Gold'. Ship type stems
+    ('krait_mkii') title-case into 'Krait Mkii', so mark-suffixes are mended
+    to the in-game style ('Krait Mk II')."""
     if not raw:
         return ""
     name = raw.strip("$;")
     if name.endswith("_name"):
         name = name[: -len("_name")]
-    return name.replace("_", " ").title()
+    name = name.replace("_", " ").title()
+    return _MK_SUFFIX.sub(lambda m: "Mk " + m.group(1).upper(), name)
 
 
 def _pretty_panel_name(raw):
@@ -265,6 +271,12 @@ class JournalWatcher:
             star_pos=e.get("StarPos"),
             body=e.get("Body"),
         )
+        # If this was OUR carrier completing its scheduled jump, the pending
+        # entry is done. (The event only fires while aboard; destination match
+        # keeps someone else's carrier from clearing ours.)
+        carrier = self.state.carrier
+        if carrier and carrier.get("jump") and carrier["jump"].get("system") == e.get("StarSystem"):
+            self._update_carrier(jump=None)
         self._fetch_community_bio(e.get("SystemAddress"), e.get("StarSystem"))
 
     def _on_docked(self, e):
@@ -728,6 +740,86 @@ class JournalWatcher:
             self.state.update(missions=missions)
             self._sync_faction_kills()
 
+    # ---------- engineers, fleet & carrier ----------
+
+    def _on_engineerprogress(self, e):
+        """Engineer access. One batch event at startup (Engineers array), then
+        single events as progress changes (invite, unlock, rank-up)."""
+        def entry(rec):
+            return {
+                "progress": rec.get("Progress"),
+                "rank": rec.get("Rank"),
+                "rank_progress": rec.get("RankProgress"),
+            }
+
+        if e.get("Engineers") is not None:
+            engineers = {
+                rec["Engineer"]: entry(rec)
+                for rec in e["Engineers"] if rec.get("Engineer")
+            }
+            self.state.update(engineers=engineers)
+        elif e.get("Engineer"):
+            engineers = dict(self.state.engineers)
+            engineers[e["Engineer"]] = entry(e)
+            self.state.update(engineers=engineers)
+
+    @staticmethod
+    def _stored_ship(rec):
+        return {
+            "type": rec.get("ShipType_Localised") or _clean_name(rec.get("ShipType")),
+            "name": rec.get("Name") or None,
+            "value": rec.get("Value"),
+            "hot": bool(rec.get("Hot")),
+            "system": rec.get("StarSystem") or None,       # remote ships only
+            "transfer_cr": rec.get("TransferPrice"),
+            "transfer_s": rec.get("TransferTime"),
+            "in_transit": bool(rec.get("InTransit")),
+        }
+
+    def _on_storedships(self, e):
+        """Fleet overview, sent whenever a shipyard is opened."""
+        self.state.update(stored_ships={
+            "station": e.get("StationName"),
+            "system": e.get("StarSystem"),
+            "here": [self._stored_ship(r) for r in e.get("ShipsHere") or []],
+            "remote": [self._stored_ship(r) for r in e.get("ShipsRemote") or []],
+            "updated": e.get("timestamp"),
+        })
+
+    def _update_carrier(self, **fields):
+        carrier = dict(self.state.carrier or {})
+        carrier.update(fields)
+        self.state.update(carrier=carrier)
+
+    def _on_carrierstats(self, e):
+        """The owner's fleet carrier, sent when carrier management is opened."""
+        space = e.get("SpaceUsage") or {}
+        finance = e.get("Finance") or {}
+        self._update_carrier(
+            callsign=e.get("Callsign"),
+            name=e.get("Name"),
+            fuel_t=e.get("FuelLevel"),
+            balance=finance.get("CarrierBalance"),
+            reserve=finance.get("ReserveBalance"),
+            capacity=space.get("TotalCapacity"),
+            free_space=space.get("FreeSpace"),
+            updated=e.get("timestamp"),
+        )
+
+    def _on_carrierjumprequest(self, e):
+        self._update_carrier(jump={
+            "system": e.get("SystemName"),
+            "body": e.get("Body") or None,
+            "departure_ts": marketdb.parse_update_time(e.get("DepartureTime")),
+        })
+
+    def _on_carrierjumpcancelled(self, e):
+        self._update_carrier(jump=None)
+
+    def _on_carrierdepositfuel(self, e):
+        if e.get("Total") is not None:
+            self._update_carrier(fuel_t=e.get("Total"))
+
     # ---------- engineering materials ----------
 
     @staticmethod
@@ -828,6 +920,7 @@ class JournalWatcher:
             ("Cargo.json", self._apply_cargo),
             ("Market.json", self._apply_market),
             ("NavRoute.json", self._apply_navroute),
+            ("ShipLocker.json", self._apply_shiplocker),
         ):
             path = self.journal_dir / name
             try:
@@ -1010,6 +1103,30 @@ class JournalWatcher:
                 self._hull_bucket = ceiling
                 self.state.push_alert(level, "hull", f"Warning. Hull at {pct} percent.", f"⚠ HULL {pct}%")
                 return
+
+    def _apply_shiplocker(self, data):
+        """ShipLocker.json — the Odyssey on-foot inventory (goods, assets,
+        data, consumables), consumed by bartenders and on-foot engineers.
+        Entries repeat per owner/mission, so aggregate counts by item."""
+        groups = {"items": "Items", "components": "Components",
+                  "data": "Data", "consumables": "Consumables"}
+        locker = {}
+        for out_key, src_key in groups.items():
+            rows = data.get(src_key)
+            if rows is None:
+                return  # not an Odyssey locker file; keep the last good state
+            counts = {}
+            for item in rows:
+                name = item.get("Name_Localised") or _clean_name(item.get("Name"))
+                if not name:
+                    continue
+                counts[name] = counts.get(name, 0) + (item.get("Count") or 0)
+            locker[out_key] = sorted(
+                ({"name": n, "count": c} for n, c in counts.items()),
+                key=lambda i: (-i["count"], i["name"]),
+            )
+        locker["total"] = sum(i["count"] for rows in locker.values() for i in rows)
+        self.state.update(ship_locker=locker)
 
     def _apply_cargo(self, data):
         inventory = [
