@@ -80,7 +80,7 @@ Frontier Developments plc.
 
 ### 🖥️ Cockpit — [wiki](../../wiki/Flight-Panel-Mode)
 - **Flight panel**: the default view — a touch-first cockpit display for a mounted tablet, with a nav rail, a persistent status strip, swipe navigation, one-tap best-loop and optional fullscreen. (✕ EXIT switches to the classic desktop layout.)
-- **Voice callouts** for what actually matters: *fuel-scoop warnings along your plotted route* (never strand in a dry stretch again), interdictions, hull damage, first discoveries, rebuy coverage, data-at-risk, waypoints. Optional **neural voice** (experimental): human-sounding Piper TTS synthesized locally, six voices to pick from.
+- **Voice callouts** for what actually matters: *fuel-scoop warnings along your plotted route* (never strand in a dry stretch again), interdictions, hull damage, first discoveries, rebuy coverage, data-at-risk, waypoints. A human-sounding **neural voice** (Piper TTS, synthesized locally) is the default once its one-time download is done — six voices to pick from, volume and sizing dials in Settings.
 - **Game launch control** — when Elite isn't running, the panel says so and a ▲ LAUNCH button starts it on your PC (works from the tablet).
 - **Arrange mode** — drag cards to reorder any page; layouts saved per device.
 - **Autoplot (Windows)** — ◎ plots the route in the game itself using your own keybinds, verified against `NavRoute.json`. [wiki](../../wiki/Autoplot)

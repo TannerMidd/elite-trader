@@ -1,53 +1,39 @@
-## Elite Trader v1.12.0 — launch control & the explorer's update
+## Elite Trader v1.13.0 — sized to your eyes, spoken in Scots
 
-Deep-space explorers get a way home, a guard for their unsold fortune, and an
-honest session clock. The panel learns to start the game itself — and can now
-speak with a human voice.
+Readability dials for every screen, a voice that sounds human out of the box,
+and a colonisation card that explains itself.
 
-### 🛰️ For explorers deep in the black
-- **WHERE TO SELL YOUR DATA** (Explore page): the "get me home" search —
-  nearest ports with **Universal Cartographics** (map data) and **Vista
-  Genomics** (bio samples), sorted by distance from wherever you are, with
-  jump estimates at your ship's range. Fleet carriers are included (they can
-  fit both services) and clearly flagged — they move, so treat their position
-  as a lead. Works even from undiscovered systems.
-- **DATA AT RISK guard**: a destroyed ship loses every unsold scan and sample
-  aboard. When your unsold pile is worth many times your rebuy, a chip
-  appears on the status page and one-shot voice callouts fire as it crosses
-  10× / 25× / 50× — the nudge to go bank it before the galaxy takes it back.
-- **COLLECTED session metric**: exploration sessions finally have a number —
-  the estimated value of scans and samples gathered this session (first
-  discoveries and first logs counted at their bonus rates).
-- **The session clock stops when the game does.** Duration and cr/hr now
-  measure play time, not how long the app sat open overnight.
+### 🔊 The voice grows up
+- **Neural voice is out of experimental — and on by default.** Once the
+  one-time voice download is done, callouts use the human-sounding Piper
+  voice automatically; the per-device switch is now an opt-*out*. Devices
+  that explicitly turned it off stay off.
+- **Alba (Scottish female) is the new default voice.** Anyone who already
+  picked a voice keeps their pick; six voices remain in the Settings dropdown.
+- **Voice volume slider** — per device, 0–100%, applies to the neural and
+  browser voices alike. Release the slider and it speaks the new level back
+  to you.
 
-### 🚀 Launch control
-- When Elite Dangerous isn't running, every page shows a **FLIGHT SYSTEMS ·
-  STANDBY** panel with a **▲ LAUNCH ELITE DANGEROUS** ignition button — tap
-  it from the tablet and the game starts on your PC (Steam, or the Frontier
-  launcher). A staged T-0 sequence tracks the handoff, a **LAUNCH CONFIRMED**
-  callout fires when journal telemetry arrives, and pressing again aborts
-  the wait. Plotting while the game is off now says so instead of failing
-  cryptically.
+### 🖥️ Make it readable (Settings → this device)
+Feedback said parts of the UI squint at tablet distance. Three new sliders,
+saved per device, applied instantly — double-click any of them to reset:
+- **Interface size** (80–140%): zooms the whole app, desktop and panel alike.
+- **Status bar text** (100–160%): the panel-mode top strip — system, station,
+  fuel, cargo, clock, commander.
+- **Helper text** (100–150%): all the small grey hints, sub-lines and
+  empty-state copy.
 
-### 🗣️ Neural voice (experimental)
-- Optional human-sounding callouts: a one-time download installs **Piper
-  TTS** — running entirely on your PC, offline, nothing sent anywhere — and
-  every device on your LAN hears the same voice. **Six voices** to choose
-  from (British, Scottish, American · female and male) with a TEST button to
-  audition them. Off by default while experimental: Settings → Neural voice.
+### 🏗️ Colonisation, less mysterious
+- The **COLONIZATION PROJECTS card no longer vanishes** when there's nothing
+  tracked — it now explains how tracking works: the game only shares a
+  depot's shopping list while you're docked at the construction site itself,
+  not just anywhere in a colonising system. Dock there once and the card
+  fills in with what's still needed, per-unit payouts, and FIND SOURCES.
+- **Construction-ship names are readable everywhere.** The game reports
+  colonisation ships as raw tokens ("$EXT_PANEL_ColonisationShip; Nansen
+  Claim") and never localises them — the status strip, destination readout
+  and depot card now show "Colonisation Ship Nansen Claim".
 
-### 🖥️ Also
-- **CRT effects** (scanlines + readout flicker) are now off by default and
-  opt-in per device — they could shimmer on some displays.
-- Empty market/mining results now point deep-space explorers at the
-  sell-your-data search; the exobiology route teaches "first log" correctly;
-  trade-loop searches no longer claim to ask Spansh (they're local).
-- Layout and QA fixes across the panel (launch double-tap grace, arrange
-  button clearance, and more).
-
----
-
-Run from source (`run.bat` / `run.sh`) or grab the attached `EliteTrader.exe`
-(no Python needed). On the packaged app, updates install in place — click
-**Update & restart** when it appears.
+### 🧹 Fixes
+- **Jump history and cargo hold lists no longer stretch the page** — both are
+  contained with internal scrolling (the market table always was).
