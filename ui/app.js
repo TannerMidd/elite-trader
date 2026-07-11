@@ -2483,7 +2483,23 @@ async function searchStations(ev) {
 
 /* ---------- colonization ---------- */
 
-const coloSources = {};  // market_id -> {symbol -> rendered source cell html}
+const coloSources = {};  // market_id -> {symbol -> sources[]} (data, so plot buttons can be rebuilt live)
+
+function fillSourceCell(cell, sources) {
+  cell.innerHTML = "";
+  if (!(sources || []).length) {
+    cell.innerHTML = '<span class="dim">none within 50 ly</span>';
+    return;
+  }
+  for (const s of sources) {
+    const row = document.createElement("div");
+    row.className = "colo-src";
+    row.innerHTML = `<b>${esc(s.station)}</b> <span class="sub">${esc(s.system)} · ` +
+      `${fmtNum(s.buy_price)} cr · ${fmtNum(s.supply)} supply · ${s.distance} ly</span>`;
+    row.appendChild(plotButton(s.system));
+    cell.appendChild(row);
+  }
+}
 
 function renderColonisation() {
   const list = $("colonisation-list");
@@ -2533,10 +2549,8 @@ function renderColonisation() {
           for (const c of data.commodities || []) {
             const cell = div.querySelector(`.src[data-symbol="${CSS.escape(c.symbol)}"]`);
             if (!cell) continue;
-            cell.innerHTML = cache[c.symbol] = (c.sources || []).map((s) =>
-              `<div>${esc(s.station)} <span class="sub">${esc(s.system)} · ${fmtNum(s.buy_price)} cr · ` +
-              `${fmtNum(s.supply)} supply · ${s.distance} ly</span></div>`
-            ).join("") || '<span class="dim">none within 50 ly</span>';
+            cache[c.symbol] = c.sources || [];
+            fillSourceCell(cell, cache[c.symbol]);
           }
           btn.textContent = "REFRESH";
           btn.disabled = false;
@@ -2551,9 +2565,9 @@ function renderColonisation() {
       const cached = coloSources[d.market_id];
       if (cached) {
         let hits = 0;
-        for (const [sym, html] of Object.entries(cached)) {
+        for (const [sym, sources] of Object.entries(cached)) {
           const cell = div.querySelector(`.src[data-symbol="${CSS.escape(sym)}"]`);
-          if (cell) { cell.innerHTML = html; hits++; }
+          if (cell) { fillSourceCell(cell, sources); hits++; }
         }
         if (hits) btn.textContent = "REFRESH";
       }

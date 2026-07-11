@@ -841,6 +841,9 @@ span.dim, div.dim, .sub { font-size: calc(1em * var(--helper-scale)); }
   accent-color: var(--orange);
 }
 .setting .range-val { color: var(--orange-soft); font-variant-numeric: tabular-nums; font-weight: 600; }
+/* Colonisation source lines: station · facts · one-tap autoplot */
+.colo-src { display: flex; align-items: center; gap: 8px; padding: 2px 0; }
+.colo-src .plotbtn { margin-left: auto; flex: none; }
 .update-check-row { display: flex; align-items: center; gap: 12px; padding: 12px 8px 4px; flex-wrap: wrap; }
 .settings-info { margin-top: 12px; font-size: 12px; border-top: 1px solid var(--border); padding-top: 10px; }
 .settings-info .path { color: var(--text); font-family: ui-monospace, "Cascadia Code", Consolas, monospace; font-size: 11.5px; }
