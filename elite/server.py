@@ -70,7 +70,7 @@ def create_app(state):
         if source == "auto":
             conn = marketdb.connect()
             try:
-                source = "local" if marketdb.status(conn)["ready"] else "spansh"
+                source = "local" if marketdb.is_ready(conn) else "spansh"
             finally:
                 conn.close()
 
@@ -614,7 +614,9 @@ def create_app(state):
     def api_marketdb_status():
         conn = marketdb.connect()
         try:
-            info = marketdb.status(conn)
+            # Fresh counts while a build is running (they ARE the progress);
+            # the 5-minute cache otherwise — see marketdb.status.
+            info = marketdb.status(conn, max_age=10 if SEEDER.running() else 300)
         finally:
             conn.close()
         from .eddn_upload import UPLOADER

@@ -72,6 +72,7 @@ class Seeder:
             self._import(include_carriers)
             if not keep_dump:
                 DUMP_PATH.unlink(missing_ok=True)
+            marketdb.invalidate_status_cache()  # show final counts right away
             self._set(phase="done", finished_at=marketdb.utc_now_iso())
         except Exception as exc:  # surfaced to the UI, not raised into the void
             self._set(phase="error", error=f"{type(exc).__name__}: {exc}")

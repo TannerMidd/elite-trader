@@ -2771,20 +2771,32 @@ async function seedDb() {
   } catch (err) {
     $("db-status").textContent = String(err.message || err);
   }
-  pollDbStatus();
+  nudgeDbStatus();  // single poll chain — never fork a second timer loop
 }
 
+let dbPollTimer = null;
+
 async function pollDbStatus() {
-  let delay = 5000;
+  // Don't hammer this: fast only while a build runs, relaxed while the
+  // Database page is actually on screen, and barely at all otherwise —
+  // the DB stats page is the only consumer.
+  let seeding = false;
   try {
     const resp = await fetch("/api/marketdb/status", { cache: "no-store" });
     if (resp.ok) {
       const s = await resp.json();
       renderDbStatus(s);
-      if (s.seeding && (s.seeding.phase === "downloading" || s.seeding.phase === "importing")) delay = 1500;
+      seeding = !!(s.seeding && (s.seeding.phase === "downloading" || s.seeding.phase === "importing"));
     }
   } catch (e) { /* retry next tick */ }
-  setTimeout(pollDbStatus, delay);
+  const dbVisible = !document.hidden && $("db-status").offsetParent !== null;
+  dbPollTimer = setTimeout(pollDbStatus, seeding ? 1500 : dbVisible ? 15000 : 120000);
+}
+
+function nudgeDbStatus() {
+  // Opening the Database page shouldn't wait out a 2-minute idle timer.
+  clearTimeout(dbPollTimer);
+  pollDbStatus();
 }
 
 function renderDbStatus(s) {
@@ -3357,6 +3369,7 @@ function activateTab(name) {
     p.classList.toggle("hidden", p.id !== "tab-" + name));
   localStorage.setItem("activeTab", name);
   if (name === "analytics") loadAnalytics();
+  if (name === "database") nudgeDbStatus();
 }
 
 function initTabs() {

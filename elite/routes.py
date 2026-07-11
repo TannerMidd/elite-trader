@@ -1,4 +1,4 @@
-"""Local trade-route planner over the market database: the same feature the
+﻿"""Local trade-route planner over the market database: the same feature the
 Spansh/Inara planners provide, computed offline against EDDN-fresh prices.
 
 Beam search: each hop is buy-at-source -> sell-at-destination; destinations
@@ -71,7 +71,7 @@ def plan_route_local(
 ):
     conn = marketdb.connect()
     try:
-        if not marketdb.status(conn)["ready"]:
+        if not marketdb.is_ready(conn):
             raise RouteError("Local market database is empty - build it from the Market Database panel first.")
 
         start = _resolve_start(conn, system, star_pos)
@@ -250,7 +250,7 @@ def plan_loops(
     the max distance between the two loop stations (defaults to radius)."""
     conn = marketdb.connect()
     try:
-        if not marketdb.status(conn)["ready"]:
+        if not marketdb.is_ready(conn):
             raise RouteError("Local market database is empty - build it from the Market Database panel first.")
         start = _resolve_start(conn, system, star_pos)
 
@@ -421,7 +421,7 @@ def search_commodity(
         raise RouteError("mode must be 'buy' or 'sell'.")
     conn = marketdb.connect()
     try:
-        if not marketdb.status(conn)["ready"]:
+        if not marketdb.is_ready(conn):
             raise RouteError("Local market database is empty - build it from the Market Database panel first.")
         symbol, display = _resolve_commodity(conn, query)
         start = _resolve_start(conn, system, star_pos)
@@ -487,7 +487,7 @@ def sell_cargo(
         raise RouteError("Cargo hold is empty.")
     conn = marketdb.connect()
     try:
-        if not marketdb.status(conn)["ready"]:
+        if not marketdb.is_ready(conn):
             raise RouteError("Local market database is empty - build it from the Database tab first.")
         start = _resolve_start(conn, system, star_pos)
         stations = marketdb.stations_near(
@@ -569,7 +569,7 @@ def mining_advisor(
     should I go mine' and 'where do I sell it'."""
     conn = marketdb.connect()
     try:
-        if not marketdb.status(conn)["ready"]:
+        if not marketdb.is_ready(conn):
             raise RouteError("Local market database is empty - build it from the Database tab first.")
         start = _resolve_start(conn, system, star_pos)
         stations = marketdb.stations_near(

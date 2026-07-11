@@ -422,10 +422,33 @@ def commodity_display_names(conn, symbols):
     return dict(rows)
 
 
-def status(conn):
-    counts = {}
-    for table in ("systems", "stations", "commodities"):
-        counts[table] = conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
+def is_ready(conn):
+    """Cheap 'is the local DB usable?' check — O(1), unlike status()'s counts.
+    Route code must use this, never status()['ready']: a COUNT(*) over the
+    36M-row commodities table costs seconds of CPU."""
+    return conn.execute("SELECT EXISTS(SELECT 1 FROM stations)").fetchone()[0] == 1
+
+
+_status_cache = {"ts": 0.0, "counts": None}
+
+
+def invalidate_status_cache():
+    _status_cache["ts"] = 0.0
+
+
+def status(conn, max_age=300):
+    """DB stats for the Database page. The row counts are informational, and
+    counting the commodities table is a multi-second full scan — so they're
+    cached (default 5 min; pass a smaller max_age while seeding). Profiled
+    2026-07-10: uncached, two devices polling every 5s kept ~50% of a core
+    busy doing nothing but this."""
+    now = time.time()
+    if _status_cache["counts"] is None or now - _status_cache["ts"] > max_age:
+        counts = {}
+        for table in ("systems", "stations", "commodities"):
+            counts[table] = conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
+        _status_cache.update(ts=now, counts=counts)
+    counts = _status_cache["counts"]
     return {
         "db_path": str(DB_PATH),
         "db_size_mb": round(DB_PATH.stat().st_size / 1e6, 1) if DB_PATH.exists() else 0,
@@ -433,7 +456,7 @@ def status(conn):
         "stations": counts["stations"],
         "commodity_rows": counts["commodities"],
         "seeded_at": get_meta(conn, "seeded_at"),
-        "ready": counts["stations"] > 0,
+        "ready": counts["stations"] > 0 or is_ready(conn),
     }
 
 
