@@ -2,6 +2,7 @@
 
 import logging
 import threading
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 from flask import Flask, jsonify, request, send_file, send_from_directory
@@ -482,19 +483,24 @@ def create_app(state):
         if not depot:
             return jsonify({"error": "Unknown construction depot."}), 404
         needed = [r for r in depot["resources"] if r["remaining"] > 0][:10]
-        out = []
-        for res in needed:
+        radius = float(request.args.get("radius", 50))
+
+        def lookup(res):
             try:
                 found = routes.search_commodity(
                     query=res["symbol"], mode="buy",
                     system=snap.get("system"), star_pos=snap.get("star_pos"),
-                    radius=float(request.args.get("radius", 50)),
-                    min_units=1, limit=2,
+                    radius=radius, min_units=1, limit=2,
                 )
                 sources = found["results"]
             except routes.RouteError:
                 sources = []
-            out.append({**res, "sources": sources})
+            return {**res, "sources": sources}
+
+        # Each search opens its own SQLite connection, so run the commodities
+        # in parallel — ten sequential ~3s searches felt like a dead button.
+        with ThreadPoolExecutor(max_workers=len(needed) or 1) as pool:
+            out = list(pool.map(lookup, needed))
         return jsonify({"commodities": out})
 
     @app.get("/api/alerts")

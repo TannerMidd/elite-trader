@@ -2483,11 +2483,17 @@ async function searchStations(ev) {
 
 /* ---------- colonization ---------- */
 
+const coloSources = {};  // market_id -> {symbol -> rendered source cell html}
+
 function renderColonisation() {
   const list = $("colonisation-list");
   const depots = (state.colonisation || []).filter((d) => !d.complete && !d.failed);
   $("colonisation-empty").classList.toggle("hidden", depots.length > 0);
-  const sig = JSON.stringify(depots);
+  // The depot event re-fires every few seconds while docked with only its
+  // timestamp moving — leave it out of the signature so the card doesn't
+  // rebuild (flashing, and eating fetched sources) unless something real
+  // changed: progress, deliveries, a new project.
+  const sig = JSON.stringify(depots.map(({ updated, ...rest }) => rest));
   if (list.dataset.sig === sig) return;
   list.dataset.sig = sig;
   list.innerHTML = "";
@@ -2523,21 +2529,34 @@ function renderColonisation() {
           const resp = await fetch(`/api/colonisation-sources?market_id=${d.market_id}&radius=50`);
           const data = await resp.json();
           if (!resp.ok) throw new Error(data.error || "failed");
+          const cache = (coloSources[d.market_id] = {});
           for (const c of data.commodities || []) {
             const cell = div.querySelector(`.src[data-symbol="${CSS.escape(c.symbol)}"]`);
             if (!cell) continue;
-            cell.innerHTML = (c.sources || []).map((s) =>
+            cell.innerHTML = cache[c.symbol] = (c.sources || []).map((s) =>
               `<div>${esc(s.station)} <span class="sub">${esc(s.system)} · ${fmtNum(s.buy_price)} cr · ` +
               `${fmtNum(s.supply)} supply · ${s.distance} ly</span></div>`
             ).join("") || '<span class="dim">none within 50 ly</span>';
           }
-          btn.textContent = "DONE";
+          btn.textContent = "REFRESH";
+          btn.disabled = false;
         } catch (e) {
           btn.textContent = "FIND SOURCES";
           btn.disabled = false;
         }
       });
       div.querySelector(".route-line").insertBefore(btn, div.querySelector(".profit"));
+      // Survive rebuilds (progress ticks, deliveries): re-fill previously
+      // fetched sources instead of losing them.
+      const cached = coloSources[d.market_id];
+      if (cached) {
+        let hits = 0;
+        for (const [sym, html] of Object.entries(cached)) {
+          const cell = div.querySelector(`.src[data-symbol="${CSS.escape(sym)}"]`);
+          if (cell) { cell.innerHTML = html; hits++; }
+        }
+        if (hits) btn.textContent = "REFRESH";
+      }
     }
     list.appendChild(div);
   }
