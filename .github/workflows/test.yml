@@ -40,6 +40,10 @@ jobs:
           Get-ChildItem tests -Filter "test_*.py" | Sort-Object Name | ForEach-Object {
             Write-Host "== $($_.Name)"
             python $_.FullName
-            if ($LASTEXITCODE -ne 0) { $failed += $_.Name }
+            $exitCode = $LASTEXITCODE
+            if ($exitCode -ne 0) {
+              $failed += $_.Name
+              Write-Host "::error file=tests/$($_.Name),title=Python test failed::$($_.Name) exited with code $exitCode"
+            }
           }
           if ($failed.Count -gt 0) { throw "Failing tests: $($failed -join ', ')" }
