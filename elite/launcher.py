@@ -25,11 +25,83 @@ class LaunchError(UserFacingError):
     pass
 
 
+def _windows_process_names():
+    """Return executable names from Windows' native process snapshot.
+
+    ``tasklist`` is retained as a fallback below, but it can print ``Access
+    denied`` even when the current user can enumerate processes normally.
+    Toolhelp only reads the public process table; it does not open another
+    process or require elevation, so it is both faster and more reliable for
+    this exact presence check.
+
+    ``None`` means the snapshot itself failed.  An empty tuple is a successful
+    (albeit unusual) snapshot and must remain distinct from failure.
+    """
+    try:
+        import ctypes
+        from ctypes import wintypes
+
+        class PROCESSENTRY32W(ctypes.Structure):
+            _fields_ = [
+                ("dwSize", wintypes.DWORD),
+                ("cntUsage", wintypes.DWORD),
+                ("th32ProcessID", wintypes.DWORD),
+                ("th32DefaultHeapID", ctypes.c_size_t),
+                ("th32ModuleID", wintypes.DWORD),
+                ("cntThreads", wintypes.DWORD),
+                ("th32ParentProcessID", wintypes.DWORD),
+                ("pcPriClassBase", wintypes.LONG),
+                ("dwFlags", wintypes.DWORD),
+                ("szExeFile", wintypes.WCHAR * 260),
+            ]
+
+        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        kernel32.CreateToolhelp32Snapshot.argtypes = [wintypes.DWORD, wintypes.DWORD]
+        kernel32.CreateToolhelp32Snapshot.restype = wintypes.HANDLE
+        kernel32.Process32FirstW.argtypes = [wintypes.HANDLE, ctypes.POINTER(PROCESSENTRY32W)]
+        kernel32.Process32FirstW.restype = wintypes.BOOL
+        kernel32.Process32NextW.argtypes = [wintypes.HANDLE, ctypes.POINTER(PROCESSENTRY32W)]
+        kernel32.Process32NextW.restype = wintypes.BOOL
+        kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
+        kernel32.CloseHandle.restype = wintypes.BOOL
+
+        # TH32CS_SNAPPROCESS: enumerate processes, without requesting handles
+        # to (or information from) the game process itself.
+        snapshot = kernel32.CreateToolhelp32Snapshot(0x00000002, 0)
+        if snapshot == wintypes.HANDLE(-1).value:
+            return None
+        try:
+            entry = PROCESSENTRY32W()
+            entry.dwSize = ctypes.sizeof(entry)
+            if not kernel32.Process32FirstW(snapshot, ctypes.byref(entry)):
+                # ERROR_NO_MORE_FILES means a valid but empty snapshot. Other
+                # errors leave the caller free to use its fallback probe.
+                return () if ctypes.get_last_error() == 18 else None
+            names = []
+            while True:
+                names.append(entry.szExeFile)
+                if not kernel32.Process32NextW(snapshot, ctypes.byref(entry)):
+                    break
+            return tuple(names)
+        finally:
+            kernel32.CloseHandle(snapshot)
+    except (AttributeError, OSError, TypeError, ValueError):
+        return None
+
+
 def is_running(process=GAME_PROCESS):
     """True/False if the game client process is alive, None if the probe
     itself failed (callers should keep their previous answer on None)."""
     try:
         if sys.platform == "win32":
+            names = _windows_process_names()
+            if names is not None:
+                target = process.casefold()
+                return any(name.casefold() == target for name in names)
+
+            # Compatibility fallback for unusual Windows environments where
+            # the native snapshot API is unavailable. Do not interpret a
+            # non-zero result (including "Access denied") as game-offline.
             result = subprocess.run(
                 ["tasklist", "/FI", f"IMAGENAME eq {process}", "/NH"],
                 capture_output=True, text=True, timeout=10,

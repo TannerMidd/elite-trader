@@ -3,7 +3,6 @@
 import ipaddress
 import logging
 import os
-import socket
 import threading
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
@@ -15,6 +14,7 @@ from werkzeug.serving import make_server
 from . import alerts, biovalues, launcher, links, marketdb, routes, settings, shipexport, spansh, tts
 from .eddn import LISTENER
 from .errors import UserFacingError
+from .network import pairing_urls as build_pairing_urls
 from .security import (ALL_SCOPES, COOKIE_NAME, RateLimiter, SecurityManager,
                        SecurityStoreError, is_loopback, normalize_scopes)
 from .seed import SEEDER
@@ -81,44 +81,12 @@ def _own_hostname():
     return socket.gethostname().lower()
 
 
-def _lan_addresses():
-    """Private addresses suitable for a tablet pairing link (best effort)."""
-    values = set()
-    try:
-        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as probe:
-            # UDP connect selects an interface without sending application data.
-            probe.connect(("8.8.8.8", 80))
-            values.add(probe.getsockname()[0])
-    except OSError:
-        pass
-    try:
-        for info in socket.getaddrinfo(socket.gethostname(), None):
-            values.add(info[4][0].split("%", 1)[0])
-    except OSError:
-        pass
-    out = []
-    for value in values:
-        try:
-            address = ipaddress.ip_address(value)
-        except ValueError:
-            continue
-        if (address.is_private or address.is_link_local) and not address.is_loopback:
-            out.append(str(address))
-    return sorted(set(out), key=lambda value: (":" in value, value))
-
-
 def _pairing_urls(path):
     parsed_host = urlsplit(f"//{request.host}")
     port = parsed_host.port or (443 if request.scheme == "https" else 80)
-    urls = []
-    for address in _lan_addresses():
-        host = f"[{address}]" if ":" in address else address
-        default_port = (request.scheme == "https" and port == 443) or (request.scheme == "http" and port == 80)
-        urls.append(f"{request.scheme}://{host}{'' if default_port else ':' + str(port)}{path}")
-    own = _own_hostname()
-    if own:
-        urls.append(f"{request.scheme}://{own}.local{'' if port == 80 else ':' + str(port)}{path}")
-    return list(dict.fromkeys(urls))
+    return build_pairing_urls(
+        path, port, scheme=request.scheme, preferred_host=parsed_host.hostname or ""
+    )
 
 
 def _request_token():
@@ -402,17 +370,17 @@ def create_app(state, security_manager=None):
             # link created through /pairing-code by replacing it with an admin
             # grant.  Create the default only when no live grant exists.
             grant = security.current_pairing() or security.issue_pairing()
-            payload["pairing"] = {
+            pairing = {
                 "path": "/?pair=" + grant["code"],
                 "expires_at": grant["expires_at"],
                 "scopes": grant["scopes"],
             }
-            payload["pairing"]["urls"] = _pairing_urls(payload["pairing"]["path"])
-            if payload["pairing"]["urls"]:
+            pairing["urls"] = _pairing_urls(pairing["path"])
+            if pairing["urls"]:
                 from .qrcode import svg as pairing_qr_svg
 
-                payload["pairing"]["qr_svg"] = pairing_qr_svg(
-                    payload["pairing"]["urls"][0])
+                pairing["qr_svg"] = pairing_qr_svg(pairing["urls"][0])
+            payload["pairing"] = pairing
             payload["paired_devices"] = len(security.list_devices())
         return jsonify(payload)
 
@@ -449,11 +417,20 @@ def create_app(state, security_manager=None):
             grant = security.rotate_pairing(scopes, ttl)
         except (TypeError, ValueError) as exc:
             return jsonify({"error": str(exc)}), 400
-        return jsonify({
+        pairing = {
             "path": "/?pair=" + grant["code"],
             "expires_at": grant["expires_at"],
             "scopes": grant["scopes"],
-        })
+        }
+        # API clients and future pairing surfaces get the exact same ordered
+        # links as the Settings copy button and QR code; callers never need to
+        # repeat the formerly error-prone adapter-selection logic.
+        pairing["urls"] = _pairing_urls(pairing["path"])
+        if pairing["urls"]:
+            from .qrcode import svg as pairing_qr_svg
+
+            pairing["qr_svg"] = pairing_qr_svg(pairing["urls"][0])
+        return jsonify(pairing)
 
     @app.get("/api/security/devices")
     def api_security_devices():

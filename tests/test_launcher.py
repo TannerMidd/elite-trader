@@ -15,15 +15,22 @@ from elite.state import AppState
 # visibility. A failed operating-system probe must remain "unknown" rather
 # than silently claiming that the game is stopped.
 if sys.platform == "win32":
-    with patch.object(launcher.subprocess, "run", return_value=SimpleNamespace(
-            returncode=0, stdout="EliteDangerous64.exe  4312 Console")):
+    # Native Toolhelp snapshots are the primary path; unlike tasklist, they do
+    # not fail with a localized/access-denied message on otherwise normal PCs.
+    with patch.object(launcher, "_windows_process_names",
+                      return_value=("System", "EliteDangerous64.exe")):
         assert launcher.is_running() is True
-    with patch.object(launcher.subprocess, "run", return_value=SimpleNamespace(
-            returncode=0, stdout="INFO: No tasks are running which match")):
+    with patch.object(launcher, "_windows_process_names", return_value=("System",)):
         assert launcher.is_running() is False
-    with patch.object(launcher.subprocess, "run", return_value=SimpleNamespace(
-            returncode=1, stdout="ERROR: Access denied")):
-        assert launcher.is_running() is None
+    # If Toolhelp is genuinely unavailable, tasklist remains a compatibility
+    # fallback and its own failure is "unknown", never a false offline claim.
+    with patch.object(launcher, "_windows_process_names", return_value=None):
+        with patch.object(launcher.subprocess, "run", return_value=SimpleNamespace(
+                returncode=0, stdout="EliteDangerous64.exe  4312 Console")):
+            assert launcher.is_running() is True
+        with patch.object(launcher.subprocess, "run", return_value=SimpleNamespace(
+                returncode=1, stdout="ERROR: Access denied")):
+            assert launcher.is_running() is None
 else:
     with patch.object(launcher.subprocess, "run", return_value=SimpleNamespace(returncode=0)):
         assert launcher.is_running() is True
@@ -39,7 +46,7 @@ assert issubclass(launcher.LaunchError, UserFacingError)
 print("launcher probe OK: running/not-running detection, user-facing error type")
 
 # Journal wiring: a live Shutdown flips game_running False; any other live
-# event flips it True. (Bootstrap replay must not touch it.)
+# event flips it True. (Bootstrap replay must not claim current process state.)
 events = [
     {"timestamp": "2026-07-06T01:00:00Z", "event": "Location", "StarSystem": "Testland",
      "StarPos": [0, 0, 0], "Docked": False},

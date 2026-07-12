@@ -108,7 +108,8 @@ finally:
     journal_module.time.sleep = original_sleep
 
 assert [context for context, _kind in contexts] == [
-    "journal bootstrap", "game process probe", "journal history import",
+    "initial game process probe", "journal bootstrap", "game process probe",
+    "journal history import",
     "journal watcher poll",
 ]
 

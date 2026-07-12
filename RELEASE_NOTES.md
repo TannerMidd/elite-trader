@@ -13,9 +13,14 @@ migrate automatically.
   Devices** or open the link printed at startup.
 - Pairing links are short-lived and single-use. A paired device reconnects
   automatically afterwards; it does not need a username or password.
+- Pairing address discovery prefers active physical Ethernet/Wi-Fi adapters
+  over VPN tunnels and virtual switches. Copied links, QR codes, API responses
+  and the startup console all use the same ordered addresses.
 - Each device receives a revocable **read**, **control** or **admin**
   capability, so a status display does not need permission to launch Elite,
   plot routes, change settings or pair more devices.
+- A fresh browser opens in the touch-friendly **Panel** view by default. An
+  explicit Panel/Desktop choice remains saved on that device.
 - Cross-site, origin, host, request-size, path and rate-limit protections now
   cover the LAN API as well as the browser UI. Local speech control is POST-only.
 
@@ -111,6 +116,9 @@ migrate automatically.
   never journals, commander names, pairing secrets or either database.
 - Settings writes are atomic and recover a corrupt file to a backup instead of
   silently discarding it.
+- Game presence uses native Windows process enumeration, is checked before
+  journal/database bootstrap, and never treats a historical `Shutdown` replay
+  as proof that the currently running game is offline.
 - Packaged updates now require a matching SHA-256 sidecar from a trusted HTTPS
   GitHub release URL, enforce download bounds and create a rollback executable
   before replacement. A missing or malformed checksum stops the update.

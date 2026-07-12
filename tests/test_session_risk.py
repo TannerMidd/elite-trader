@@ -25,7 +25,7 @@ with tempfile.TemporaryDirectory() as td:
 
 assert sess["end_ts"] == marketdb.parse_update_time("2026-07-06T03:00:00Z"), sess
 assert sess["end_ts"] - sess["start_ts"] == 2 * 3600, sess  # frozen at 2h, not wall time
-assert state.game_running is False  # replayed Shutdown is a positive "not running"
+assert state.game_running is None  # historical Shutdown is not current process truth
 
 print("session freeze OK: Shutdown pins end_ts, duration is play time not wall time")
 

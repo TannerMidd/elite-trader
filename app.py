@@ -8,7 +8,6 @@ import argparse
 import logging
 import os
 import signal
-import socket
 import sys
 import threading
 import urllib.request
@@ -21,13 +20,12 @@ from elite.state import AppState
 DEFAULT_PORT = int(os.environ.get("ET_PORT", "8666"))
 
 
-def lan_ip():
-    try:
-        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
-            s.connect(("8.8.8.8", 80))  # no packets sent; just picks the LAN interface
-            return s.getsockname()[0]
-    except OSError:
-        return "127.0.0.1"
+def startup_pairing_url(path, port):
+    """Use the same LAN choice as Settings/API pairing surfaces."""
+    from elite.network import pairing_urls
+
+    urls = pairing_urls(path, port)
+    return urls[0] if urls else f"http://127.0.0.1:{port}{path}"
 
 
 def instance_already_running(port):
@@ -196,10 +194,10 @@ def main():
         UPDATER.cleanup_leftovers()
 
         pairing_path = server.pairing_path()
-        network_ip = lan_ip()
+        pairing_url = startup_pairing_url(pairing_path, args.port)
         print(f"Frameshift running:")
         print(f"  this machine:  {local_url}")
-        print(f"  pair a device: http://{network_ip}:{args.port}{pairing_path}")
+        print(f"  pair a device: {pairing_url}")
         print("                   (one-time link; the tablet stays paired afterwards)")
 
         if args.headless:

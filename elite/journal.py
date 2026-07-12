@@ -442,7 +442,12 @@ class JournalWatcher:
             log.debug("EDDN journal publication skipped: %s", exc, exc_info=True)
 
     def _on_shutdown(self, e):
-        self.state.update(game_running=False)
+        # A replayed Shutdown only says that a *past* session ended. Treating
+        # it as a current process observation flashes a false offline banner
+        # during startup (and can persist through a long history import if the
+        # OS probe is unavailable). Live Shutdown remains authoritative.
+        if self._live:
+            self.state.update(game_running=False)
         # Freeze the session clock: duration/cr-per-hour shouldn't keep
         # counting wall time after you stop playing.
         self.state.end_session(marketdb.parse_update_time(e.get("timestamp")))
@@ -2124,12 +2129,19 @@ class JournalWatcher:
                 )
 
     def run_forever(self):
+        # Establish present-day process truth before any potentially lengthy
+        # journal/database bootstrap. Historical events must never be the UI's
+        # only game-presence signal while that work is in progress.
+        try:
+            self._probe_game()
+        except Exception as exc:
+            self._log_background_failure("initial game process probe", exc)
         try:
             self.bootstrap()
         except Exception as exc:
             self._log_background_failure("journal bootstrap", exc)
-        # Replayed Shutdown events leave game_running=False even when the game
-        # is up right now; ask the process table before the slow history sweep.
+        # Probe again after bootstrap in case the game started while journal
+        # context was being rebuilt, and before the slower lifetime sweep.
         try:
             self._probe_game()
         except Exception as exc:

@@ -424,9 +424,17 @@ function setVoice(on, announce) {
 
 const PANEL_PAGES = ["status", "trade", "commodities", "bio", "guides", "analytics", "engineering", "galaxy", "ops", "specialists", "local", "database"];
 
-function setPanelMode(on) {
+/* A new browser/device starts in the cockpit panel.  Treat only the explicit
+   values written by the UI as preferences; initialization itself must not
+   manufacture or replace one. */
+function panelModeOnLaunch(storage = localStorage) {
+  const saved = storage.getItem("panelMode");
+  return saved == null ? true : saved === "1";
+}
+
+function setPanelMode(on, persist = true) {
   document.body.classList.toggle("panel-mode", on);
-  localStorage.setItem("panelMode", on ? "1" : "0");
+  if (persist) localStorage.setItem("panelMode", on ? "1" : "0");
   // Fullscreen is opt-in via the rail's ⛶ FULL button; leaving the panel
   // always drops back out of it.
   if (!on && document.fullscreenElement) {
@@ -6218,9 +6226,10 @@ document.addEventListener("DOMContentLoaded", async () => {
     btn.setAttribute("aria-pressed", String(on));
     btn.title = on ? "Leave fullscreen" : "Expand to fullscreen";
   });
-  // The flight panel is the default view; EXIT switches to the desktop
-  // layout and that choice sticks for next launch.
-  if (localStorage.getItem("panelMode") !== "0") setPanelMode(true);
+  // The flight panel is the default view. Initialization is deliberately
+  // non-persistent so a fresh device remains "no preference" until the user
+  // enters or exits Panel; an existing explicit choice is never overwritten.
+  setPanelMode(panelModeOnLaunch(), false);
 
   // "open in app" toggle: only meaningful inside the desktop (pywebview) window.
   const toggle = $("inapp-toggle");
