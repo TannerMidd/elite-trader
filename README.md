@@ -1,11 +1,11 @@
 <div align="center">
 
-<img src="assets/logo.png" alt="Elite Trader" width="520">
+<img src="assets/logo.png" alt="Frameshift" width="520">
 
-**The all-in-one Elite Dangerous companion.**
+**The all-in-one Elite Dangerous companion.** *(formerly Elite Trader)*
 Live journal reading · a local 36-million-price market database · profit-per-hour
-trade routes · exploration, exobiology, combat & engineering tools · a tablet
-cockpit mode · route plotting inside the game itself.
+trade routes · exploration, exobiology, combat, engineering & background-sim
+tools · a tablet cockpit mode · route plotting inside the game itself.
 
 ![License: MIT](https://img.shields.io/badge/license-MIT-orange)
 ![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue)
@@ -16,13 +16,14 @@ cockpit mode · route plotting inside the game itself.
 > directed and play-tested by me against my own live game. It's a personal
 > project built for my own use — shared as-is, and anyone is welcome to use it.
 
-[**Download**](../../releases) · [**Demo video**](https://tannermidd.github.io/elite-trader/) · [**Wiki**](../../wiki) · [**Getting Started**](../../wiki/Getting-Started) · [**Troubleshooting**](../../wiki/Troubleshooting-and-FAQ)
+[**Download**](../../releases) · [**Demo video**](https://tannermidd.github.io/frameshift/) · [**Wiki**](../../wiki) · [**Getting Started**](../../wiki/Getting-Started) · [**Troubleshooting**](../../wiki/Troubleshooting-and-FAQ)
 
 <img src="docs/screenshots/trade-routes.png" alt="Trade route loops ranked by profit per hour" width="900">
 
 </div>
 
-> Runs on your machine, serves every screen to any device on your home network. o7
+> Runs on your machine, serves every screen to any device on your home network.
+> Plays nicely alongside EDMC — keep it running if you sync Inara/EDSM. o7
 
 ## ❤️ Built on the community
 
@@ -32,10 +33,11 @@ thousands of commanders feeding them:
 
 - **[EDDN](https://github.com/EDCD/EDDN)** · *Elite Dangerous Data Network* —
   the community's live data relay. Every fresh price here exists because
-  another commander docked somewhere and their tool reported it. Elite Trader
+  another commander docked somewhere and their tool reported it. Frameshift
   **contributes back**: markets you dock at are published to EDDN
-  (anonymously, the same way EDMC does), so playing with this app keeps the
-  network alive for everyone else too.
+  (anonymously, the same way EDMC does, stamped with your game version so
+  consumers can trust it), so playing with this app keeps the network alive
+  for everyone else too.
 - **[Spansh](https://spansh.co.uk)** — the backbone of the app's data. The
   daily galaxy dump seeds the 36-million-price local database; the route APIs
   power the neutron plotter, Road to Riches and the exobiology route; the
@@ -83,6 +85,13 @@ Frontier Developments plc.
 - **Odyssey locker** — on-foot goods/assets/data for bartenders and suit engineering (auto-hidden on Horizons).
 - **Your current ship in a builder** — open the live loadout in EDSY or copy SLEF for Coriolis/Inara; **jumponium readiness** (FSD-injection counts), echoed in fuel-strand warnings.
 
+### ⚑ Galaxy — Powerplay, factions & community goals
+- **Powerplay 2.0 tracker** — your pledge, rating and merits (with a live session tally), plus every system's power status as you jump: controlling power, control progress, reinforcement vs undermining.
+- **System factions (BGS)** — influence bars, active/pending/recovering states, controlling faction and **your reputation** with each, refreshed on every jump.
+- **Conflicts** — wars and elections in the system: who's fighting, what's staked, days won.
+- **Community goals** — the ones you've signed up for: your contribution, reward tier, percentile band and expiry countdown.
+- New-player friendly: every card explains its corner of the background sim when it's empty.
+
 ### 🖥️ Cockpit — [wiki](../../wiki/Flight-Panel-Mode)
 - **Flight panel**: the default view — a touch-first cockpit display for a mounted tablet, with a nav rail, a persistent status strip, swipe navigation, one-tap best-loop and optional fullscreen. (✕ EXIT switches to the classic desktop layout.)
 - **Voice callouts** for what actually matters: *fuel-scoop warnings along your plotted route* (never strand in a dry stretch again), interdictions, hull damage, first discoveries, rebuy coverage, data-at-risk, waypoints. A human-sounding **neural voice** (Piper TTS, synthesized locally) is the default once its one-time download is done — six voices to pick from, volume and sizing dials in Settings.
@@ -98,14 +107,14 @@ Frontier Developments plc.
 
 ## Quick start
 
-**Windows (no Python):** grab [`EliteTrader.exe`](../../releases) and run it.
+**Windows (no Python):** grab [`Frameshift.exe`](../../releases) and run it.
 It keeps data in `data\` next to itself and **auto-updates** (release notes
 readable in-app before applying).
 
 **From source (Windows):**
 ```
-git clone https://github.com/TannerMidd/elite-trader
-cd elite-trader
+git clone https://github.com/TannerMidd/frameshift
+cd frameshift
 run.bat
 ```
 
@@ -124,6 +133,6 @@ Then:
 
 - **Configuration** lives in the app (Settings card); env vars for the rest — [reference](../../wiki/Settings-and-Configuration).
 - **Autoplot** needs keyboard binds for the galaxy map / UI navigation — [requirements](../../wiki/Autoplot).
-- **Security**: the web server has **no authentication** — fine on a home LAN, never port-forward it.
-- **Releases** (maintainer): push a `v*` tag; GitHub Actions builds, smoke-tests and publishes the exe.
+- **Security**: the web server has **no authentication** — fine on a home LAN, never port-forward it. (It does reject cross-site browser requests and non-local Host headers, so web pages you visit can't poke it.)
+- **Releases** (maintainer): push a `v*` tag; GitHub Actions runs the test suite, builds, smoke-tests and publishes the exe (under both `Frameshift.exe` and the legacy `EliteTrader.exe` name, so pre-rename installs keep auto-updating).
 - Something broken? [Troubleshooting & FAQ](../../wiki/Troubleshooting-and-FAQ).

@@ -5,6 +5,7 @@ Seeder.progress() -> /api/marketdb/status."""
 import gzip
 import json
 import threading
+from pathlib import Path
 
 import requests
 
@@ -12,7 +13,7 @@ from . import marketdb
 
 DUMP_URL = "https://downloads.spansh.co.uk/galaxy_populated.json.gz"
 DUMP_PATH = marketdb.DATA_DIR / "galaxy_populated.json.gz"
-HEADERS = {"User-Agent": "EliteTrader/1.0 (personal ED companion app)"}
+HEADERS = {"User-Agent": "Frameshift/2.0 (personal ED companion app)"}
 COMMIT_EVERY = 500  # systems per transaction
 
 
@@ -101,15 +102,17 @@ class Seeder:
 
     def _import(self, include_carriers):
         self._set(phase="importing")
-        conn = marketdb.connect()
+        # Build into a sidecar file and only swap it in once the import has
+        # fully succeeded — the live database stays intact if this crashes,
+        # errors, or the machine goes down mid-rebuild. (Live EDDN updates
+        # arriving during the ~15 min import land in the old file and are
+        # superseded by the swap; the dump is at most a day older.)
+        build = marketdb.build_path()
+        for leftover in (build, Path(str(build) + "-wal"), Path(str(build) + "-shm")):
+            leftover.unlink(missing_ok=True)
+        conn = marketdb.connect(path=build)
         try:
             cur = conn.cursor()
-            # Full rebuild: a re-seed replaces everything.
-            cur.execute("DELETE FROM commodities")
-            cur.execute("DELETE FROM stations")
-            cur.execute("DELETE FROM systems")
-            conn.commit()
-
             names_seen = set()
             in_batch = 0
             with gzip.open(DUMP_PATH, "rt", encoding="utf-8") as f:
@@ -129,8 +132,21 @@ class Seeder:
             marketdb.set_meta(cur, "seeded_at", marketdb.utc_now_iso())
             marketdb.set_meta(cur, "seed_source", DUMP_URL)
             conn.commit()
+            conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
         finally:
             conn.close()
+
+        # Promote the finished build. The EDDN listener must let go of its
+        # long-lived connection so the file replace isn't blocked.
+        from .eddn import LISTENER
+
+        LISTENER.pause_db()
+        try:
+            marketdb.swap_in(build)
+        finally:
+            LISTENER.resume_db()
+            for leftover in (Path(str(build) + "-wal"), Path(str(build) + "-shm")):
+                leftover.unlink(missing_ok=True)
 
     def _import_system(self, cur, system, include_carriers, names_seen):
         coords = system.get("coords") or {}

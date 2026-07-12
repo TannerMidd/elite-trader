@@ -1,4 +1,4 @@
-"""Elite Trader - lightweight Elite Dangerous companion.
+﻿"""Frameshift - lightweight Elite Dangerous companion.
 
 Desktop window (pywebview) + LAN-visible web app backed by one Flask server.
 Run `python app.py --headless` for server-only mode (view from any browser).
@@ -29,9 +29,9 @@ def lan_ip():
 
 
 def instance_already_running(port):
-    """True if an Elite Trader server is already answering on this port. Prevents
+    """True if a Frameshift server is already answering on this port. Prevents
     a second launch from double-binding the port (SO_REUSEADDR would otherwise
-    let two servers coexist and fight over requests — the zombie-process trap)."""
+    let two servers coexist and fight over requests â€” the zombie-process trap)."""
     try:
         with urllib.request.urlopen(f"http://127.0.0.1:{port}/api/state", timeout=1.5) as r:
             return r.status == 200
@@ -41,7 +41,7 @@ def instance_already_running(port):
 
 def start_window():
     """Show the desktop window. pywebview defaults to private mode, which
-    wipes localStorage every launch — that silently reset the per-device
+    wipes localStorage every launch â€” that silently reset the per-device
     interface-size sliders (and any other browser-side preference) in the
     main window. Persist the profile in data\\webview next to the rest."""
     import webview
@@ -85,11 +85,11 @@ def main():
     # Single-instance guard: if we're already running, just show the window that
     # points at the existing server instead of starting a second, conflicting one.
     if instance_already_running(args.port):
-        print(f"Elite Trader is already running on {local_url} — opening a window to it.")
+        print(f"Frameshift is already running on {local_url} â€” opening a window to it.")
         if not args.headless:
             import webview
 
-            webview.create_window("Elite Trader", local_url, js_api=WindowApi(),
+            webview.create_window("Frameshift", local_url, js_api=WindowApi(),
                                   width=1060, height=800, min_size=(760, 560))
             start_window()
         return
@@ -104,7 +104,7 @@ def main():
     server = ServerThread(state, port=args.port)
     server.start()
 
-    print(f"Elite Trader running:")
+    print(f"Frameshift running:")
     print(f"  this machine:  {local_url}")
     print(f"  on your LAN:   http://{lan_ip()}:{args.port}")
 
@@ -118,7 +118,7 @@ def main():
             import webview
 
             webview.create_window(
-                "Elite Trader",
+                "Frameshift",
                 local_url,
                 js_api=WindowApi(),
                 width=1060,

@@ -8,7 +8,7 @@ from . import biovalues
 from .errors import UserFacingError
 
 BASE = "https://spansh.co.uk/api"
-HEADERS = {"User-Agent": "EliteTrader/1.0 (personal ED companion app)"}
+HEADERS = {"User-Agent": "Frameshift/2.0 (personal ED companion app)"}
 SUBMIT_TIMEOUT = 20
 POLL_TIMEOUT = 20
 MAX_WAIT_SECONDS = 90

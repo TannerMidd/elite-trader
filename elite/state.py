@@ -86,6 +86,21 @@ class AppState:
         # Fleet carrier (CarrierStats & friends); None until the player owns one
         self.carrier = None
 
+        # Galaxy (background sim): Powerplay pledge + current-system power
+        # status, BGS factions/conflicts, community goals, squadron.
+        self.powerplay = None        # {power, rank, merits, session_merits, time_pledged_s}
+        self.pp_system = None        # {controlling, powers, state, control_progress, ...}
+        self.controlling_faction = None
+        self.factions = []           # current system factions, influence-sorted
+        self.conflicts = []          # current system wars/elections
+        self.community_goals = {}    # CGID -> goal dict (full snapshot per event)
+        self.squadron = None         # {name, rank}
+
+        # Game client version (Fileheader), stamped onto EDDN uploads so
+        # consumers can tell Live from Legacy data.
+        self.game_version = None
+        self.game_build = None
+
         # Combat: session counters + kills per faction while that faction has
         # active massacre missions (drives the stack-progress card).
         self.combat_kills = 0
@@ -207,6 +222,8 @@ class AppState:
             self.combat_kills = 0
             self.combat_bounty_cr = 0
             self.combat_bonds_cr = 0
+            if self.powerplay:
+                self.powerplay = dict(self.powerplay, session_merits=0)
 
     def end_session(self, ts):
         """Freeze the session clock at game shutdown (or crash detection);
@@ -324,6 +341,24 @@ class AppState:
         ))
         return out
 
+    def _galaxy_snapshot(self):
+        """Powerplay + BGS + community goals + squadron, one bundle for the
+        GALAXY page. Goals come back newest-expiry-first; the UI decides how
+        to present expired ones."""
+        goals = sorted(
+            self.community_goals.values(),
+            key=lambda g: g.get("expiry") or "",
+        )
+        return {
+            "powerplay": dict(self.powerplay) if self.powerplay else None,
+            "pp_system": dict(self.pp_system) if self.pp_system else None,
+            "controlling_faction": self.controlling_faction,
+            "factions": list(self.factions),
+            "conflicts": list(self.conflicts),
+            "community_goals": goals,
+            "squadron": dict(self.squadron) if self.squadron else None,
+        }
+
     def snapshot(self):
         with self._lock:
             market = None
@@ -381,6 +416,7 @@ class AppState:
                 "materials": self._materials_snapshot(),
                 "synth": synth,
                 "engineers": self._engineers_snapshot(),
+                "galaxy": self._galaxy_snapshot(),
                 "stored_ships": dict(self.stored_ships) if self.stored_ships else None,
                 "ship_locker": dict(self.ship_locker) if self.ship_locker else None,
                 "carrier": dict(self.carrier) if self.carrier else None,

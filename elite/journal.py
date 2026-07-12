@@ -180,6 +180,14 @@ class JournalWatcher:
     def _on_commander(self, e):
         self.state.update(commander=e.get("Name"))
 
+    def _on_fileheader(self, e):
+        # EDDN uploads must carry the game version so consumers can tell
+        # Live (4.x) from Legacy (3.x) data.
+        self.state.update(
+            game_version=e.get("gameversion"),
+            game_build=(e.get("build") or "").strip() or None,
+        )
+
     def _on_loadgame(self, e):
         updates = {"commander": e.get("Commander")}
         if e.get("Ship_Localised") or e.get("Ship"):
@@ -235,6 +243,7 @@ class JournalWatcher:
             station_type=e.get("StationType") if e.get("Docked") else None,
             station_market_id=e.get("MarketID") if e.get("Docked") else None,
         )
+        self._capture_system_politics(e)
         self._fetch_community_bio(e.get("SystemAddress"), e.get("StarSystem"))
 
     def _on_fsdjump(self, e):
@@ -252,6 +261,7 @@ class JournalWatcher:
             dist_from_star_ls=None,
             bio_signals={},
         )
+        self._capture_system_politics(e)
         self.state.add_jump(e.get("StarSystem"), e.get("JumpDist"), e.get("timestamp"))
         # Actual fuel burned this jump → conservative fuel-per-jump for scoop
         # projections. FuelLevel is the fresh post-jump tank reading.
@@ -277,7 +287,61 @@ class JournalWatcher:
         carrier = self.state.carrier
         if carrier and carrier.get("jump") and carrier["jump"].get("system") == e.get("StarSystem"):
             self._update_carrier(jump=None)
+        self._capture_system_politics(e)
         self._fetch_community_bio(e.get("SystemAddress"), e.get("StarSystem"))
+
+    def _capture_system_politics(self, e):
+        """BGS factions/conflicts and Powerplay status carried on every
+        Location/FSDJump/CarrierJump. Unpopulated systems carry none of it, so
+        empty lists correctly clear the previous system's data."""
+        factions = []
+        for f in e.get("Factions") or []:
+            factions.append({
+                "name": f.get("Name"),
+                "state": f.get("FactionState"),
+                "government": f.get("Government"),
+                "influence": f.get("Influence"),
+                "allegiance": f.get("Allegiance"),
+                "my_reputation": f.get("MyReputation"),
+                "active_states": [s.get("State") for s in f.get("ActiveStates") or []],
+                "pending_states": [s.get("State") for s in f.get("PendingStates") or []],
+                "recovering_states": [s.get("State") for s in f.get("RecoveringStates") or []],
+            })
+        factions.sort(key=lambda f: -(f["influence"] or 0))
+
+        def _side(side):
+            side = side or {}
+            return {"name": side.get("Name"), "stake": side.get("Stake"),
+                    "won_days": side.get("WonDays")}
+
+        conflicts = [{
+            "war_type": c.get("WarType"),
+            "status": c.get("Status"),
+            "faction1": _side(c.get("Faction1")),
+            "faction2": _side(c.get("Faction2")),
+        } for c in e.get("Conflicts") or []]
+
+        pp = None
+        if e.get("ControllingPower") or e.get("Powers"):
+            pp = {
+                "controlling": e.get("ControllingPower"),
+                "powers": e.get("Powers") or [],
+                "state": e.get("PowerplayState"),
+                "control_progress": e.get("PowerplayStateControlProgress"),
+                "reinforcement": e.get("PowerplayStateReinforcement"),
+                "undermining": e.get("PowerplayStateUndermining"),
+                "conflict_progress": [
+                    {"power": p.get("Power"), "progress": p.get("ConflictProgress")}
+                    for p in e.get("PowerplayConflictProgress") or []
+                ],
+            }
+
+        self.state.update(
+            factions=factions,
+            conflicts=conflicts,
+            pp_system=pp,
+            controlling_faction=(e.get("SystemFaction") or {}).get("Name"),
+        )
 
     def _on_docked(self, e):
         self._hull_bucket = None  # repairs are available; let damage re-announce
@@ -820,6 +884,83 @@ class JournalWatcher:
         if e.get("Total") is not None:
             self._update_carrier(fuel_t=e.get("Total"))
 
+    # ---------- Powerplay / community goals / squadron ----------
+
+    def _update_powerplay(self, **fields):
+        pp = dict(self.state.powerplay or {"session_merits": 0})
+        pp.update(fields)
+        self.state.update(powerplay=pp)
+
+    def _on_powerplay(self, e):
+        # Startup snapshot: authoritative for everything but session merits.
+        self._update_powerplay(
+            power=e.get("Power"),
+            rank=e.get("Rank"),
+            merits=e.get("Merits"),
+            time_pledged_s=e.get("TimePledged"),
+        )
+
+    def _on_powerplayjoin(self, e):
+        self.state.update(powerplay={
+            "power": e.get("Power"), "rank": 0, "merits": 0,
+            "time_pledged_s": 0, "session_merits": 0,
+        })
+
+    def _on_powerplaydefect(self, e):
+        self.state.update(powerplay={
+            "power": e.get("ToPower"), "rank": 0, "merits": 0,
+            "time_pledged_s": 0, "session_merits": 0,
+        })
+
+    def _on_powerplayleave(self, e):
+        self.state.update(powerplay=None)
+
+    def _on_powerplayrank(self, e):
+        self._update_powerplay(power=e.get("Power"), rank=e.get("Rank"))
+
+    def _on_powerplaymerits(self, e):
+        pp = self.state.powerplay or {}
+        self._update_powerplay(
+            power=e.get("Power"),
+            merits=e.get("TotalMerits"),
+            session_merits=(pp.get("session_merits") or 0) + (e.get("MeritsGained") or 0),
+        )
+
+    def _on_communitygoal(self, e):
+        # Each event is a full snapshot of every goal you've signed up for.
+        goals = {}
+        for g in e.get("CurrentGoals") or []:
+            cgid = g.get("CGID")
+            if cgid is None:
+                continue
+            goals[cgid] = {
+                "cgid": cgid,
+                "title": g.get("Title"),
+                "system": g.get("SystemName"),
+                "market": g.get("MarketName"),
+                "expiry": g.get("Expiry"),
+                "complete": bool(g.get("IsComplete")),
+                "current_total": g.get("CurrentTotal"),
+                "contribution": g.get("PlayerContribution"),
+                "contributors": g.get("NumContributors"),
+                "percentile": g.get("PlayerPercentileBand"),
+                "tier": (g.get("TierReached") or "").replace("Tier ", "") or None,
+                "top_rank": bool(g.get("PlayerInTopRank")),
+                "bonus": g.get("Bonus"),
+            }
+        self.state.update(community_goals=goals)
+
+    def _on_squadronstartup(self, e):
+        self.state.update(squadron={
+            "name": e.get("SquadronName"), "rank": e.get("CurrentRank"),
+        })
+
+    def _on_leftsquadron(self, e):
+        self.state.update(squadron=None)
+
+    def _on_disbandedsquadron(self, e):
+        self.state.update(squadron=None)
+
     # ---------- engineering materials ----------
 
     @staticmethod
@@ -1144,7 +1285,8 @@ class JournalWatcher:
         try:
             from .eddn_upload import UPLOADER
 
-            UPLOADER.maybe_publish(data, self.state.commander)
+            UPLOADER.maybe_publish(data, self.state.commander,
+                                   self.state.game_version, self.state.game_build)
         except Exception:
             pass  # uploading is best-effort; never break market parsing
         # Last-known DB prices for this station, to show a live-vs-recorded trend.

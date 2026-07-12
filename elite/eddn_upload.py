@@ -18,7 +18,7 @@ except Exception:
 
 UPLOAD_URL = "https://eddn.edcd.io:4430/upload/"
 SCHEMA = "https://eddn.edcd.io/schemas/commodity/3"
-SOFTWARE_NAME = "EliteTrader"
+SOFTWARE_NAME = "Frameshift"
 MAX_AGE_S = 120  # never upload stale snapshots (e.g. bootstrap replays)
 
 SKIP_CATEGORIES = {"nonmarketable"}
@@ -51,7 +51,7 @@ class EddnUploader:
                 "last_error": self.last_error,
             }
 
-    def maybe_publish(self, market, commander):
+    def maybe_publish(self, market, commander, game_version=None, game_build=None):
         """Called by the journal watcher whenever Market.json changes."""
         if not enabled():
             return
@@ -68,10 +68,11 @@ class EddnUploader:
                 return
             self._last_key = key
         threading.Thread(
-            target=self._publish, args=(market, commander), name="eddn-upload", daemon=True
+            target=self._publish, args=(market, commander, game_version, game_build),
+            name="eddn-upload", daemon=True,
         ).start()
 
-    def _publish(self, market, commander):
+    def _publish(self, market, commander, game_version=None, game_build=None):
         commodities = []
         for item in market.get("Items") or []:
             category = _symbol(item.get("Category"))
@@ -92,13 +93,21 @@ class EddnUploader:
             })
         if not commodities:
             return
+        header = {
+            "uploaderID": commander or "unknown",
+            "softwareName": SOFTWARE_NAME,
+            "softwareVersion": SOFTWARE_VERSION,
+        }
+        # Stamp the game client version (from the journal Fileheader) so EDDN
+        # consumers can tell Live (4.x) from Legacy (3.x) data. Omitted only if
+        # we somehow never saw a Fileheader.
+        if game_version:
+            header["gameversion"] = game_version
+            if game_build:
+                header["gamebuild"] = game_build
         envelope = {
             "$schemaRef": SCHEMA,
-            "header": {
-                "uploaderID": commander or "unknown",
-                "softwareName": SOFTWARE_NAME,
-                "softwareVersion": SOFTWARE_VERSION,
-            },
+            "header": header,
             "message": {
                 "systemName": market.get("StarSystem"),
                 "stationName": market.get("StationName"),

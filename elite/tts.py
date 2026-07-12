@@ -5,7 +5,7 @@ OS ships. Piper is a small neural TTS that runs fine on CPU and sounds close
 to human. Nothing is bundled: a one-time download (~137 MB, pinned URLs,
 SHA-256 verified — same pattern as the market database) drops the standalone
 piper binary and a British voice model into data/tts. Synthesis happens on
-the PC running Elite Trader, so every LAN device hears the same voice.
+the PC running Frameshift, so every LAN device hears the same voice.
 
 A single piper process is kept alive in --json-input mode: loading the model
 costs ~2s, synthesis itself runs ~4x faster than realtime, and every phrase

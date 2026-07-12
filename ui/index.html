@@ -7,7 +7,7 @@
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<title>Elite Trader</title>
+<title>Frameshift</title>
 <link rel="icon" href="icon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="icon.svg">
 <link rel="stylesheet" href="style.css">
@@ -15,7 +15,7 @@
 <body>
 
 <header class="topbar">
-  <div class="brand"><img class="brand-mark" src="icon.svg" alt="" width="26" height="26">ELITE <span>TRADER</span></div>
+  <div class="brand"><img class="brand-mark" src="icon.svg" alt="" width="26" height="26"><b>FRAME<span>SHIFT</span></b></div>
   <div class="pilot">
     <span id="commander">—</span>
     <span class="dim" id="ship">—</span>
@@ -77,7 +77,7 @@
       <span class="go-sub" id="launch-status">Game offline — showing your last session's data</span>
     </div>
   </div>
-  <button id="launch-game" class="go-launch" title="Starts Elite Dangerous on the PC running Elite Trader — works from a tablet too">
+  <button id="launch-game" class="go-launch" title="Starts Elite Dangerous on the PC running Frameshift — works from a tablet too">
     <span class="go-launch-label" id="launch-label">▲ LAUNCH ELITE DANGEROUS</span>
   </button>
   <div class="go-seq" aria-hidden="true"><div></div></div>
@@ -159,6 +159,7 @@
     <button data-page="guides"><span class="fp-ni" aria-hidden="true">✦</span><span class="fp-nl">GUIDES</span></button>
     <button data-page="analytics"><span class="fp-ni" aria-hidden="true">∿</span><span class="fp-nl">STATS</span></button>
     <button data-page="engineering"><span class="fp-ni" aria-hidden="true">⌬</span><span class="fp-nl">ENG</span></button>
+    <button data-page="galaxy"><span class="fp-ni" aria-hidden="true">⚑&#xFE0E;</span><span class="fp-nl">GALAXY</span></button>
     <button data-page="local"><span class="fp-ni" aria-hidden="true">⌖</span><span class="fp-nl">LOCAL</span></button>
     <button data-page="database"><span class="fp-ni" aria-hidden="true">⚙&#xFE0E;</span><span class="fp-nl">SETTINGS</span></button>
   </div>
@@ -174,7 +175,7 @@
 
 <div id="fp-boot" class="hidden" aria-hidden="true">
   <img src="icon.svg" alt="" width="72" height="72">
-  <div class="fp-boot-title">ELITE TRADER · FLIGHT PANEL</div>
+  <div class="fp-boot-title">FRAMESHIFT · FLIGHT PANEL</div>
   <div class="fp-boot-bar"><div></div></div>
   <div class="fp-boot-sub">SYSTEMS ONLINE</div>
 </div>
@@ -214,6 +215,7 @@
     <button class="tab" data-tab="guides">GUIDES</button>
     <button class="tab" data-tab="analytics">ANALYTICS</button>
     <button class="tab" data-tab="engineering">ENGINEERING</button>
+    <button class="tab" data-tab="galaxy">GALAXY</button>
     <button class="tab" data-tab="local">LOCAL</button>
     <button class="tab" data-tab="database">⚙&#xFE0E; SETTINGS</button>
     <button class="tab-arrange" id="arrange-btn" title="Customize this page: drag cards to reorder, ⊘ hides cards you don't use. Saved on this device." aria-pressed="false">⇅ ARRANGE</button>
@@ -747,6 +749,62 @@
     </section>
   </div>
 
+  <div class="tabpane hidden" id="tab-galaxy">
+    <section class="card" id="powerplay-card" data-arr="powerplay">
+      <div class="card-head">
+        <div class="label">POWERPLAY <span class="dim">your pledge &amp; this system's power status · from your journal</span></div>
+        <div class="value dim" id="pp-merits"></div>
+      </div>
+      <div id="pp-pledge" class="hidden"></div>
+      <div id="pp-sys" class="hidden"></div>
+      <div id="pp-empty" class="dim empty">Not pledged to a power yet. <b>Powerplay</b> is the galaxy's cold war:
+        eleven Powers compete for control of inhabited space, and pledged commanders earn <b>merits</b> (and weekly
+        rewards, including unique modules) by hauling, fighting and exploring for their Power. Pledge from the
+        galaxy map's POWERPLAY tab — progress appears here automatically.
+        <a class="extlink" href="https://inara.cz/elite/powers/" target="_blank" rel="noopener">Inara · Powers ↗</a></div>
+    </section>
+
+    <section class="card" id="factions-card" data-arr="factions">
+      <div class="card-head">
+        <div class="label">SYSTEM FACTIONS <span class="dim">influence · states · your reputation — the background simulation, live from your journal</span></div>
+        <div class="value dim" id="factions-count"></div>
+      </div>
+      <div id="factions-list"></div>
+      <div id="factions-empty" class="dim empty">No faction data for this system yet — it refreshes every time you
+        jump into (or load in) a populated system. Every station and settlement belongs to a <b>minor faction</b>;
+        your missions, trade, bounties and exploration data nudge their <b>influence</b> up or down, which decides
+        who controls the system. Work for a faction and your <b>reputation</b> with it unlocks better missions.</div>
+    </section>
+
+    <section class="card hidden" id="conflicts-card" data-arr="conflicts">
+      <div class="card-head">
+        <div class="label">CONFLICTS <span class="dim">wars &amp; elections in this system — first to 4 days won takes the stake</span></div>
+        <div class="value dim" id="conflicts-count"></div>
+      </div>
+      <div id="conflicts-list"></div>
+    </section>
+
+    <section class="card" id="cg-card" data-arr="commgoals">
+      <div class="card-head">
+        <div class="label">COMMUNITY GOALS <span class="dim">galaxy-wide events · your contribution &amp; reward tier</span></div>
+        <div class="value dim" id="cg-count"></div>
+      </div>
+      <div id="cg-list"></div>
+      <div id="cg-empty" class="dim empty">No community goals joined. <b>Community Goals</b> are limited-time,
+        galaxy-wide efforts — deliver goods, bounties or exploration data to a named station and everyone who
+        chips in gets paid by contribution tier when it ends. Find active goals on
+        <a class="extlink" href="https://inara.cz/elite/communitygoals/" target="_blank" rel="noopener">Inara · Community goals ↗</a>,
+        sign up at the listed station's mission board, and your progress shows here.</div>
+    </section>
+
+    <section class="card hidden" id="squadron-card" data-arr="squadron">
+      <div class="card-head">
+        <div class="label">SQUADRON <span class="dim">your in-game player group</span></div>
+      </div>
+      <div id="squadron-info"></div>
+    </section>
+  </div>
+
   <div class="tabpane hidden" id="tab-database">
     <section class="card" id="settings-card" data-arr="settings">
       <div class="label">SETTINGS <span class="dim">saved on this machine · changes take effect immediately</span></div>
@@ -773,7 +831,7 @@
       <input type="checkbox" id="inapp-toggle"> open in app
     </label>
   </div>
-  <div class="dim">Elite Trader <span id="app-version"></span> · journal refreshes every ~2s · trade data: community EDDN feed + Spansh galaxy dump</div>
+  <div class="dim">Frameshift <span id="app-version"></span> · journal refreshes every ~2s · trade data: community EDDN feed + Spansh galaxy dump</div>
 </footer>
 
 <script src="app.js"></script>

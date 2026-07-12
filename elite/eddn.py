@@ -23,6 +23,22 @@ class EddnListener:
         self.last_message_at = None
         self.markets_updated = 0
         self.skipped = 0
+        self.skipped_legacy = 0
+        # DB-swap coordination (see marketdb.swap_in): while _pause is set the
+        # loop keeps no database connection open; _db_released confirms it.
+        self._pause = threading.Event()
+        self._db_released = threading.Event()
+
+    def pause_db(self, timeout=20):
+        """Ask the listener to close its long-lived DB connection and hold off
+        until resume_db(). Returns once it has (or after `timeout` if the
+        listener is wedged in a long recv — swap_in's retries cover that)."""
+        self._pause.set()
+        self._db_released.wait(timeout)
+
+    def resume_db(self):
+        self._db_released.clear()
+        self._pause.clear()
 
     def stats(self):
         with self._lock:
@@ -31,7 +47,35 @@ class EddnListener:
                 "last_message_at": self.last_message_at,
                 "markets_updated": self.markets_updated,
                 "skipped_unknown": self.skipped,
+                "skipped_legacy": self.skipped_legacy,
             }
+
+    def _carriers_wanted(self):
+        """The 'Exclude fleet carriers' setting controls ingestion too, so
+        unticking it genuinely starts collecting carrier markets from the live
+        feed instead of only un-hiding data that was never stored."""
+        if self.include_carriers:
+            return True
+        try:
+            from . import settings
+
+            return not settings.get("exclude_carriers", True)
+        except Exception:
+            return False
+
+    @staticmethod
+    def _is_legacy(header):
+        """True for messages from the Legacy (3.8) galaxy — its prices belong
+        to a different universe and would poison the Live database. Messages
+        without a gameversion (old uploaders) are kept: post-split tools all
+        stamp it, and the handful that don't are overwhelmingly Live."""
+        gv = str((header or {}).get("gameversion") or "").strip()
+        if not gv:
+            return False
+        if gv.startswith("CAPI-"):
+            return "Live" not in gv
+        digits = gv.split(".", 1)[0]
+        return digits.isdigit() and int(digits) < 4
 
     def start(self):
         thread = threading.Thread(target=self._run_forever, name="eddn-listener", daemon=True)
@@ -52,13 +96,26 @@ class EddnListener:
                 socket.connect(RELAY)
                 with self._lock:
                     self.connected = True
+                while self._pause.is_set():  # don't reopen mid-swap
+                    time.sleep(0.5)
                 conn = marketdb.connect()
                 try:
                     while True:
+                        if self._pause.is_set():
+                            conn.close()
+                            self._db_released.set()
+                            while self._pause.is_set():
+                                time.sleep(0.5)
+                            conn = marketdb.connect()
                         raw = socket.recv()  # raises zmq.Again on timeout
                         self._handle(conn, raw)
                 finally:
-                    conn.close()
+                    try:
+                        conn.close()
+                    except Exception:
+                        pass
+                    if self._pause.is_set():
+                        self._db_released.set()  # never leave a swap waiting on us
             except Exception:
                 pass  # timeout, network drop, relay restart - just reconnect
             finally:
@@ -76,6 +133,10 @@ class EddnListener:
             self.last_message_at = marketdb.utc_now_iso()
         if envelope.get("$schemaRef") != COMMODITY_SCHEMA:
             return
+        if self._is_legacy(envelope.get("header")):
+            with self._lock:
+                self.skipped_legacy += 1
+            return
         msg = envelope.get("message") or {}
         market_id = msg.get("marketId")
         system_name = msg.get("systemName")
@@ -83,7 +144,7 @@ class EddnListener:
         commodities = msg.get("commodities") or []
         if not market_id or not system_name or not commodities:
             return
-        if not self.include_carriers and marketdb.is_carrier(None, station_name):
+        if not self._carriers_wanted() and marketdb.is_carrier(None, station_name):
             return
 
         rows = []

@@ -13,12 +13,12 @@ VSVersionInfo(
     StringFileInfo([
       StringTable('040904B0', [
         StringStruct('CompanyName', 'Tanner Middleton'),
-        StringStruct('FileDescription', 'Elite Trader - Elite Dangerous companion'),
+        StringStruct('FileDescription', 'Frameshift - Elite Dangerous companion'),
         StringStruct('FileVersion', '@VERSION@'),
-        StringStruct('InternalName', 'EliteTrader'),
+        StringStruct('InternalName', 'Frameshift'),
         StringStruct('LegalCopyright', 'MIT License'),
-        StringStruct('OriginalFilename', 'EliteTrader.exe'),
-        StringStruct('ProductName', 'Elite Trader'),
+        StringStruct('OriginalFilename', 'Frameshift.exe'),
+        StringStruct('ProductName', 'Frameshift'),
         StringStruct('ProductVersion', '@VERSION@')
       ])
     ]),

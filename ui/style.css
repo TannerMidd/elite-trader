@@ -763,14 +763,16 @@ td .sub { color: var(--dim); font-size: calc(11px * var(--helper-scale)); }
 }
 .guide-item b { font-size: 14px; }
 .guide-item p { margin: 0; font-size: 12.5px; color: var(--dim); flex: 1; }
-.guide-item .extlink {
+/* External links share one look everywhere they appear (guides, empty-state
+   teaching copy) instead of falling back to browser blue outside .guide-item. */
+.extlink {
   color: var(--orange-soft);
   text-decoration: none;
   font-size: 12.5px;
   font-weight: 600;
-  align-self: flex-start;
 }
-.guide-item .extlink:hover { color: var(--orange); }
+.extlink:hover { color: var(--orange); }
+.guide-item .extlink { align-self: flex-start; }
 /* The SLEF copy control shares the extlink look but is a <button>. */
 .guide-item button.extlink { background: none; border: none; padding: 0; cursor: pointer; font-family: inherit; }
 .guide-item button.extlink.done { color: var(--good); }
@@ -991,8 +993,14 @@ body.panel-mode #fp-nav {
 /* Short tablets: compress the rail so all nine pages stay visible (buttons
    keep a >=44px touch target; without this the DB entry clips off-screen). */
 @media (max-height: 820px) {
-  .fp-nav-pages button { min-height: 52px; padding: 7px 4px 6px; gap: 3px; }
-  .fp-nav-pages .fp-ni { font-size: 17px; }
+  /* 10 pages × 48px (+gaps) fits the rail on a 768px-tall tablet next to the
+     brand and foot sections; anything shorter scrolls gracefully. */
+  .fp-nav-pages button { min-height: 48px; padding: 6px 4px 5px; gap: 2px; }
+  .fp-nav-pages .fp-ni { font-size: 16px; }
+}
+@media (max-height: 660px) {
+  .fp-nav-pages button { min-height: 42px; }
+  .fp-nav-pages .fp-nl { font-size: 8px; }
 }
 .fp-nav-foot {
   display: flex;
@@ -1358,6 +1366,34 @@ body.arranging .tabpane section.card.user-hidden { display: block !important; op
 
 /* neutron plotter dry-leg warning */
 #nr-table .warn { color: var(--bad); font-weight: 600; }
+
+/* galaxy page: powerplay · factions · conflicts · community goals */
+#tab-galaxy .good { color: var(--good); }
+#tab-galaxy .warn { color: var(--bad); }
+.chip.good { color: var(--good); border-color: var(--good); }
+.chip.bad { color: var(--bad); border-color: var(--bad); }
+.pp-row { padding: 4px 0; font-size: 13.5px; display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+#pp-sys { margin-top: 10px; }
+.pp-bar, .fact-bar {
+  height: 7px; margin: 4px 0 3px; border-radius: 4px; overflow: hidden;
+  background: var(--panel-2); border: 1px solid var(--border);
+}
+.pp-bar > div { height: 100%; background: rgba(var(--accent-rgb), .85); }
+.fact-row { padding: 6px 0; border-bottom: 1px solid var(--border); font-size: 13.5px; }
+.fact-row:last-child { border-bottom: none; }
+.fact-top { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.fact-inf { margin-left: auto; font-weight: 700; color: var(--orange-soft); }
+.fact-bar > div { height: 100%; background: rgba(var(--accent-soft-rgb), .75); }
+.conflict-row { padding: 6px 0; border-bottom: 1px solid var(--border); font-size: 13.5px; }
+.conflict-row:last-child { border-bottom: none; }
+.conflict-head { margin-bottom: 3px; }
+.conflict-sides { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+.conflict-sides .good { font-weight: 700; }
+.conflict-stake { display: block; font-size: 12px; }
+.conflict-vs { text-transform: uppercase; letter-spacing: 1px; font-size: 11px; }
+.cg-row { padding: 6px 0; border-bottom: 1px solid var(--border); font-size: 13.5px; }
+.cg-row:last-child { border-bottom: none; }
+.cg-expiry { margin-left: auto; }
 
 /* color theme picker */
 .setting.setting-theme { grid-template-columns: 1fr; }

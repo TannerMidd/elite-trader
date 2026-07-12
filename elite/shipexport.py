@@ -36,7 +36,7 @@ def edsy_url(loadout_event):
 def slef(loadout_event):
     """The Loadout event as SLEF JSON (paste into Coriolis / Inara / EDSY)."""
     return json.dumps(
-        [{"header": {"appName": "EliteTrader", "appVersion": VERSION},
+        [{"header": {"appName": "Frameshift", "appVersion": VERSION},
           "data": loadout_event}],
         ensure_ascii=False,
     )

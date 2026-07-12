@@ -1,4 +1,4 @@
-/* Elite Trader UI: polls /api/state and renders. Same page works in the
+/* Frameshift UI: polls /api/state and renders. Same page works in the
    desktop window (pywebview) and any browser on the LAN. */
 
 const $ = (id) => document.getElementById(id);
@@ -186,7 +186,7 @@ function setVoice(on, announce) {
 
 /* ---------- flight panel mode ---------- */
 
-const PANEL_PAGES = ["status", "trade", "commodities", "bio", "guides", "analytics", "engineering", "local", "database"];
+const PANEL_PAGES = ["status", "trade", "commodities", "bio", "guides", "analytics", "engineering", "galaxy", "local", "database"];
 
 function setPanelMode(on) {
   document.body.classList.toggle("panel-mode", on);
@@ -859,6 +859,7 @@ function render() {
   renderStoredShips();
   renderOdysseyLocker();
   renderCarrier();
+  renderGalaxy();
   refreshLoadoutExport();
   // Re-plan pinned blueprints when the material inventory changes.
   const matTotal = (state.materials && state.materials.total) || 0;
@@ -1706,6 +1707,180 @@ function renderCarrier() {
   }
 }
 
+/* ---------- galaxy: powerplay · factions · conflicts · community goals ---------- */
+
+function repBand(rep) {
+  if (rep == null) return null;
+  if (rep <= -35) return ["HOSTILE", "bad"];
+  if (rep <= -10) return ["UNFRIENDLY", "bad"];
+  if (rep < 10) return null; // neutral — not worth a chip
+  if (rep < 35) return ["CORDIAL", "dim"];
+  if (rep < 90) return ["FRIENDLY", "good"];
+  return ["ALLIED", "good"];
+}
+
+function renderGalaxy() {
+  const gal = state.galaxy || {};
+  renderPowerplay(gal);
+  renderFactions(gal);
+  renderConflicts(gal);
+  renderCommunityGoals(gal);
+  renderSquadron(gal);
+}
+
+function renderPowerplay(gal) {
+  const card = $("powerplay-card");
+  if (!card) return;
+  const pp = gal.powerplay;
+  const sys = gal.pp_system;
+  $("pp-empty").classList.toggle("hidden", !!(pp || sys));
+  $("pp-pledge").classList.toggle("hidden", !pp);
+  $("pp-sys").classList.toggle("hidden", !sys);
+  $("pp-merits").textContent = pp && pp.session_merits
+    ? `+${fmtNum(pp.session_merits)} merits this session` : "";
+  const sig = JSON.stringify([pp, sys]);
+  if (card.dataset.sig === sig) return;
+  card.dataset.sig = sig;
+
+  if (pp) {
+    const weeks = pp.time_pledged_s != null ? Math.floor(pp.time_pledged_s / 604800) : null;
+    $("pp-pledge").innerHTML =
+      `<div class="pp-row"><b>${esc(pp.power || "?")}</b>` +
+      ` <span class="chip" title="Your standing with this Power — climb it by earning merits. Higher ratings unlock weekly rewards and, at rating 3+, the Power's unique module.">RATING ${pp.rank != null ? pp.rank : "?"}</span>` +
+      `<span class="dim"> · ${fmtNum(pp.merits || 0)} merits` +
+      (weeks != null ? ` · pledged ${weeks >= 1 ? weeks + "w" : "under a week"}` : "") + `</span></div>`;
+  }
+  if (sys) {
+    const prog = sys.control_progress != null ? Math.max(0, Math.min(1, sys.control_progress)) : null;
+    const reinf = sys.reinforcement || 0;
+    const under = sys.undermining || 0;
+    let stateLine = `<b>${esc(sys.controlling || "Uncontrolled")}</b>` +
+      (sys.state ? ` <span class="chip">${esc(sys.state).toUpperCase()}</span>` : "");
+    if (sys.powers && sys.powers.length > 1) {
+      stateLine += ` <span class="dim">· contested by ${esc(sys.powers.join(", "))}</span>`;
+    }
+    $("pp-sys").innerHTML =
+      `<div class="label">THIS SYSTEM <span class="dim">${esc(state.system || "")}</span></div>` +
+      `<div class="pp-row">${stateLine}</div>` +
+      (prog != null
+        ? `<div class="pp-bar" title="How firmly the controlling power holds this system (100% = fully fortified for this cycle)"><div style="width:${Math.round(prog * 100)}%"></div></div>` +
+          `<div class="dim">control ${(prog * 100).toFixed(1)}%` +
+          (reinf || under ? ` · <span class="good">▲ ${fmtNum(reinf)} reinforced</span> vs <span class="warn">▼ ${fmtNum(under)} undermined</span> this cycle` : "") +
+          `</div>`
+        : "");
+  }
+}
+
+function renderFactions(gal) {
+  const list = $("factions-list");
+  if (!list) return;
+  const factions = gal.factions || [];
+  $("factions-empty").classList.toggle("hidden", factions.length > 0);
+  $("factions-count").textContent = factions.length
+    ? `${factions.length} factions · ${gal.controlling_faction || "?"} controls` : "";
+  const sig = JSON.stringify([factions, gal.controlling_faction]);
+  if (list.dataset.sig === sig) return;
+  list.dataset.sig = sig;
+  list.innerHTML = "";
+  for (const f of factions) {
+    const inf = f.influence != null ? f.influence : 0;
+    const controls = f.name === gal.controlling_faction;
+    const rep = repBand(f.my_reputation);
+    const states = []
+      .concat((f.active_states || []).map((s) => [s, ""]))
+      .concat((f.pending_states || []).map((s) => [s, " (pending)"]))
+      .concat((f.recovering_states || []).map((s) => [s, " (recovering)"]));
+    const div = document.createElement("div");
+    div.className = "fact-row";
+    div.innerHTML =
+      `<div class="fact-top"><b>${esc(f.name || "?")}</b>` +
+      (controls ? ' <span class="chip" title="Currently controls this system — owns the main station and sets security">CONTROLS</span>' : "") +
+      (rep ? ` <span class="chip ${rep[1]}" title="Your personal reputation with this faction">${rep[0]}</span>` : "") +
+      `<span class="fact-inf">${(inf * 100).toFixed(1)}%</span></div>` +
+      `<div class="fact-bar"><div style="width:${Math.min(100, inf * 100).toFixed(1)}%"></div></div>` +
+      (states.length || f.government
+        ? `<div class="dim">${esc(f.government || "")}${f.allegiance ? " · " + esc(f.allegiance) : ""}` +
+          (states.length ? " · " + states.map(([s, tag]) => esc(s) + tag).join(", ") : "") + `</div>`
+        : "");
+    list.appendChild(div);
+  }
+}
+
+function renderConflicts(gal) {
+  const card = $("conflicts-card");
+  if (!card) return;
+  const conflicts = gal.conflicts || [];
+  card.classList.toggle("hidden", !conflicts.length);
+  if (!conflicts.length) return;
+  $("conflicts-count").textContent = conflicts.length === 1 ? "1 conflict" : conflicts.length + " conflicts";
+  const list = $("conflicts-list");
+  const sig = JSON.stringify(conflicts);
+  if (list.dataset.sig === sig) return;
+  list.dataset.sig = sig;
+  list.innerHTML = "";
+  for (const c of conflicts) {
+    const f1 = c.faction1 || {}, f2 = c.faction2 || {};
+    const div = document.createElement("div");
+    div.className = "conflict-row";
+    const side = (f, other) =>
+      `<b>${esc(f.name || "?")}</b> <span class="${(f.won_days || 0) > (other.won_days || 0) ? "good" : "dim"}">${f.won_days || 0}</span>` +
+      (f.stake ? `<span class="dim conflict-stake" title="What this side loses if it's defeated">stakes ${esc(f.stake)}</span>` : "");
+    div.innerHTML =
+      `<div class="conflict-head"><span class="chip">${esc((c.war_type || "war").toUpperCase())}</span>` +
+      ` <span class="dim">${c.status === "active" ? "days won — first to 4 of 7 wins" : esc(c.status || "")}</span></div>` +
+      `<div class="conflict-sides">${side(f1, f2)}<span class="dim conflict-vs">vs</span>${side(f2, f1)}</div>` +
+      `<div class="dim">Fight for a side in the system's conflict zones, or hand in combat bonds and war-support missions.</div>`;
+    list.appendChild(div);
+  }
+}
+
+function renderCommunityGoals(gal) {
+  const list = $("cg-list");
+  if (!list) return;
+  const now = Date.now() / 1000;
+  const goals = (gal.community_goals || []).map((g) => {
+    const exp = g.expiry ? Date.parse(g.expiry) / 1000 : null;
+    return { ...g, remaining_s: exp != null ? exp - now : null };
+  });
+  const live = goals.filter((g) => !g.complete && (g.remaining_s == null || g.remaining_s > -86400));
+  $("cg-empty").classList.toggle("hidden", live.length > 0);
+  $("cg-count").textContent = live.length ? (live.length === 1 ? "1 active" : live.length + " active") : "";
+  const sig = JSON.stringify(goals.map((g) => [g.cgid, g.contribution, g.tier, Math.floor((g.remaining_s || 0) / 60)]));
+  if (list.dataset.sig === sig) return;
+  list.dataset.sig = sig;
+  list.innerHTML = "";
+  for (const g of live) {
+    const div = document.createElement("div");
+    div.className = "cg-row";
+    const pct = g.percentile != null
+      ? `<span class="chip" title="Your contribution rank among every participating commander — lower band = bigger reward">TOP ${g.percentile}%</span>` : "";
+    div.innerHTML =
+      `<div class="fact-top"><b>${esc(g.title || "Community goal")}</b>${pct}` +
+      (g.remaining_s != null ? `<span class="dim cg-expiry">${g.remaining_s <= 0 ? "ended" : "ends in " + fmtDuration(g.remaining_s)}</span>` : "") + `</div>` +
+      `<div class="dim">${esc(g.market || "?")} · ${esc(g.system || "?")}` +
+      (g.contribution != null ? ` · your contribution ${fmtNum(g.contribution)}` : "") +
+      (g.tier ? ` · tier ${esc(String(g.tier))} reached` : "") +
+      (g.contributors ? ` · ${fmtNum(g.contributors)} commanders` : "") + `</div>`;
+    if (g.system) div.appendChild(plotButton(g.system));
+    list.appendChild(div);
+  }
+}
+
+function renderSquadron(gal) {
+  const card = $("squadron-card");
+  if (!card) return;
+  const sq = gal.squadron;
+  card.classList.toggle("hidden", !sq);
+  if (!sq) return;
+  const info = $("squadron-info");
+  const sig = JSON.stringify(sq);
+  if (info.dataset.sig === sig) return;
+  info.dataset.sig = sig;
+  info.innerHTML = `<div class="pp-row"><b>${esc(sq.name || "?")}</b>` +
+    (sq.rank != null ? ` <span class="chip">RANK ${sq.rank}</span>` : "") +
+    `<span class="dim"> · squadron chat, goals and leaderboards live in the game's right-hand panel</span></div>`;
+}
+
 let lastFuelSig = null;   // advisory code+system last spoken, to avoid repeats
 let lastAlertId = 0;      // highest one-shot alert id already handled
 let alertsInit = false;   // baseline set on first state so old alerts don't replay
@@ -1724,7 +1899,7 @@ function renderBanner() {
   banner.classList.remove("banner-critical", "banner-warn");
   if (state.journal_dir_found === false) {
     if (!banner.querySelector(".banner-settings-btn")) {
-      banner.textContent = "Elite Dangerous journal folder not found — if the game is installed, point Elite Trader at it: ";
+      banner.textContent = "Elite Dangerous journal folder not found — if the game is installed, point Frameshift at it: ";
       const btn = document.createElement("button");
       btn.className = "copy banner-settings-btn";
       btn.textContent = "OPEN SETTINGS";
@@ -2279,7 +2454,7 @@ function renderAlerts(alerts) {
   const newest = alerts[0];
   if (newest.ts !== lastAlertTs) {
     if (lastAlertTs !== null && window.Notification && Notification.permission === "granted") {
-      try { new Notification("Elite Trader route alert", { body: newest.text }); } catch (e) {}
+      try { new Notification("Frameshift route alert", { body: newest.text }); } catch (e) {}
     }
     lastAlertTs = newest.ts;
   }
@@ -3387,7 +3562,7 @@ function showReleaseNotes() {
     if (!openExternal(updateInfo.notes_url, "Release notes")) window.open(updateInfo.notes_url, "_blank");
     return;
   }
-  $("notes-title").textContent = updateInfo.notes_title || `Elite Trader v${updateInfo.latest}`;
+  $("notes-title").textContent = updateInfo.notes_title || `Frameshift v${updateInfo.latest}`;
   $("notes-body").innerHTML = mdToHtml(updateInfo.notes);
   $("notes-external").href = updateInfo.notes_url;
   $("notes-modal").classList.remove("hidden");
@@ -3402,7 +3577,7 @@ function renderUpdateBanner() {
   el.classList.remove("hidden");
   el.innerHTML =
     `<span class="ub-badge">⬆ UPDATE</span>` +
-    `<span class="ub-text">Elite Trader <b>v${esc(updateInfo.latest)}</b> is available` +
+    `<span class="ub-text">Frameshift <b>v${esc(updateInfo.latest)}</b> is available` +
     ` <span class="dim">(you have v${esc(updateInfo.current)})</span></span>`;
   const notes = document.createElement("a");
   notes.href = updateInfo.notes_url;
@@ -3447,7 +3622,7 @@ async function pollUpdateStatus() {
     } else if (s.phase === "verifying") {
       if (status) status.textContent = "Verifying…";
     } else if (s.phase === "restarting") {
-      if (status) status.textContent = "Restarting — Elite Trader will reopen in a moment.";
+      if (status) status.textContent = "Restarting — Frameshift will reopen in a moment.";
     } else if (s.phase === "error") {
       updateApplying = false;
       if (status) status.textContent = "Update failed: " + (s.error || "unknown error");
@@ -3456,7 +3631,7 @@ async function pollUpdateStatus() {
     }
   } catch (e) {
     // Connection lost while restarting is the expected success signal.
-    if (status) status.textContent = "Restarting — Elite Trader will reopen in a moment. You can close this tab.";
+    if (status) status.textContent = "Restarting — Frameshift will reopen in a moment. You can close this tab.";
     return;
   }
   setTimeout(pollUpdateStatus, 700);
@@ -3468,7 +3643,7 @@ const SETTINGS_DEFS = [
   { key: "exclude_surface", label: "Exclude surface stations",
     desc: "Hide planetary outposts, ports and settlements from trade routes, searches and mining — orbital stations only." },
   { key: "exclude_carriers", label: "Exclude fleet carriers",
-    desc: "Keep fleet carriers out of route and market results. (Community data already filters most carriers.)" },
+    desc: "Keep fleet carriers out of the market database and its results — carriers move, so listed positions go stale. Untick to collect carrier markets from the live feed too (rebuild the database to include them from the start)." },
   { key: "eddn_upload", label: "Contribute market data (EDDN)",
     desc: "Upload markets you dock at back to the community feed this app is built on. Anonymous." },
   { key: "auto_update", label: "Automatic updates",
@@ -3827,7 +4002,7 @@ function renderSettings(values, info) {
     list.appendChild(wrap);
   }
 
-  const parts = [`Elite Trader v${esc(info.version || "?")}`];
+  const parts = [`Frameshift v${esc(info.version || "?")}`];
   if (info.journal_dir) parts.push(`journal: <span class="path">${esc(info.journal_dir)}</span>`);
   if (info.data_dir) parts.push(`data: <span class="path">${esc(info.data_dir)}</span>`);
   $("settings-info").innerHTML = parts.join(" · ");

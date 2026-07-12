@@ -1,34 +1,42 @@
-## Elite Trader v1.16.0 — your colors, your cockpit
+## Frameshift v2.0.0 — new name, whole galaxy
 
-Commanders re-color their in-game HUD — now the companion follows suit. Plus
-a clearer home for settings and a proper welcome for first-time installs.
+**Elite Trader is now Frameshift.** The app long ago outgrew its trading
+roots — it navigates, explores, engineers and fights too — so the name now
+matches what it is: the companion computer for everything your Frame Shift
+Drive points at. **Nothing changes for you**: your data, settings, layouts and
+themes carry over untouched, auto-update keeps working (your exe file keeps
+its old name until you re-download — that's fine), and the GitHub project
+redirects from the old address.
 
-### 🎨 Color themes
-- **Six presets + custom.** Settings → Color theme: Elite Orange (default),
-  Ice Blue, Emerald, Gold, Crimson, Violet — or pick any color with the
-  Custom swatch. The whole interface follows: tabs, buttons, gauges,
-  banners, charts, the flight-panel glow, even the ignition button.
-- Only the **accent** changes — the dark cockpit background and the
-  green/red status colors stay put, so every theme remains readable.
-- Saved **per device**: run Ice Blue on the tablet and keep the desktop
-  orange.
+### ⚑ New GALAXY page — the background sim, finally on deck
+- **Powerplay 2.0** — your pledge, rating and merits (with a session tally),
+  plus the current system's power status on every jump: controlling power,
+  control-progress bar, reinforcement vs undermining this cycle.
+- **System factions (BGS)** — influence bars, active/pending/recovering
+  states, controlling faction, and your reputation with each — refreshed the
+  moment you jump in.
+- **Conflicts** — wars and elections: who's fighting whom, what station or
+  settlement is staked, and the days-won score.
+- **Community goals** — goals you've joined, with your contribution, reward
+  tier, percentile band and expiry countdown.
+- **Squadron** — your squadron and rank, when the game reports one.
+- Every card teaches: if a section is empty, it explains that corner of the
+  galaxy's politics instead of showing a blank.
 
-### ⚙ Settings, where you'd look for it
-- The **DB tab is now ⚙ SETTINGS** — same page, honest name, gear icon on
-  the desktop tabs and the flight-panel rail alike. The Settings card now
-  sits first, with the Market Database card (which still powers the trade
-  engine) right below.
+### 🛡 Trust & safety hardening
+- **EDDN uploads now carry your game version**, so the network can tell Live
+  data from Legacy — and the live price feed now **filters out Legacy-galaxy
+  messages** instead of letting them poison Live prices.
+- **The web server now rejects cross-site browser requests** (and DNS-rebinding
+  Host tricks): a random web page can no longer poke your companion's API.
+  Tablets and everything else on your LAN work exactly as before.
+- **Database rebuilds are now crash-proof**: the new database is built to the
+  side and swapped in only when it's complete — a mid-rebuild crash can no
+  longer leave you with a gutted market database.
+- **"Exclude fleet carriers" now tells the truth**: the setting controls what
+  the database collects (live feed and rebuilds), not just what searches show.
 
-### ⚑ No more guessing on first launch
-- Fresh installs get a **first-time setup banner**: build the local market
-  database to unlock trade loops, commodity search and mining — with a
-  TAKE ME THERE button that lands you on the build button, a plain-words
-  note about the one-time ~3.9 GB download, and a ✕ that dismisses it for
-  good on that device. It stays quiet while a build is running and
-  disappears once the database exists.
-
-### 🛠 Fixes
-- The **LAUNCH ELITE DANGEROUS** button (and the whole launch-control
-  banner, including the ignition crawl and the status-strip sweep) now
-  follows the color theme instead of staying orange.
-- Empty-database error messages point at the renamed Settings page.
+### 🛠 Under the hood
+- Releases now run the full test suite before building.
+- The release publishes the exe under both names (`Frameshift.exe` and
+  `EliteTrader.exe`) so every existing install keeps auto-updating.

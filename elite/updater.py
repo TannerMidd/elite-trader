@@ -1,9 +1,16 @@
 """In-app auto-update for the packaged Windows exe.
 
-Checks the GitHub Releases API for a newer EliteTrader.exe, downloads and
-verifies it, then hands off to a tiny batch script that waits for this process
-to exit, swaps the exe in place, and relaunches. Only active in the frozen
-onefile build on Windows; a no-op for source/headless runs.
+Checks the GitHub Releases API for a newer exe, downloads and verifies it,
+then hands off to a tiny batch script that waits for this process to exit,
+swaps the exe in place, and relaunches. Only active in the frozen onefile
+build on Windows; a no-op for source/headless runs.
+
+Rename continuity (Elite Trader -> Frameshift, v2.0.0): installs from before
+the rename hit the old repo URL (GitHub 301-redirects it here) and look for an
+asset named exactly "EliteTrader.exe", so every release publishes the same
+binary under both names. This module prefers the new asset name but falls back
+to the legacy one, and derives all staging/backup filenames from the *running*
+exe's own name — an updated install keeps whatever filename it has on disk.
 
 Distribution is already GitHub-Releases based (see .github/workflows/release.yml),
 so no extra infrastructure is needed."""
@@ -23,10 +30,11 @@ try:
 except Exception:  # pragma: no cover - _version is always present in practice
     VERSION = "0.0.0"
 
-REPO = os.environ.get("ET_UPDATE_REPO", "TannerMidd/elite-trader")
+REPO = os.environ.get("ET_UPDATE_REPO", "TannerMidd/frameshift")
 API_LATEST = f"https://api.github.com/repos/{REPO}/releases/latest"
-ASSET_NAME = "EliteTrader.exe"
-HEADERS = {"Accept": "application/vnd.github+json", "User-Agent": "EliteTrader-Updater"}
+# Newest name first; the legacy name keeps pre-rename releases installable.
+ASSET_NAMES = ("Frameshift.exe", "EliteTrader.exe")
+HEADERS = {"Accept": "application/vnd.github+json", "User-Agent": "Frameshift-Updater"}
 CHECK_TIMEOUT = 15
 DOWNLOAD_TIMEOUT = 60
 
@@ -53,6 +61,13 @@ def parse_version(text):
 
 def _exe_dir():
     return Path(sys.executable).resolve().parent
+
+
+def _exe_stem():
+    """Filename stem of the running exe. Installs updated across the rename
+    still live at EliteTrader.exe (the in-place swap keeps the old filename),
+    so staging/backup names must follow the actual file, not the product name."""
+    return Path(sys.executable).stem
 
 
 def updater_script(exe_path, new_path):
@@ -159,8 +174,9 @@ class Updater:
             else:
                 data = resp.json()
                 tag = data.get("tag_name") or ""
-                asset = next((a for a in data.get("assets") or []
-                              if a.get("name") == ASSET_NAME), None)
+                assets = data.get("assets") or []
+                asset = next((a for name in ASSET_NAMES
+                              for a in assets if a.get("name") == name), None)
                 result["latest"] = tag.lstrip("vV") or None
                 result["notes_url"] = data.get("html_url") or result["notes_url"]
                 result["notes"] = data.get("body") or None
@@ -168,7 +184,8 @@ class Updater:
                 if asset:
                     result["size"] = asset.get("size")
                     result["_download_url"] = asset.get("browser_download_url")
-                    result["_assets"] = data.get("assets") or []
+                    result["_asset_name"] = asset.get("name")
+                    result["_assets"] = assets
                 result["available"] = bool(asset) and \
                     parse_version(tag) > parse_version(VERSION)
         except requests.RequestException as exc:
@@ -233,7 +250,7 @@ class Updater:
 
     def _run(self, info):
         try:
-            new_path = _exe_dir() / "EliteTrader.new.exe"
+            new_path = _exe_dir() / f"{_exe_stem()}.new.exe"
             self._download(info["_download_url"], new_path)
             self._set(phase="verifying")
             self._verify(new_path, info)
@@ -274,8 +291,9 @@ class Updater:
                 raise RuntimeError("checksum mismatch — refusing to install")
 
     def _expected_sha256(self, info):
+        want = (info.get("_asset_name") or ASSET_NAMES[0]) + ".sha256"
         asset = next((a for a in info.get("_assets") or []
-                      if a.get("name") == ASSET_NAME + ".sha256"), None)
+                      if a.get("name") == want), None)
         if not asset:
             return None
         try:
@@ -292,12 +310,12 @@ class Updater:
         exe = Path(sys.executable).resolve()
         # Back up the current, working exe so a bad launch of the new one is
         # recoverable: if the new exe fails to start, cleanup_leftovers never
-        # runs, so EliteTrader.old.exe survives for the user to rename back.
+        # runs, so the .old.exe survives for the user to rename back.
         # Reading a running exe is allowed on Windows.
         try:
             import shutil
 
-            shutil.copy2(exe, _exe_dir() / "EliteTrader.old.exe")
+            shutil.copy2(exe, _exe_dir() / f"{_exe_stem()}.old.exe")
         except OSError:
             pass
         bat = _exe_dir() / "_et_update.bat"
@@ -314,12 +332,14 @@ class Updater:
         os._exit(0)
 
     def cleanup_leftovers(self):
-        """Remove stale staging artifacts on launch. Never deletes
-        EliteTrader.new.exe — that may be a downloaded update not yet applied,
-        which the next update run overwrites anyway."""
+        """Remove stale staging artifacts on launch. Never deletes the staged
+        .new.exe — that may be a downloaded update not yet applied, which the
+        next update run overwrites anyway. Both product names are cleaned so a
+        renamed install still collects its pre-rename leftovers."""
         if not getattr(sys, "frozen", False):
             return
-        for name in ("_et_update.bat", "EliteTrader.old.exe"):
+        for name in ("_et_update.bat", f"{_exe_stem()}.old.exe",
+                     "EliteTrader.old.exe", "Frameshift.old.exe"):
             try:
                 (_exe_dir() / name).unlink()
             except OSError:

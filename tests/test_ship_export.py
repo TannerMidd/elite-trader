@@ -43,7 +43,7 @@ assert decoded == LOADOUT, "loadout must survive the encode/decode round-trip"
 
 slef = json.loads(shipexport.slef(LOADOUT))
 assert isinstance(slef, list) and len(slef) == 1, slef
-assert slef[0]["header"]["appName"] == "EliteTrader"
+assert slef[0]["header"]["appName"] == "Frameshift"
 assert slef[0]["header"]["appVersion"]
 assert slef[0]["data"]["Ship"] == "krait_mkii"
 assert slef[0]["data"]["Modules"][0]["Engineering"]["Level"] == 5

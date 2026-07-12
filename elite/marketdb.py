@@ -144,15 +144,26 @@ def log_income(ts, category, amount, detail=None):
 
 _init_lock = threading.Lock()
 _initialized = False
+# Held for the whole file swap in swap_in(); connect() grabs it briefly so no
+# new connection can open (and recover a stale WAL) mid-swap.
+_swap_lock = threading.Lock()
 
 
-def connect():
-    """New connection (SQLite connections are not shared across threads here)."""
+def connect(path=None):
+    """New connection (SQLite connections are not shared across threads here).
+    Pass `path` to open a standalone database file (the seeder builds the
+    re-seed into a sidecar this way); it gets the schema applied every time."""
     global _initialized
     DATA_DIR.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(DB_PATH, timeout=30)
+    with _swap_lock:
+        conn = sqlite3.connect(path or DB_PATH, timeout=30)
     conn.execute("PRAGMA busy_timeout = 30000")
     conn.execute("PRAGMA synchronous = NORMAL")
+    if path is not None:
+        conn.execute("PRAGMA journal_mode = WAL")
+        conn.executescript(SCHEMA)
+        conn.commit()
+        return conn
     with _init_lock:
         if not _initialized:
             conn.execute("PRAGMA journal_mode = WAL")
@@ -160,6 +171,41 @@ def connect():
             conn.commit()
             _initialized = True
     return conn
+
+
+def build_path():
+    """Sidecar file a full re-seed is built into before swap_in()."""
+    return DB_PATH.parent / (DB_PATH.name + ".building")
+
+
+def swap_in(new_path, timeout_s=60):
+    """Atomically promote a freshly built database file to be THE database.
+
+    The old market.db stays fully usable until the single os.replace, so a
+    crashed or cancelled rebuild can no longer leave the app with a gutted
+    database. Callers must get the EDDN listener's long-lived connection
+    closed first (LISTENER.pause_db); short-lived API connections are ridden
+    out by the retry loop. The old file's -wal/-shm sidecars are removed under
+    the same lock so no new connection can recover a stale WAL against the
+    new file."""
+    new_path = Path(new_path)
+    deadline = time.time() + timeout_s
+    last_exc = None
+    while time.time() < deadline:
+        with _swap_lock:
+            try:
+                os.replace(new_path, DB_PATH)
+                for suffix in ("-wal", "-shm"):
+                    try:
+                        os.remove(str(DB_PATH) + suffix)
+                    except OSError:
+                        pass
+                invalidate_status_cache()
+                return
+            except OSError as exc:
+                last_exc = exc
+        time.sleep(1)
+    raise RuntimeError(f"could not swap in the new database: {last_exc}")
 
 
 def is_carrier(station_type, station_name):

@@ -1,9 +1,11 @@
 """Flask server: serves the UI and the JSON API (bound to the LAN)."""
 
+import ipaddress
 import logging
 import threading
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
+from urllib.parse import urlsplit
 
 from flask import Flask, jsonify, request, send_file, send_from_directory
 from werkzeug.serving import make_server
@@ -14,6 +16,37 @@ from .errors import UserFacingError
 from .seed import SEEDER
 
 UI_DIR = Path(__file__).resolve().parent.parent / "ui"
+
+
+def _host_allowed(host):
+    """Is this a Host header a browser on our own machine or LAN would send?
+
+    Random websites can fire cross-site requests at http://localhost:8666 (the
+    browser happily delivers simple POSTs without preflight) and DNS-rebinding
+    pages can point their own hostname at us. Requiring the Host to be either
+    a literal IP (loopback or private-range, i.e. this machine or the home
+    LAN) or this machine's own hostname blocks both, while every legitimate
+    access path — desktop window, localhost, tablet via 192.168.x.x — still
+    works. Public IPs are rejected: this server must never be port-forwarded."""
+    if not host:
+        return False
+    host = (urlsplit(f"//{host}").hostname or "").lower()
+    own = _own_hostname()
+    # Accept the bare machine name and its mDNS form (tablet browsers often
+    # reach the PC as "desktop-pc.local").
+    if host in ("localhost", own, own + ".local"):
+        return True
+    try:
+        ip = ipaddress.ip_address(host)
+    except ValueError:
+        return False
+    return ip.is_loopback or ip.is_private or ip.is_link_local
+
+
+def _own_hostname():
+    import socket
+
+    return socket.gethostname().lower()
 
 
 def error_response(exc, status, **extra):
@@ -30,6 +63,24 @@ def error_response(exc, status, **extra):
 
 def create_app(state):
     app = Flask(__name__, static_folder=str(UI_DIR), static_url_path="")
+
+    @app.before_request
+    def _validate_request_source():
+        # DNS rebinding: an attacker page whose domain resolves to us arrives
+        # with a foreign Host header.
+        if not _host_allowed(request.host):
+            return jsonify({"error": "Request blocked: unrecognized Host."}), 403
+        # Cross-site request forgery: browsers attach an Origin header to every
+        # cross-origin POST (even "simple" ones sent without preflight), so a
+        # same-origin match is required whenever one is present. Non-browser
+        # clients (curl, scripts) send no Origin and stay unaffected.
+        if request.method != "GET":
+            origin = request.headers.get("Origin")
+            if origin:
+                netloc = (urlsplit(origin).netloc or "").lower()
+                if netloc != request.host.lower():
+                    return jsonify({"error": "Request blocked: cross-origin."}), 403
+        return None
 
     @app.get("/")
     def index():
@@ -664,7 +715,9 @@ def create_app(state):
 
     @app.post("/api/marketdb/seed")
     def api_marketdb_seed():
-        if not SEEDER.start():
+        # Honor the carrier preference at build time too, so the toggle
+        # controls what the database *contains*, not just what queries show.
+        if not SEEDER.start(include_carriers=not settings.get("exclude_carriers", True)):
             return jsonify({"error": "A database build is already running."}), 409
         return jsonify({"ok": True})
 
