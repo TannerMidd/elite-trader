@@ -19,3 +19,6 @@ data/
 build/
 dist/
 *.spec
+
+# Demo-recording browser profiles (Playwright/Edge scratch state)
+showcase/
