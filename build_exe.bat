@@ -5,10 +5,12 @@ if not exist .venv (
     echo Run run.bat once first to create the environment.
     exit /b 1
 )
-.venv\Scripts\python -m pip install --quiet pyinstaller
+.venv\Scripts\python -m pip install --quiet -r requirements-build.txt
 .venv\Scripts\pyinstaller --noconfirm --onefile --windowed --name Frameshift ^
   --icon assets\Frameshift.ico ^
   --add-data "ui;ui" ^
+  --add-data "elite\data\engineering_catalog.json.gz;elite\data" ^
+  --add-data "THIRD_PARTY_NOTICES.md;." ^
   --hidden-import webview.platforms.winforms ^
   --hidden-import webview.platforms.edgechromium ^
   app.py

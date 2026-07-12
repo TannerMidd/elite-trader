@@ -3,17 +3,34 @@ import json
 import sys
 import tempfile
 from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from elite import launcher
 from elite.journal import JournalWatcher
 from elite.state import AppState
 
-# Process probe: something certainly running vs. certainly not. The probe
-# runs under this interpreter, so python itself is a safe "running" target.
-running_name = "python.exe" if sys.platform == "win32" else "python"
-assert launcher.is_running(running_name) is True
-assert launcher.is_running("elite_trader_no_such_process_xyz.exe") is False
+# Process detection is deterministic and never depends on CI/container process
+# visibility. A failed operating-system probe must remain "unknown" rather
+# than silently claiming that the game is stopped.
+if sys.platform == "win32":
+    with patch.object(launcher.subprocess, "run", return_value=SimpleNamespace(
+            returncode=0, stdout="EliteDangerous64.exe  4312 Console")):
+        assert launcher.is_running() is True
+    with patch.object(launcher.subprocess, "run", return_value=SimpleNamespace(
+            returncode=0, stdout="INFO: No tasks are running which match")):
+        assert launcher.is_running() is False
+    with patch.object(launcher.subprocess, "run", return_value=SimpleNamespace(
+            returncode=1, stdout="ERROR: Access denied")):
+        assert launcher.is_running() is None
+else:
+    with patch.object(launcher.subprocess, "run", return_value=SimpleNamespace(returncode=0)):
+        assert launcher.is_running() is True
+    with patch.object(launcher.subprocess, "run", return_value=SimpleNamespace(returncode=1)):
+        assert launcher.is_running() is False
+    with patch.object(launcher.subprocess, "run", return_value=SimpleNamespace(returncode=2)):
+        assert launcher.is_running() is None
 
 # LaunchError is user-facing so the API can echo it verbatim.
 from elite.errors import UserFacingError

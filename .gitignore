@@ -14,6 +14,11 @@ Thumbs.db
 
 # Local market database + Spansh dump (multi-GB, machine-local)
 data/
+# The small, release-built engineering reference is application data, not a
+# commander database.  It must be versioned and bundled into the executable.
+!elite/data/
+elite/data/*
+!elite/data/engineering_catalog.json.gz
 
 # PyInstaller build output
 build/

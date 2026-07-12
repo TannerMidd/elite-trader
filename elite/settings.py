@@ -3,10 +3,15 @@ the first-run defaults; once the user changes something in the Settings panel th
 saved value wins. Read at runtime so toggles take effect without a restart."""
 
 import json
+import logging
 import os
 import threading
+import time
+import uuid
+from pathlib import Path
 
 from . import marketdb
+from .errors import UserFacingError
 
 SETTINGS_PATH = marketdb.DATA_DIR / "settings.json"
 
@@ -23,6 +28,64 @@ DEFAULTS = {
 
 _lock = threading.Lock()
 _cache = None
+_logger = logging.getLogger(__name__)
+
+
+class SettingsError(UserFacingError):
+    """A settings change could not be safely persisted."""
+
+
+def _backup_corrupt(path: Path) -> None:
+    """Move malformed settings aside instead of destroying the evidence."""
+    stamp = time.strftime("%Y%m%d-%H%M%S", time.gmtime())
+    backup = path.with_name(f"{path.name}.corrupt-{stamp}")
+    try:
+        os.replace(path, backup)
+        _logger.warning("Moved corrupt settings file to %s", backup.name)
+    except OSError as exc:
+        _logger.warning("Could not preserve corrupt settings file: %s", type(exc).__name__)
+
+
+def _normalise(key, value):
+    default = DEFAULTS[key]
+    if isinstance(default, bool):
+        if not isinstance(value, bool):
+            raise SettingsError(f"{key} must be true or false.")
+        return value
+    if isinstance(default, list):
+        if not isinstance(value, list):
+            raise SettingsError(f"{key} must be a list.")
+        # Settings are small UI preferences, never an unbounded storage API.
+        encoded = json.dumps(value, ensure_ascii=False)
+        if len(encoded.encode("utf-8")) > 256 * 1024:
+            raise SettingsError(f"{key} is too large.")
+        return value
+    if isinstance(default, str):
+        if not isinstance(value, str):
+            raise SettingsError(f"{key} must be text.")
+        if len(value) > 4096:
+            raise SettingsError(f"{key} is too long.")
+        return value
+    return value
+
+
+def _atomic_write(data):
+    parent = SETTINGS_PATH.parent
+    parent.mkdir(parents=True, exist_ok=True)
+    temp = parent / f".{SETTINGS_PATH.name}.{os.getpid()}.{uuid.uuid4().hex}.tmp"
+    try:
+        with open(temp, "x", encoding="utf-8", newline="\n") as stream:
+            json.dump(data, stream, indent=2, ensure_ascii=False)
+            stream.write("\n")
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.replace(temp, SETTINGS_PATH)
+    except OSError as exc:
+        try:
+            temp.unlink()
+        except OSError:
+            pass
+        raise SettingsError("Settings could not be saved. Your previous settings are unchanged.") from exc
 
 
 def _load_locked():
@@ -35,8 +98,10 @@ def _load_locked():
             for k in DEFAULTS:
                 if k in saved:
                     data[k] = saved[k]
-        except (OSError, ValueError):
-            pass  # missing/corrupt file -> defaults
+        except ValueError:
+            _backup_corrupt(SETTINGS_PATH)
+        except OSError:
+            pass  # first run / temporarily unavailable -> defaults
         _cache = data
     return _cache
 
@@ -59,12 +124,7 @@ def update(changes):
         for k, v in (changes or {}).items():
             if k not in DEFAULTS:
                 continue
-            data[k] = bool(v) if isinstance(DEFAULTS[k], bool) else v
-        try:
-            marketdb.DATA_DIR.mkdir(parents=True, exist_ok=True)
-            with open(SETTINGS_PATH, "w", encoding="utf-8") as f:
-                json.dump(data, f, indent=2)
-        except OSError:
-            pass
+            data[k] = _normalise(k, v)
+        _atomic_write(data)
         _cache = data
         return dict(data)

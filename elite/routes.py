@@ -7,6 +7,7 @@ greedily with the most profitable commodities (respecting supply, demand and
 capital), and the best few partial routes are extended each round."""
 
 import math
+import time
 
 from . import marketdb
 from .errors import UserFacingError
@@ -29,6 +30,13 @@ DOCK_OVERHEAD_S = 180.0      # request dock, land, trade, launch
 SC_BASE_S = 60.0             # drop from jump + initial acceleration
 UNKNOWN_DIST_LS = 500.0      # assumed when a station's star distance is unknown
 
+# Confidence is intentionally conservative.  Market prices are observations,
+# not guarantees: age, shallow stock/demand and Elite's bulk-sale mechanic can
+# all turn a headline route into a disappointing trip.
+FRESH_PRICE_S = 2 * 3600
+DAY_S = 86400
+BULK_RISK_FRACTION = 0.25
+
 
 def _supercruise_time_s(dist_ls):
     ls = dist_ls if dist_ls and dist_ls > 0 else UNKNOWN_DIST_LS
@@ -38,6 +46,105 @@ def _supercruise_time_s(dist_ls):
 def _leg_time_s(distance_ly, dest_dist_ls, jump_range):
     jumps = math.ceil(distance_ly / max(1.0, jump_range)) if distance_ly > 0.01 else 0
     return jumps * JUMP_TIME_S + _supercruise_time_s(dest_dist_ls) + DOCK_OVERHEAD_S
+
+
+def trade_confidence(updated_at, amount, supply=None, demand=None, now=None):
+    """Confidence/provenance for one advertised commodity flow.
+
+    Returns a stable, display-ready structure.  The score is not presented as
+    a probability; it is a risk ranking derived from observed age and market
+    depth.  ``low_factor`` powers the conservative profit range.
+    """
+    now = float(now if now is not None else time.time())
+    try:
+        age_s = max(0.0, now - float(updated_at))
+    except (TypeError, ValueError):
+        age_s = 30 * DAY_S
+    amount = max(1, int(amount or 1))
+    has_supply = supply is not None
+    has_demand = demand is not None
+    supply = max(0, int(supply or 0))
+    demand = max(0, int(demand or 0))
+
+    # Full freshness for the first two hours, smooth decay thereafter.  At a
+    # week old, age alone can no longer earn a route a MEDIUM rating.
+    age_score = math.exp(-max(0.0, age_s - FRESH_PRICE_S) / (2.5 * DAY_S))
+    source_depth = min(1.0, supply / max(1.0, amount * 4.0))
+    demand_depth = min(1.0, demand / max(1.0, amount * 8.0))
+    if has_supply and has_demand:
+        depth_score = 0.45 * source_depth + 0.55 * demand_depth
+    elif has_supply:
+        depth_score = source_depth
+    elif has_demand:
+        depth_score = demand_depth
+    else:
+        depth_score = 0.0
+    score = max(0, min(100, round(100 * (0.65 * age_score + 0.35 * depth_score))))
+
+    reasons = []
+    if age_s > 7 * DAY_S:
+        reasons.append("price is over 7 days old")
+    elif age_s > DAY_S:
+        reasons.append("price is over a day old")
+    if has_supply:
+        if supply < amount:
+            reasons.append("reported supply cannot fill the hold")
+        elif supply < amount * 4:
+            reasons.append("thin source stock")
+    bulk_fraction = amount / demand if has_demand and demand else (1.0 if has_demand else None)
+    if has_demand:
+        if demand < amount:
+            reasons.append("reported demand cannot absorb the hold")
+        elif bulk_fraction > BULK_RISK_FRACTION:
+            reasons.append("cargo exceeds 25% of demand; bulk-sale price risk")
+        elif demand < amount * 8:
+            reasons.append("limited demand buffer")
+
+    if score >= 80 and not reasons:
+        band = "high"
+    elif score >= 55 and not any("cannot" in r for r in reasons):
+        band = "medium"
+    else:
+        band = "low"
+
+    # Never claim the observed price is a floor.  Bulk-risk routes get a much
+    # wider range; fresh/deep routes retain most of the advertised outcome.
+    low_factor = 0.35 + 0.60 * (score / 100.0)
+    if bulk_fraction is not None and bulk_fraction > BULK_RISK_FRACTION:
+        low_factor *= 0.75
+    return {
+        "score": score,
+        "band": band,
+        "age_s": int(age_s),
+        "observed_at": int(now - age_s),
+        "source": "local market cache (Spansh seed + EDDN updates)",
+        "bulk_fraction": round(bulk_fraction, 3) if bulk_fraction is not None else None,
+        "reasons": reasons,
+        "low_factor": round(max(0.2, min(0.95, low_factor)), 3),
+    }
+
+
+def _leg_confidence(src, dest, commodities, now=None):
+    rows = [
+        trade_confidence(
+            min(src.get("updated_at") or 0, dest.get("updated_at") or 0),
+            c.get("amount"), c.get("supply"), c.get("demand"), now=now,
+        )
+        for c in commodities
+    ]
+    if not rows:
+        return trade_confidence(0, 1, 0, 0, now=now)
+    score = min(row["score"] for row in rows)
+    reasons = list(dict.fromkeys(reason for row in rows for reason in row["reasons"]))
+    low_factor = min(row["low_factor"] for row in rows)
+    return {
+        "score": score,
+        "band": "high" if score >= 80 and not reasons else ("medium" if score >= 55 else "low"),
+        "age_s": max(row["age_s"] for row in rows),
+        "source": rows[0]["source"],
+        "reasons": reasons,
+        "low_factor": low_factor,
+    }
 
 
 class RouteError(UserFacingError):
@@ -339,12 +446,12 @@ def plan_loops(
         loops = loops[:top_n]
         if not loops:
             raise RouteError("No profitable loop found with those settings.")
-        return _format_loops(conn, loops, start)
+        return _format_loops(conn, loops, start, float(jump_range))
     finally:
         conn.close()
 
 
-def _format_loops(conn, loops, start):
+def _format_loops(conn, loops, start, jump_range=20.0):
     symbols = {c["symbol"] for l in loops for c in l["out"] + l["back"]}
     names = marketdb.commodity_display_names(conn, symbols)
 
@@ -374,19 +481,54 @@ def _format_loops(conn, loops, start):
             "from_player": round(_dist(st, start), 1),
         }
 
-    return [
-        {
-            "a": endpoint(l["a"]),
-            "b": endpoint(l["b"]),
-            "distance": round(_dist(l["a"], l["b"]), 1),
-            "profit": l["profit"],
-            "minutes_per_trip": round(l["trip_s"] / 60.0),
-            "profit_per_hour": int(l["profit_per_hour"]),
-            "outbound": {"profit": l["out_profit"], "commodities": leg(l["out"])},
-            "inbound": {"profit": l["back_profit"], "commodities": leg(l["back"])},
-        }
-        for l in loops
-    ]
+    result = []
+    for loop in loops:
+        out_conf = _leg_confidence(loop["a"], loop["b"], loop["out"])
+        back_conf = _leg_confidence(loop["b"], loop["a"], loop["back"])
+        score = min(out_conf["score"], back_conf["score"])
+        reasons = list(dict.fromkeys(out_conf["reasons"] + back_conf["reasons"]))
+        low_factor = min(out_conf["low_factor"], back_conf["low_factor"])
+        positioning_distance = _dist(start, loop["a"])
+        positioning_s = _leg_time_s(positioning_distance, loop["a"].get("dist_ls"), jump_range)
+        # A zero-distance start still includes the station leg in the generic
+        # model.  When already in the source system, call it immediate; the UI
+        # can add station-specific context from the current snapshot.
+        if positioning_distance < 0.01:
+            positioning_s = 0
+        first_trip_s = loop["trip_s"] + positioning_s
+        result.append({
+            "a": endpoint(loop["a"]),
+            "b": endpoint(loop["b"]),
+            "distance": round(_dist(loop["a"], loop["b"]), 1),
+            "positioning_distance": round(positioning_distance, 1),
+            "positioning_minutes": round(positioning_s / 60.0),
+            "profit": loop["profit"],
+            "profit_range": {
+                "low": int(loop["profit"] * low_factor),
+                "observed": loop["profit"],
+            },
+            "minutes_per_trip": round(loop["trip_s"] / 60.0),
+            "profit_per_hour": int(loop["profit_per_hour"]),
+            "first_trip_profit_per_hour": int(loop["profit"] * 3600.0 / max(1, first_trip_s)),
+            "confidence": {
+                "score": score,
+                "band": "high" if score >= 80 and not reasons else ("medium" if score >= 55 else "low"),
+                "source": out_conf["source"],
+                "age_s": max(out_conf["age_s"], back_conf["age_s"]),
+                "reasons": reasons,
+            },
+            "outbound": {
+                "profit": loop["out_profit"],
+                "commodities": leg(loop["out"]),
+                "confidence": {k: v for k, v in out_conf.items() if k != "low_factor"},
+            },
+            "inbound": {
+                "profit": loop["back_profit"],
+                "commodities": leg(loop["back"]),
+                "confidence": {k: v for k, v in back_conf.items() if k != "low_factor"},
+            },
+        })
+    return result
 
 
 def _dist(a, b):
@@ -450,6 +592,12 @@ def search_commodity(
         results = []
         for market_id, buy, sell, supply, demand in rows:
             st = by_id[market_id]
+            depth = supply if mode == "buy" else demand
+            confidence = trade_confidence(
+                st["updated_at"], min_units,
+                supply=supply if mode == "buy" else None,
+                demand=demand if mode == "sell" else None,
+            )
             results.append(
                 {
                     "station": st["station"],
@@ -463,6 +611,8 @@ def search_commodity(
                     "supply": supply,
                     "demand": demand,
                     "updated_at": st["updated_at"],
+                    "confidence": {k: v for k, v in confidence.items() if k != "low_factor"},
+                    "depth_for_request": depth,
                 }
             )
         results.sort(key=lambda r: r["buy_price"] if mode == "buy" else -r["sell_price"])
@@ -479,6 +629,7 @@ def sell_cargo(
     max_price_age_days=30,
     requires_large_pad=False,
     limit=10,
+    exclude_market_ids=None,
 ):
     """Best places to sell the CURRENT cargo hold: stations ranked by total
     payout for everything they can absorb (capped by their demand)."""
@@ -495,7 +646,8 @@ def sell_cargo(
             min_updated=marketdb.now_epoch() - int(max_price_age_days) * 86400,
             require_large_pad=bool(requires_large_pad),
         )
-        by_id = {s["market_id"]: s for s in stations}
+        excluded = {int(v) for v in (exclude_market_ids or []) if v is not None}
+        by_id = {s["market_id"]: s for s in stations if s["market_id"] not in excluded}
         if not by_id:
             return []
         counts = {i["symbol"]: i["count"] for i in items}
@@ -516,24 +668,43 @@ def sell_cargo(
             units = min(counts[symbol], demand)
             if units <= 0:
                 continue
-            entry = per_station.setdefault(market_id, {"total": 0, "items": []})
+            entry = per_station.setdefault(market_id, {"total": 0, "items": [], "confidence_rows": []})
             entry["total"] += units * sell
+            conf = trade_confidence(
+                by_id[market_id]["updated_at"], counts[symbol],
+                supply=None, demand=demand,
+            )
+            entry["confidence_rows"].append(conf)
             entry["items"].append(
                 {"name": names[symbol], "units": units, "sell_price": sell,
-                 "demand": demand, "payout": units * sell,
-                 "partial": units < counts[symbol]}
+                  "demand": demand, "payout": units * sell,
+                  "partial": units < counts[symbol],
+                  "confidence": {k: v for k, v in conf.items() if k != "low_factor"}}
             )
         results = []
         for market_id, entry in per_station.items():
             st = by_id[market_id]
             entry["items"].sort(key=lambda i: -i["payout"])
+            confidence_rows = entry.pop("confidence_rows")
+            score = min(row["score"] for row in confidence_rows)
+            low_factor = min(row["low_factor"] for row in confidence_rows)
+            reasons = list(dict.fromkeys(reason for row in confidence_rows for reason in row["reasons"]))
             results.append(
-                {"station": st["station"], "system": st["system"],
-                 "distance": round(_dist(start, st), 1), "dist_ls": st["dist_ls"],
-                 "large_pad": st["large_pad"], "updated_at": st["updated_at"],
-                 "total": entry["total"], "items": entry["items"]}
+                {"market_id": market_id, "station": st["station"], "system": st["system"],
+                  "distance": round(_dist(start, st), 1), "dist_ls": st["dist_ls"],
+                  "large_pad": st["large_pad"], "updated_at": st["updated_at"],
+                  "total": entry["total"],
+                  "payout_range": {"low": int(entry["total"] * low_factor), "observed": entry["total"]},
+                  "confidence": {"score": score,
+                                 "band": "high" if score >= 80 and not reasons else ("medium" if score >= 55 else "low"),
+                                 "source": confidence_rows[0]["source"],
+                                 "age_s": max(row["age_s"] for row in confidence_rows),
+                                 "reasons": reasons},
+                  "items": entry["items"]}
             )
-        results.sort(key=lambda r: -r["total"])
+        # Risk-adjusted payout breaks ties in favour of reliable markets while
+        # retaining the observed total as the primary useful signal.
+        results.sort(key=lambda r: (-(r["payout_range"]["low"]), -r["total"]))
         return results[:limit]
     finally:
         conn.close()
@@ -613,6 +784,11 @@ def mining_advisor(
                     "dist_ls": st["dist_ls"],
                     "large_pad": st["large_pad"],
                     "updated_at": st["updated_at"],
+                    "confidence": {
+                        k: v for k, v in trade_confidence(
+                            st["updated_at"], 1, supply=None, demand=demand
+                        ).items() if k != "low_factor"
+                    },
                 }
         results = sorted(best.values(), key=lambda r: -r["sell_price"])
         return {"results": results[:limit], "start": start["system"]}
@@ -645,6 +821,7 @@ def _format(conn, route):
     cumulative = 0
     for hop in route["hops"]:
         cumulative += hop["profit"]
+        confidence = _leg_confidence(hop["from"], hop["to"], hop["commodities"])
         hops.append(
             {
                 "from_system": hop["from"]["system"],
@@ -655,6 +832,11 @@ def _format(conn, route):
                 "distance": hop["distance"],
                 "profit": hop["profit"],
                 "cumulative_profit": cumulative,
+                "profit_range": {
+                    "low": int(hop["profit"] * confidence["low_factor"]),
+                    "observed": hop["profit"],
+                },
+                "confidence": {k: v for k, v in confidence.items() if k != "low_factor"},
                 "commodities": [
                     {
                         "name": names.get(c["symbol"], c["symbol"].title()),
@@ -670,3 +852,37 @@ def _format(conn, route):
             }
         )
     return hops
+
+
+def recover_cargo(
+    items,
+    system=None,
+    star_pos=None,
+    radius=100.0,
+    max_price_age_days=7,
+    requires_large_pad=False,
+    failed_market_id=None,
+    limit=5,
+):
+    """Find a safe replacement buyer when a watched route degrades.
+
+    This deliberately reuses the current cargo hold instead of attempting to
+    preserve the original loop.  The recommendation is ranked by conservative
+    payout and carries the same provenance/risk structure as normal searches.
+    """
+    results = sell_cargo(
+        items,
+        system=system,
+        star_pos=star_pos,
+        radius=radius,
+        max_price_age_days=max_price_age_days,
+        requires_large_pad=requires_large_pad,
+        limit=max(1, int(limit)),
+        exclude_market_ids=[failed_market_id] if failed_market_id is not None else None,
+    )
+    return {
+        "reason": "watched market degraded",
+        "excluded_market_id": failed_market_id,
+        "recommended": results[0] if results else None,
+        "alternatives": results[1:],
+    }

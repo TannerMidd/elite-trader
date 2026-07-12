@@ -2,6 +2,8 @@
 session logs, then tails the newest journal + Status/Cargo/Market json files."""
 
 import json
+import hashlib
+import logging
 import os
 import re
 import sys
@@ -10,6 +12,8 @@ import time
 from pathlib import Path
 
 from . import biovalues, exploration, flight, launcher, marketdb
+
+log = logging.getLogger(__name__)
 
 BIO_SIGNAL_TYPE = "$SAA_SignalType_Biological;"
 GAME_PROBE_SECONDS = 15  # process-probe cadence; catches exits with no Shutdown event
@@ -101,6 +105,16 @@ def _pretty_panel_name(raw):
     return f"{words} {rest.strip()}".strip()
 
 
+def _galaxy_mode(game_version):
+    """Classify Frontier's journal version without guessing unknown builds."""
+    value = str(game_version or "").strip().casefold()
+    if "legacy" in value or value.startswith("3."):
+        return "legacy"
+    if "live" in value or value.startswith("4."):
+        return "live"
+    return "unknown"
+
+
 def find_journal_dir():
     """Precedence: the in-app setting, the ED_JOURNAL_DIR env var, then
     auto-detection (known-folder Saved Games, default path, Proton prefixes)."""
@@ -145,6 +159,7 @@ class JournalWatcher:
         self._current_file = None
         self._offset = 0
         self._partial = ""
+        self._line_number = 0
         self._status_mtimes = {}
         self._body_scans = {}  # body name -> details, current system only
         self._body_ids = {}    # BodyID -> body name, current system only
@@ -156,20 +171,275 @@ class JournalWatcher:
         self._risk_level = 0       # unsold-data risk tier already called out
         self._rebuy_level = 0      # 0 = covered, 1 = below 2x rebuy, 2 = below 1x
         self._sample_clear_said = True  # per-sample-point "clear to sample" callout
+        self._commander_id = None
+        self._event_ledger = None
+        self._timing_model = None
+        self._extension_sink = None
+        self._extension_unsubscribe = None
+        self._specialists = None
+        self._pending_local_events = []
+        # EDDN augmentation must use one trusted tuple sourced only from an
+        # event that carries the complete location. UI state may legitimately
+        # learn a newer system name from Docked without learning coordinates;
+        # keeping this separate prevents pairing that name with stale StarPos.
+        self._eddn_location = {
+            "system": None, "system_address": None, "star_pos": None,
+        }
+        self._eddn_status_body_name = None
+        self._eddn_journal_body_name = None
+        self._eddn_journal_body_id = None
+        self._last_background_error = None
+        self._last_background_error_at = 0.0
+        self._profile_handoff_pending = False
+        self._handoff_commander_id = None
+        self._handoff_state = None
 
     # ---------- event handling ----------
 
-    def handle_event(self, event):
+    def handle_event(self, event, *, source_file=None, source_line=None):
         etype = event.get("event")
-        handler = getattr(self, f"_on_{etype.lower()}", None) if etype else None
-        if handler:
-            handler(event)
-        if event.get("timestamp"):
-            self.state.update(last_journal_event=event["timestamp"])
-        # A live journal line can only come from a running game; Shutdown is
-        # the game announcing the opposite (its handler just set it False).
-        if self._live and etype and etype != "Shutdown":
-            self.state.update(game_running=True)
+        try:
+            if self._live and etype in {"Location", "FSDJump", "CarrierJump"}:
+                self._preflush_public_signals()
+            handler = getattr(self, f"_on_{etype.lower()}", None) if etype else None
+            if handler:
+                handler(event)
+            if event.get("timestamp"):
+                self.state.update(last_journal_event=event["timestamp"])
+            # A live journal line can only come from a running game; Shutdown is
+            # the game announcing the opposite (its handler just set it False).
+            if self._live and etype and etype != "Shutdown":
+                self.state.update(game_running=True)
+            if self._live and etype:
+                self._publish_public_event(event)
+        finally:
+            # The durable ledger is deliberately independent of individual
+            # feature handlers: even an unexpected handler failure must not
+            # punch a permanent hole in lifetime history.
+            self._record_local_event(event, source_file=source_file, source_line=source_line)
+
+    def _activate_commander(self, name):
+        """Switch every durable local reducer to the journal's commander."""
+        if not name:
+            return
+        mode = self.state.galaxy_mode if self.state.galaxy_mode in {"live", "legacy"} else "live"
+        commander_id = marketdb.commander_profile_id(name, mode)
+        if commander_id == self._commander_id and self._event_ledger is not None:
+            if self._profile_handoff_pending and self._handoff_state is not None:
+                self.state.restore_commander_context(self._handoff_state)
+            self._finish_profile_handoff()
+            marketdb.ensure_commander_profile(
+                name, commander_id=commander_id, galaxy_mode=mode)
+            self.state.update(commander=name, commander_id=commander_id)
+            self._flush_pending_local_events()
+            return
+        if self._extension_unsubscribe:
+            self._extension_unsubscribe()
+            self._extension_unsubscribe = None
+        # Clear the previous pilot before changing the process-wide active DB
+        # profile.  A brief empty snapshot is safe; serving Alpha's missions,
+        # cargo or surface coordinates under Beta's identity is not.
+        self.state.reset_commander_context()
+        self._reset_profile_context()
+        marketdb.ensure_commander_profile(
+            name, commander_id=commander_id, galaxy_mode=mode)
+        self.state.update(commander=name, commander_id=commander_id)
+        from .eventledger import EventLedger
+        from .extensions import EXTENSIONS
+        from .objectives import ExtensionActionSink
+        from .specialists import SpecialistWorkflows
+        from .timings import TimingModel
+
+        self._commander_id = commander_id
+        self._event_ledger = EventLedger(commander_id)
+        self._timing_model = TimingModel(commander_id)
+        self._extension_sink = ExtensionActionSink(
+            commander_id,
+            alert_callback=lambda alert: self.state.push_alert(
+                alert.get("level") or "info",
+                alert.get("code") or "extension",
+                alert.get("say") or alert.get("text"),
+                alert.get("text"),
+            ),
+        )
+        self._specialists = SpecialistWorkflows(commander_id)
+        self._extension_unsubscribe = EXTENSIONS.subscribe(self._extension_sink.accept)
+        self.state.update(
+            commander=name, commander_id=commander_id,
+            specialists=self._specialists.snapshot(),
+        )
+        self._finish_profile_handoff()
+        self._flush_pending_local_events()
+
+    def _record_local_event(self, event, *, source_file=None, source_line=None):
+        if not isinstance(event, dict) or not event.get("event"):
+            return
+        if self._profile_handoff_pending or self._event_ledger is None:
+            # Fileheader normally precedes Commander/LoadGame. Hold that small
+            # prefix so it lands in the correct profile instead of "default".
+            if len(self._pending_local_events) < 64:
+                self._pending_local_events.append((dict(event), source_file, source_line))
+            return
+        try:
+            source = source_file or (self._current_file.name if self._current_file else None)
+            dedupe_key = f"{source}:{source_line}" if source and source_line is not None else None
+            saved = self._event_ledger.record(
+                event, source_file=source, source_line=source_line, dedupe_key=dedupe_key)
+            from .specialists import EXPECTED_JOURNAL_EVENTS
+
+            if self._specialists and any(
+                    event.get("event") in expected for expected in EXPECTED_JOURNAL_EVENTS.values()):
+                carrier = self.state.carrier or {}
+                own_names = {
+                    str(value).casefold() for value in (
+                        carrier.get("callsign"), carrier.get("name"), carrier.get("Callsign"),
+                    ) if value
+                }
+                at_own_carrier = bool(
+                    self.state.docked and self.state.station
+                    and str(self.state.station).casefold() in own_names
+                )
+                workflow = self._specialists.observe_event(
+                    event, saved["event_uid"], context={"at_own_carrier": at_own_carrier})
+                self.state.update(specialists=workflow["snapshot"])
+            if saved.get("inserted"):
+                self._timing_model.observe_event(event)
+                if self._live:
+                    from .extensions import EXTENSIONS
+
+                    EXTENSIONS.publish(event, self.state.snapshot())
+        except Exception as exc:
+            log.warning("local event intelligence failed: %s", type(exc).__name__, exc_info=True)
+
+    def _reset_eddn_context(self):
+        self._eddn_location = {
+            "system": None, "system_address": None, "star_pos": None,
+        }
+        self._eddn_status_body_name = None
+        self._eddn_journal_body_name = None
+        self._eddn_journal_body_id = None
+
+    def _begin_profile_handoff(self):
+        """Hide the old cockpit and buffer a new file until identity arrives."""
+        if self._profile_handoff_pending:
+            return
+        self._profile_handoff_pending = True
+        self._handoff_commander_id = self._commander_id
+        if self._commander_id is not None:
+            self._handoff_state = self.state.capture_commander_context()
+            self.state.reset_commander_context()
+
+    def _finish_profile_handoff(self):
+        self._profile_handoff_pending = False
+        self._handoff_commander_id = None
+        self._handoff_state = None
+
+    def _flush_pending_local_events(self):
+        pending, self._pending_local_events = self._pending_local_events, []
+        for queued, source_file, source_line in pending:
+            self._record_local_event(
+                queued, source_file=source_file, source_line=source_line)
+
+    def _reset_profile_context(self):
+        """Reset watcher caches that are meaningful only for one commander."""
+        self._commander_id = None
+        self._event_ledger = None
+        self._timing_model = None
+        self._extension_sink = None
+        self._specialists = None
+        self._status_mtimes = {}
+        self._body_scans = {}
+        self._body_ids = {}
+        self._last_logged_balance = None
+        self._bio_fetched = set()
+        self._hull_bucket = None
+        self._first_disc_system = None
+        self._risk_level = 0
+        self._rebuy_level = 0
+        self._sample_clear_said = True
+        self._reset_eddn_context()
+
+    def _log_background_failure(self, context, exc):
+        """Persist recurring watcher failures without flooding bounded logs."""
+        now = time.monotonic()
+        key = (str(context), type(exc).__name__)
+        if key != self._last_background_error or now - self._last_background_error_at >= 60:
+            self._last_background_error = key
+            self._last_background_error_at = now
+            log.warning("%s failed: %s", context, type(exc).__name__, exc_info=True)
+
+    def _remember_eddn_location(self, event):
+        """Atomically replace, never partially merge, the augmentation tuple."""
+        old = self._eddn_location
+        new_system = event.get("StarSystem")
+        new_address = event.get("SystemAddress")
+        if old.get("system_address") is not None and (
+            old.get("system_address") != new_address
+            or str(old.get("system") or "").casefold() != str(new_system or "").casefold()
+        ):
+            # Status.json can lag a jump. Never carry its old surface body into
+            # a Codex observation in the newly trusted system.
+            self._eddn_status_body_name = None
+            self._eddn_journal_body_name = None
+            self._eddn_journal_body_id = None
+        self._eddn_location = {
+            "system": new_system,
+            "system_address": new_address,
+            "star_pos": event.get("StarPos"),
+        }
+
+    def _remember_journal_body(self, event):
+        name = event.get("BodyName") or event.get("Body")
+        body_id = event.get("BodyID")
+        if name:
+            self._eddn_journal_body_name = name
+            self._eddn_journal_body_id = (
+                body_id if isinstance(body_id, int) and not isinstance(body_id, bool) else None
+            )
+        else:
+            self._eddn_journal_body_name = None
+            self._eddn_journal_body_id = None
+
+    def _preflush_public_signals(self):
+        """Finish Horizons-order FSS batches before replacing their location."""
+        try:
+            from .eddn_upload import UPLOADER
+
+            UPLOADER.flush_fss_signals(
+                dict(self._eddn_location), self.state.commander,
+                preserve_unmatched=True,
+            )
+        except Exception as exc:
+            log.debug("EDDN pre-location signal flush skipped: %s", exc, exc_info=True)
+
+    def _publish_public_event(self, event):
+        """Contribute supported live observations to EDDN, never replay data."""
+        try:
+            from .eddn_upload import UPLOADER
+
+            location = dict(self._eddn_location)
+            status_body = self._eddn_status_body_name
+            if (
+                status_body and self._eddn_journal_body_name
+                and str(status_body).casefold()
+                == str(self._eddn_journal_body_name).casefold()
+            ):
+                # Codex body data is supplied only when independent Status and
+                # journal names agree. A known ID remains optional.
+                location["body_name"] = status_body
+                if self._eddn_journal_body_id is not None:
+                    location["body_id"] = self._eddn_journal_body_id
+            UPLOADER.maybe_publish_journal(
+                event,
+                self.state.commander,
+                location=location,
+                game_version=self.state.game_version,
+                game_build=self.state.game_build,
+                horizons=self.state.horizons,
+                odyssey=self.state.odyssey,
+            )
+        except Exception as exc:
+            log.debug("EDDN journal publication skipped: %s", exc, exc_info=True)
 
     def _on_shutdown(self, e):
         self.state.update(game_running=False)
@@ -178,18 +448,36 @@ class JournalWatcher:
         self.state.end_session(marketdb.parse_update_time(e.get("timestamp")))
 
     def _on_commander(self, e):
+        self._reset_eddn_context()
+        self._activate_commander(e.get("Name"))
         self.state.update(commander=e.get("Name"))
 
     def _on_fileheader(self, e):
         # EDDN uploads must carry the game version so consumers can tell
         # Live (4.x) from Legacy (3.x) data.
+        self._begin_profile_handoff()
+        self._reset_eddn_context()
         self.state.update(
             game_version=e.get("gameversion"),
-            game_build=(e.get("build") or "").strip() or None,
+            # Frontier build strings can contain significant whitespace; EDDN
+            # explicitly requires senders to pass the value through unchanged.
+            game_build=e.get("build") if e.get("build") is not None else "",
+            galaxy_mode=_galaxy_mode(e.get("gameversion")),
+            # Fileheader flags identify the client, not the commander's active
+            # entitlements. Only LoadGame is a valid source for EDDN flags.
+            horizons=None,
+            odyssey=None,
         )
 
     def _on_loadgame(self, e):
+        if self.state.commander and e.get("Commander") != self.state.commander:
+            self._reset_eddn_context()
+        self._activate_commander(e.get("Commander"))
         updates = {"commander": e.get("Commander")}
+        self.state.update(
+            horizons=bool(e["Horizons"]) if "Horizons" in e else None,
+            odyssey=bool(e["Odyssey"]) if "Odyssey" in e else None,
+        )
         if e.get("Ship_Localised") or e.get("Ship"):
             updates["ship_type"] = e.get("Ship_Localised") or e.get("Ship")
         if e.get("ShipName"):
@@ -243,6 +531,8 @@ class JournalWatcher:
             station_type=e.get("StationType") if e.get("Docked") else None,
             station_market_id=e.get("MarketID") if e.get("Docked") else None,
         )
+        self._remember_eddn_location(e)
+        self._remember_journal_body(e)
         self._capture_system_politics(e)
         self._fetch_community_bio(e.get("SystemAddress"), e.get("StarSystem"))
 
@@ -261,6 +551,9 @@ class JournalWatcher:
             dist_from_star_ls=None,
             bio_signals={},
         )
+        self._remember_eddn_location(e)
+        self._eddn_journal_body_name = None
+        self._eddn_journal_body_id = None
         self._capture_system_politics(e)
         self.state.add_jump(e.get("StarSystem"), e.get("JumpDist"), e.get("timestamp"))
         # Actual fuel burned this jump → conservative fuel-per-jump for scoop
@@ -281,6 +574,8 @@ class JournalWatcher:
             star_pos=e.get("StarPos"),
             body=e.get("Body"),
         )
+        self._remember_eddn_location(e)
+        self._remember_journal_body(e)
         # If this was OUR carrier completing its scheduled jump, the pending
         # entry is done. (The event only fires while aboard; destination match
         # keeps someone else's carrier from clearing ours.)
@@ -289,6 +584,13 @@ class JournalWatcher:
             self._update_carrier(jump=None)
         self._capture_system_politics(e)
         self._fetch_community_bio(e.get("SystemAddress"), e.get("StarSystem"))
+
+    def _on_approachbody(self, e):
+        self._remember_journal_body(e)
+
+    def _on_leavebody(self, e):
+        self._eddn_journal_body_name = None
+        self._eddn_journal_body_id = None
 
     def _capture_system_politics(self, e):
         """BGS factions/conflicts and Powerplay status carried on every
@@ -370,6 +672,12 @@ class JournalWatcher:
         """Pull community-mapped genuses for a system from Spansh in the
         background, so they show on arrival before you FSS/DSS anything. Live
         only (never during bootstrap replay), fetched at most once per session."""
+        if self.state.galaxy_mode != "live":
+            # Spansh is the Live galaxy.  Never merge its body observations
+            # into a Legacy commander's otherwise local surface workflow.
+            if self.state.bio_community:
+                self.state.update(bio_community={})
+            return
         if not self._live or not id64 or id64 in self._bio_fetched:
             return
         self._bio_fetched.add(id64)
@@ -382,7 +690,7 @@ class JournalWatcher:
             except Exception:
                 return
             # Apply only if the player is still in that system.
-            if self.state.system_address == id64:
+            if self.state.galaxy_mode == "live" and self.state.system_address == id64:
                 self.state.update(
                     bio_community={"id64": id64, "system": system, "bodies": bodies}
                 )
@@ -614,8 +922,8 @@ class JournalWatcher:
                 (e.get("Type") or "").lower(), e.get("Type_Localised") or (e.get("Type") or "").title(),
                 e.get("Count"), e.get("BuyPrice"), e.get("TotalCost"),
             )
-        except Exception:
-            pass
+        except Exception as exc:
+            self._log_background_failure("market-buy analytics", exc)
 
     def _on_marketsell(self, e):
         try:
@@ -627,22 +935,22 @@ class JournalWatcher:
                 (e.get("Type") or "").lower(), e.get("Type_Localised") or (e.get("Type") or "").title(),
                 e.get("Count"), e.get("SellPrice"), e.get("TotalSale"), profit,
             )
-        except Exception:
-            pass
+        except Exception as exc:
+            self._log_background_failure("market-sell analytics", exc)
 
     def _log_balance_point(self, ts, balance):
         try:
             marketdb.log_balance(ts, balance)
-        except Exception:
-            pass
+        except Exception as exc:
+            self._log_background_failure("balance analytics", exc)
 
     def _log_income(self, e, category, amount, detail=None):
         try:
             marketdb.log_income(
                 marketdb.parse_update_time(e.get("timestamp")), category, amount, detail
             )
-        except Exception:
-            pass
+        except Exception as exc:
+            self._log_background_failure("income analytics", exc)
 
     def _on_sellorganicdata(self, e):
         total = sum((b.get("Value") or 0) + (b.get("Bonus") or 0) for b in e.get("BioData") or [])
@@ -1060,6 +1368,9 @@ class JournalWatcher:
             ("Status.json", self._apply_status),
             ("Cargo.json", self._apply_cargo),
             ("Market.json", self._apply_market),
+            ("Outfitting.json", self._apply_outfitting),
+            ("Shipyard.json", self._apply_shipyard),
+            ("FCMaterials.json", self._apply_fcmaterials),
             ("NavRoute.json", self._apply_navroute),
             ("ShipLocker.json", self._apply_shiplocker),
         ):
@@ -1078,6 +1389,9 @@ class JournalWatcher:
     _FLAG_IN_MAIN_SHIP = 0x01000000  # Status.json Flags bit 24
 
     def _apply_status(self, data):
+        # This is the independent body-name side of EDDN's Codex cross-check.
+        # Clear it whenever Status omits BodyName; never infer from coordinates.
+        self._eddn_status_body_name = data.get("BodyName") or None
         updates = {
             "cargo_tons": data.get("Cargo"),
             "legal_state": data.get("LegalState"),
@@ -1117,6 +1431,11 @@ class JournalWatcher:
         else:
             updates["pos"] = None
         self.state.update(**updates)
+        if self._specialists:
+            try:
+                self.state.update(specialists=self._specialists.update_status(self.state.pos))
+            except Exception as exc:
+                log.debug("specialist position update skipped: %s", type(exc).__name__)
         self._check_sample_clear()
         if balance is not None:
             self._check_rebuy()
@@ -1154,6 +1473,16 @@ class JournalWatcher:
             if r.get("StarSystem")
         ]
         self.state.update(nav_route=route)
+        try:
+            from .eddn_upload import UPLOADER
+
+            UPLOADER.maybe_publish_snapshot(
+                "navroute", data, self.state.commander,
+                self.state.game_version, self.state.game_build,
+                horizons=self.state.horizons, odyssey=self.state.odyssey,
+            )
+        except Exception as exc:
+            log.debug("EDDN nav route publication skipped: %s", exc, exc_info=True)
 
     def _on_navrouteclear(self, e):
         self.state.update(nav_route=[])
@@ -1258,12 +1587,15 @@ class JournalWatcher:
                 return  # not an Odyssey locker file; keep the last good state
             counts = {}
             for item in rows:
-                name = item.get("Name_Localised") or _clean_name(item.get("Name"))
-                if not name:
+                raw = item.get("Name") or ""
+                symbol = raw.strip("$;").removesuffix("_name").lower()
+                name = item.get("Name_Localised") or _clean_name(raw)
+                if not name or not symbol:
                     continue
-                counts[name] = counts.get(name, 0) + (item.get("Count") or 0)
+                entry = counts.setdefault(symbol, {"symbol": symbol, "name": name, "count": 0})
+                entry["count"] += item.get("Count") or 0
             locker[out_key] = sorted(
-                ({"name": n, "count": c} for n, c in counts.items()),
+                counts.values(),
                 key=lambda i: (-i["count"], i["name"]),
             )
         locker["total"] = sum(i["count"] for rows in locker.values() for i in rows)
@@ -1285,8 +1617,11 @@ class JournalWatcher:
         try:
             from .eddn_upload import UPLOADER
 
-            UPLOADER.maybe_publish(data, self.state.commander,
-                                   self.state.game_version, self.state.game_build)
+            UPLOADER.maybe_publish(
+                data, self.state.commander,
+                self.state.game_version, self.state.game_build,
+                self.state.horizons, self.state.odyssey,
+            )
         except Exception:
             pass  # uploading is best-effort; never break market parsing
         # Last-known DB prices for this station, to show a live-vs-recorded trend.
@@ -1346,10 +1681,49 @@ class JournalWatcher:
             except Exception:
                 pass  # history is a nicety; never break market parsing
 
+    def _apply_outfitting(self, data):
+        try:
+            from .eddn_upload import UPLOADER
+
+            UPLOADER.maybe_publish_snapshot(
+                "outfitting", data, self.state.commander,
+                self.state.game_version, self.state.game_build,
+                horizons=self.state.horizons, odyssey=self.state.odyssey,
+            )
+        except Exception as exc:
+            log.debug("EDDN outfitting publication skipped: %s", exc, exc_info=True)
+
+    def _apply_shipyard(self, data):
+        try:
+            from .eddn_upload import UPLOADER
+
+            UPLOADER.maybe_publish_snapshot(
+                "shipyard", data, self.state.commander,
+                self.state.game_version, self.state.game_build,
+                horizons=self.state.horizons, odyssey=self.state.odyssey,
+            )
+        except Exception as exc:
+            log.debug("EDDN shipyard publication skipped: %s", exc, exc_info=True)
+
+    def _apply_fcmaterials(self, data):
+        """FCMaterials journal events only signal this authoritative sidecar."""
+        try:
+            from .eddn_upload import UPLOADER
+
+            UPLOADER.maybe_publish_snapshot(
+                "fcmaterials", data, self.state.commander,
+                self.state.game_version, self.state.game_build,
+                horizons=self.state.horizons, odyssey=self.state.odyssey,
+            )
+        except Exception as exc:
+            log.debug("EDDN carrier materials publication skipped: %s", exc, exc_info=True)
+
     # ---------- bootstrap & tail ----------
 
-    def _process_lines(self, text):
-        for line in text.splitlines():
+    def _process_lines(self, text, *, source_file=None, start_line=0):
+        last_line = int(start_line)
+        for line_number, line in enumerate(text.splitlines(), start_line + 1):
+            last_line = line_number
             line = line.strip()
             if not line:
                 continue
@@ -1358,9 +1732,14 @@ class JournalWatcher:
             except json.JSONDecodeError:
                 continue
             try:
-                self.handle_event(event)
-            except Exception:
-                continue  # one bad event must never kill the watcher
+                self.handle_event(event, source_file=source_file, source_line=line_number)
+            except Exception as exc:
+                log.warning(
+                    "journal event handler failed file=%s line=%s type=%s error=%s",
+                    source_file or "?", line_number, event.get("event"), type(exc).__name__,
+                    exc_info=True,
+                )
+        return last_line
 
     def bootstrap(self):
         if not self.journal_dir.is_dir():
@@ -1371,7 +1750,34 @@ class JournalWatcher:
         if not files:
             return
 
-        # Walk backwards until the essentials have been seen, then replay the
+        def profile_in(text):
+            name = None
+            mode = "unknown"
+            for raw in text.splitlines():
+                if not any(token in raw for token in ("Commander", "LoadGame", "Fileheader")):
+                    continue
+                try:
+                    item = json.loads(raw.strip().rstrip(","))
+                except json.JSONDecodeError:
+                    continue
+                if item.get("event") == "Fileheader":
+                    mode = _galaxy_mode(item.get("gameversion"))
+                candidate = item.get("Name") if item.get("event") == "Commander" else item.get("Commander")
+                if candidate:
+                    name = str(candidate)
+                if name and mode != "unknown":
+                    break
+            return name, mode
+
+        try:
+            newest_text = files[-1].read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            newest_text = ""
+        current_profile = profile_in(newest_text)
+
+        # Walk backwards through this commander's files until the essentials
+        # have been seen, then replay them chronologically. Multi-account users
+        # never inherit missions, samples, or balances from the other profile.
         # selected files in chronological order through the normal handlers.
         # The bio vault holds everything since your last Vista Genomics sale
         # (or death), which on a long expedition can be many sessions back —
@@ -1379,11 +1785,21 @@ class JournalWatcher:
         # unsold samples survive restarts (BOOTSTRAP_MAX_FILES still caps it).
         needed = {"location": False, "loadout": False, "commander": False, "bio_boundary": False}
         selected = []
-        for path in reversed(files[-BOOTSTRAP_MAX_FILES:]):
+        # A newly-created journal can contain only Fileheader for a moment.
+        # Until its Commander/LoadGame arrives there is no safe identity with
+        # which to replay older files, so keep the snapshot empty instead of
+        # guessing from another account's previous session.
+        candidates = [files[-1]] if not current_profile[0] else files[-BOOTSTRAP_MAX_FILES:]
+        for path in reversed(candidates):
             selected.insert(0, path)
             try:
                 text = path.read_text(encoding="utf-8", errors="replace")
             except OSError:
+                continue
+            file_profile = profile_in(text)
+            if (current_profile[0] and file_profile[0]
+                    and file_profile != current_profile):
+                selected.pop(0)
                 continue
             if '"event":"Location"' in text or '"event":"FSDJump"' in text:
                 needed["location"] = True
@@ -1398,7 +1814,10 @@ class JournalWatcher:
 
         for path in selected:
             try:
-                self._process_lines(path.read_text(encoding="utf-8", errors="replace"))
+                text = path.read_text(encoding="utf-8", errors="replace")
+                last_line = self._process_lines(text, source_file=path.name)
+                if path == files[-1]:
+                    self._line_number = last_line
             except OSError:
                 continue
 
@@ -1423,6 +1842,7 @@ class JournalWatcher:
             self._current_file = newest
             self._offset = 0
             self._partial = ""
+            self._line_number = 0
         self._read_new_bytes()
 
     def _read_new_bytes(self):
@@ -1431,6 +1851,7 @@ class JournalWatcher:
             if size < self._offset:  # truncated/replaced
                 self._offset = 0
                 self._partial = ""
+                self._line_number = 0
             if size == self._offset:
                 return
             with open(self._current_file, "r", encoding="utf-8", errors="replace") as f:
@@ -1446,11 +1867,12 @@ class JournalWatcher:
         else:
             self._partial = ""
         if text:
-            self._process_lines(text)
+            self._line_number = self._process_lines(
+                text, source_file=self._current_file.name, start_line=self._line_number)
 
     # Bump when the set of events swept below changes, to force a one-time
     # re-import of already-processed journals (all logging is INSERT OR IGNORE).
-    HISTORY_VERSION = "2"
+    HISTORY_VERSION = "4"
 
     # etype -> handler, for both the history sweep and the marker prefilter.
     _HISTORY_EVENTS = (
@@ -1459,31 +1881,65 @@ class JournalWatcher:
         "RedeemVoucher",
     )
 
-    def _import_event(self, event):
+    def _import_event(self, event, commander_id):
+        """Import analytics without mutating the currently displayed state."""
         etype = event.get("event")
         if etype == "MarketBuy":
-            self._on_marketbuy(event)
+            marketdb.log_trade(
+                marketdb.parse_update_time(event.get("timestamp")), "buy",
+                (event.get("Type") or "").lower(),
+                event.get("Type_Localised") or (event.get("Type") or "").title(),
+                event.get("Count"), event.get("BuyPrice"), event.get("TotalCost"),
+                commander_id=commander_id,
+            )
         elif etype == "MarketSell":
-            self._on_marketsell(event)
+            profit = None
+            if event.get("SellPrice") is not None and event.get("AvgPricePaid") is not None:
+                profit = (event["SellPrice"] - event["AvgPricePaid"]) * (event.get("Count") or 0)
+            marketdb.log_trade(
+                marketdb.parse_update_time(event.get("timestamp")), "sell",
+                (event.get("Type") or "").lower(),
+                event.get("Type_Localised") or (event.get("Type") or "").title(),
+                event.get("Count"), event.get("SellPrice"), event.get("TotalSale"), profit,
+                commander_id=commander_id,
+            )
         elif etype == "LoadGame" and event.get("Credits") is not None:
-            self._log_balance_point(
-                marketdb.parse_update_time(event.get("timestamp")), event["Credits"]
+            marketdb.log_balance(
+                marketdb.parse_update_time(event.get("timestamp")), event["Credits"],
+                commander_id=commander_id,
             )
         elif etype == "MissionCompleted":
-            self._log_income(event, "mission", event.get("Reward") or 0, event.get("Name"))
+            marketdb.log_income(
+                marketdb.parse_update_time(event.get("timestamp")), "mission",
+                event.get("Reward") or 0, event.get("Name"), commander_id=commander_id,
+            )
         elif etype in ("SellExplorationData", "MultiSellExplorationData"):
-            self._log_income(event, "exploration",
-                             event.get("TotalEarnings") or event.get("BaseValue"))
+            marketdb.log_income(
+                marketdb.parse_update_time(event.get("timestamp")), "exploration",
+                event.get("TotalEarnings") or event.get("BaseValue"),
+                commander_id=commander_id,
+            )
         elif etype == "SellOrganicData":
             total = sum((b.get("Value") or 0) + (b.get("Bonus") or 0)
                         for b in event.get("BioData") or [])
-            self._log_income(event, "exobiology", total)
+            marketdb.log_income(
+                marketdb.parse_update_time(event.get("timestamp")), "exobiology", total,
+                commander_id=commander_id,
+            )
         elif etype == "RedeemVoucher":
-            self._on_redeemvoucher(event)
+            voucher = (event.get("Type") or "").lower()
+            category = "bounty" if voucher in ("bounty", "combatbond", "settlement") else "other"
+            marketdb.log_income(
+                marketdb.parse_update_time(event.get("timestamp")), category,
+                event.get("Amount"), voucher or None, commander_id=commander_id,
+            )
 
     def import_trade_history(self):
-        """One-time sweep of ALL journal files for trade/income/balance events, so
-        analytics start with full history instead of just recent sessions."""
+        """Sweep completed journals into commander-scoped analytics and ledger.
+
+        Each file is assigned from its own Commander/LoadGame identity. This is
+        essential for players with multiple accounts sharing one journal folder.
+        """
         if not self.journal_dir.is_dir():
             return
         conn = marketdb.connect()
@@ -1492,28 +1948,119 @@ class JournalWatcher:
                 conn.execute("DELETE FROM imported_journals")
                 marketdb.set_meta(conn, "history_version", self.HISTORY_VERSION)
                 conn.commit()
-            done = {r[0] for r in conn.execute("SELECT filename FROM imported_journals")}
+            done = {
+                (row[0], row[1])
+                for row in conn.execute("SELECT commander_id, filename FROM imported_journals")
+            }
         finally:
             conn.close()
         files = journal_files(self.journal_dir)
-        markers = tuple(f'"event":"{name}"' for name in self._HISTORY_EVENTS)
         for path in files[:-1]:  # the newest file is still being written; tail covers it
-            if path.name in done:
-                continue
             try:
-                for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
-                    if not any(m in line for m in markers):
-                        continue
+                parsed = []
+                commander_name = None
+                galaxy_mode = "unknown"
+                for line_number, line in enumerate(
+                        path.read_text(encoding="utf-8", errors="replace").splitlines(), 1):
                     try:
                         event = json.loads(line.strip().rstrip(","))
                     except json.JSONDecodeError:
                         continue
-                    self._import_event(event)
+                    if not isinstance(event, dict) or not event.get("event"):
+                        continue
+                    parsed.append((line_number, event))
+                    if event["event"] == "Fileheader":
+                        galaxy_mode = _galaxy_mode(event.get("gameversion"))
+                    if event["event"] == "Commander" and event.get("Name"):
+                        commander_name = event["Name"]
+                    elif event["event"] == "LoadGame" and event.get("Commander"):
+                        commander_name = event["Commander"]
             except OSError:
+                continue
+            if not parsed:
+                continue
+            # A damaged/header-only file has no trustworthy owner.  Never infer
+            # it from whichever unrelated account happens to be on screen.
+            known_commander = commander_name
+            commander_id = (
+                marketdb.ensure_commander_profile(
+                    known_commander, make_active=False,
+                    galaxy_mode=galaxy_mode if galaxy_mode in {"live", "legacy"} else "live",
+                )
+                if known_commander else "default"
+            )
+
+            # Full compressed history powers lifetime queries and future local
+            # reducers. Source coordinates preserve legitimate identical events.
+            try:
+                from .eventledger import EventLedger
+
+                stat = path.stat()
+                ledger = EventLedger(commander_id)
+                claim = ledger.prepare_journal(
+                    path.name, size_bytes=stat.st_size, mtime_ns=stat.st_mtime_ns)
+                if claim["needs_import"]:
+                    resume = claim["resume_after_line"]
+                    remaining = [(line, event) for line, event in parsed if line > resume]
+                    report = ledger.import_journal(
+                        path.name, remaining, size_bytes=stat.st_size, mtime_ns=stat.st_mtime_ns)
+            except Exception as exc:
+                log.warning("journal ledger backfill failed file=%s error=%s",
+                            path.name, type(exc).__name__, exc_info=True)
+
+            if (commander_id, path.name) in done:
+                continue
+            derived_ok = True
+            try:
+                from .timings import TimingModel
+
+                # Timing has its own idempotent observation keys, so replay the
+                # whole file until the shared derived-reducer checkpoint lands.
+                # This remains retryable even after the ledger itself is marked
+                # complete on an earlier attempt.
+                timing = TimingModel(commander_id)
+                for _line, event in parsed:
+                    timing.observe_event(event)
+            except Exception as exc:
+                derived_ok = False
+                log.warning("timing history backfill failed file=%s error=%s",
+                            path.name, type(exc).__name__, exc_info=True)
+            try:
+                from .specialists import EXPECTED_JOURNAL_EVENTS, SpecialistWorkflows
+
+                workflows = SpecialistWorkflows(commander_id)
+                expected = set().union(*EXPECTED_JOURNAL_EVENTS.values())
+                for line_number, event in parsed:
+                    if event.get("event") not in expected:
+                        continue
+                    uid = hashlib.sha256(f"{path.name}:{line_number}".encode("utf-8")).hexdigest()
+                    workflows.observe_event(event, uid, context={"at_own_carrier": False})
+            except Exception as exc:
+                derived_ok = False
+                log.warning("specialist history backfill failed file=%s error=%s",
+                            path.name, type(exc).__name__, exc_info=True)
+            for _line, event in parsed:
+                if event.get("event") in self._HISTORY_EVENTS:
+                    try:
+                        self._import_event(event, commander_id)
+                    except Exception as exc:
+                        derived_ok = False
+                        log.warning(
+                            "analytics history backfill failed file=%s type=%s error=%s",
+                            path.name, event.get("event"), type(exc).__name__, exc_info=True,
+                        )
+            if not derived_ok:
+                # Every reducer is idempotent.  Withhold the shared completion
+                # marker so a transient disk lock or a newly-fixed reducer is
+                # retried on the next sweep rather than creating a permanent
+                # hole in the commander's history.
                 continue
             conn = marketdb.connect()
             try:
-                conn.execute("INSERT OR IGNORE INTO imported_journals(filename) VALUES(?)", (path.name,))
+                conn.execute(
+                    "INSERT OR IGNORE INTO imported_journals(commander_id, filename) VALUES(?, ?)",
+                    (commander_id, path.name),
+                )
                 conn.commit()
             finally:
                 conn.close()
@@ -1537,12 +2084,19 @@ class JournalWatcher:
             self.journal_dir = desired
         self._live = False
         self._status_mtimes = {}
-        self.bootstrap()
         try:
-            self.import_trade_history()
-        except Exception:
-            pass
-        self._live = True
+            self.bootstrap()
+        except Exception as exc:
+            self._log_background_failure("journal bootstrap after directory change", exc)
+        else:
+            try:
+                self.import_trade_history()
+            except Exception as exc:
+                self._log_background_failure("journal history import after directory change", exc)
+        finally:
+            # A transient sidecar/backfill failure must not permanently leave
+            # live tailing and EDDN publication disabled.
+            self._live = True
         self._fetch_community_bio(self.state.system_address, self.state.system)
 
     def _probe_game(self):
@@ -1552,6 +2106,16 @@ class JournalWatcher:
         if alive is not None and alive != self.state.game_running:
             self.state.update(game_running=alive)
             if not alive:
+                # Shutdown normally flushes the final FSSSignalDiscovered
+                # batch. A crash has no such journal event, so preserve that
+                # last singleton/batch before freezing the session.
+                try:
+                    from .eddn_upload import UPLOADER
+
+                    UPLOADER.flush_fss_signals(
+                        dict(self._eddn_location), self.state.commander)
+                except Exception as exc:
+                    self._log_background_failure("final EDDN signal flush", exc)
                 # Crash or exit without a Shutdown event: freeze the session
                 # at the last thing the game wrote, not at detection time.
                 self.state.end_session(
@@ -1560,14 +2124,20 @@ class JournalWatcher:
                 )
 
     def run_forever(self):
-        self.bootstrap()
+        try:
+            self.bootstrap()
+        except Exception as exc:
+            self._log_background_failure("journal bootstrap", exc)
         # Replayed Shutdown events leave game_running=False even when the game
         # is up right now; ask the process table before the slow history sweep.
-        self._probe_game()
+        try:
+            self._probe_game()
+        except Exception as exc:
+            self._log_background_failure("game process probe", exc)
         try:
             self.import_trade_history()
-        except Exception:
-            pass
+        except Exception as exc:
+            self._log_background_failure("journal history import", exc)
         self._live = True
         # Bootstrap set the current system without a live event, so fetch its
         # community bio data now.
@@ -1581,8 +2151,8 @@ class JournalWatcher:
                 if time.monotonic() - last_probe >= GAME_PROBE_SECONDS:
                     last_probe = time.monotonic()
                     self._probe_game()
-            except Exception:
-                pass
+            except Exception as exc:
+                self._log_background_failure("journal watcher poll", exc)
             time.sleep(POLL_SECONDS)
 
     def start(self):

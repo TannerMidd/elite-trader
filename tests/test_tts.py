@@ -41,7 +41,7 @@ try:
     app = create_app(AppState())
     app.testing = True
     client = app.test_client()
-    resp = client.get("/api/speak?text=hello")
+    resp = client.post("/api/speak", json={"text": "hello"})
     assert resp.status_code == 409 and "Settings" in resp.get_json()["error"], resp.get_json()
     resp = client.get("/api/tts/status")
     assert resp.status_code == 200 and resp.get_json()["ready"] is False

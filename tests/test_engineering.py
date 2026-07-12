@@ -14,11 +14,11 @@ from elite import blueprints, settings  # noqa: E402
 from elite.journal import JournalWatcher  # noqa: E402
 from elite.state import AppState  # noqa: E402
 
-# ---------- requirements: per-roll costs x estimated rolls, G1->target ----------
+# ---------- requirements: deterministic post-rebalance costs, G1->target ----------
 
 req = blueprints.requirements("FSD Increased Range", 5)
-# ADWE: G1 (2 rolls) + G2 (2 rolls) = 4; Chemical Processors: G2 (2) + G3 (3) = 5
-assert req["Atypical Disrupted Wake Echoes"] == 4, req
+# ADWE: G1 (1 application) + G2 (2) = 3; Chemical Processors: G2 (2) + G3 (3) = 5
+assert req["Atypical Disrupted Wake Echoes"] == 3, req
 assert req["Chemical Processors"] == 5, req
 assert req["Datamined Wake Exceptions"] == 5, req  # G5 only, 5 rolls
 req3 = blueprints.requirements("FSD Increased Range", 3)
@@ -35,13 +35,13 @@ assert blueprints._cost_for(2, 2, 4) == 72     # 2 G4 from G2: 2 x 36
 # ---------- plan: deficits + best same-family trade suggestion ----------
 
 inv = {
-    "disruptedwakeechoes": 10,       # plenty (need 4)
+    "disruptedwakeechoes": 10,       # legacy journal symbol alias; plenty (need 3)
     "chemicalprocessors": 2,         # short 3 (need 5)
     "chemicalmanipulators": 30,      # G4 chemical surplus (need 5 for G5)
     "wakesolutions": 3,              # exact (need 3)
     "hyperspacetrajectories": 0,     # short 4
-    "dataminedwake": 5,              # exact
-    "phasealloys": 3, "manganese": 4, "arsenic": 5,
+    "dataminedwake": 5,              # legacy journal symbol alias; exact
+    "phasealloys": 3, "phosphorus": 3, "manganese": 4, "arsenic": 5,
 }
 p = blueprints.plan("FSD Increased Range", 5, inv)
 assert not p["craftable"]
@@ -50,7 +50,7 @@ assert rows["Chemical Processors"]["deficit"] == 3, rows["Chemical Processors"]
 # every material row carries a where-to-find-it hint for new players
 assert all(r["source"] for r in p["materials"]), [r["name"] for r in p["materials"] if not r["source"]]
 assert "salvage" in rows["Chemical Processors"]["source"], rows["Chemical Processors"]["source"]
-assert "SRV" in rows["Manganese"]["source"], rows["Manganese"]["source"]
+assert "Surface prospecting" in rows["Manganese"]["source"], rows["Manganese"]["source"]
 # Chemical Manipulators are G4 chemical: 25 spare after their own need of 5;
 # trading down covers the 3-deficit easily.
 trade = rows["Chemical Processors"]["trade"]
@@ -64,7 +64,7 @@ assert rows["Eccentric Hyperspace Trajectories"]["trade"] is None, rows["Eccentr
 inv_full = dict(inv, chemicalprocessors=5, hyperspacetrajectories=4, chemicaldistillery=4)
 assert blueprints.plan("FSD Increased Range", 5, inv_full)["craftable"]
 
-print("blueprint math OK: requirements, conversions, deficits, trade suggestions")
+print("blueprint math OK: deterministic requirements, conversions, deficits, trade suggestions")
 
 # ---------- journal: ready-to-engineer one-shot callout ----------
 
@@ -75,7 +75,8 @@ with tempfile.TemporaryDirectory() as td:
     w._live = True
     mats = {"Raw": {}, "Manufactured": {}, "Encoded": {}}
     for sym, count in inv_full.items():
-        info = next(v for v in blueprints.MATERIALS.values() if v[0] == sym)
+        material = __import__("elite.engineering_catalog", fromlist=["material"]).material(sym)
+        info = blueprints.MATERIALS[material["name"]]
         cat = {"raw": "Raw", "manufactured": "Manufactured", "encoded": "Encoded"}[info[1]]
         mats[cat][sym] = {"symbol": sym, "name": sym, "count": count}
     mats["Manufactured"]["chemicalprocessors"]["count"] = 4  # one short of ready

@@ -20,6 +20,12 @@ with tempfile.TemporaryDirectory() as td:
 
     # ---------- Powerplay pledge lifecycle ----------
 
+    # Real journals establish the profile before commander-owned snapshots.
+    w.handle_event({"timestamp": "2026-07-12T09:00:00Z", "event": "Fileheader",
+                    "gameversion": "4.1"})
+    w.handle_event({"timestamp": "2026-07-12T09:00:01Z", "event": "LoadGame",
+                    "Commander": "TEST", "Credits": 1000})
+
     w.handle_event({"timestamp": "t", "event": "Powerplay", "Power": "Edmund Mahon",
                     "Rank": 0, "Merits": 0, "TimePledged": 2682})
     pp = state.snapshot()["galaxy"]["powerplay"]
@@ -35,6 +41,8 @@ with tempfile.TemporaryDirectory() as td:
     assert pp["merits"] == 160 and pp["session_merits"] == 160 and pp["rank"] == 1
 
     # A new session resets the session tally but keeps the pledge.
+    w.handle_event({"timestamp": "2026-07-12T09:59:59Z", "event": "Fileheader",
+                    "gameversion": "4.1"})
     w.handle_event({"timestamp": "2026-07-12T10:00:00Z", "event": "LoadGame",
                     "Commander": "TEST", "Credits": 1000})
     pp = state.snapshot()["galaxy"]["powerplay"]
@@ -112,7 +120,7 @@ with tempfile.TemporaryDirectory() as td:
 
     w.handle_event({"timestamp": "t", "event": "Fileheader", "part": 1,
                     "Odyssey": True, "gameversion": "4.4.0.3", "build": "r330683/r0 "})
-    assert state.game_version == "4.4.0.3" and state.game_build == "r330683/r0"
+    assert state.game_version == "4.4.0.3" and state.game_build == "r330683/r0 "
 
     print("community goals, squadron, fileheader OK")
 

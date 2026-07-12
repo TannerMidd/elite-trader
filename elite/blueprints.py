@@ -1,207 +1,431 @@
-"""Engineering planner: curated blueprint recipes, the material catalog needed
-to reason about them, and the deficit / trade-conversion math.
+"""Complete offline engineering wishlist and material planning.
 
-DATA NOTES — community-derived (Inara/EDEngineer lineage), hand-curated:
-- BLUEPRINTS is a *starter set* limited to recipes verified end-to-end; adding
-  one is a dict entry, so the set grows release by release. Names are in-game
-  display names.
-- ROLLS_PER_GRADE is the planning estimate for how many rolls finish a grade;
-  actual results vary with luck, so plans read "estimated".
-- Material-trader ratios (same category): 6 -> 1 per grade UP, 1 -> 3 per
-  grade DOWN. Cross-category trades cost double and are deliberately not
-  suggested.
+Ship engineering uses Frontier's deterministic post-rebalance maximum-access
+costs: finishing G1..G5 consumes 1, 2, 3, 4 and 5 applications respectively.
+Other catalog items (experimentals, synthesis, unlocks and Odyssey work) use
+their exact recipe once per requested item/step.
+
+The legacy module name and public helpers are retained so v1 settings and the
+journal's ready-to-engineer callout migrate without user action.
 """
 
-ROLLS_PER_GRADE = {1: 2, 2: 2, 3: 3, 4: 4, 5: 5}
+from __future__ import annotations
 
-# Plain-language context so the planner explains itself to newer players.
+import math
+from collections.abc import Iterable, Mapping
+
+from . import engineering_catalog as catalog
+
+
+ROLLS_PER_GRADE = {1: 1, 2: 2, 3: 3, 4: 4, 5: 5}
+
+LEGACY_PIN_IDS = {
+    "FSD Increased Range": "frame-shift-drive--increased-fsd-range",
+    "Thrusters Dirty Tuning": "thrusters--dirty-drive-tuning",
+    "weapon--manticore-opressor": "weapon--manticore-oppressor",
+}
+
+_TRADER_FAMILIES = {
+    "raw": {f"Category{i}" for i in range(1, 8)},
+    "manufactured": {
+        "Alloys", "Capacitors", "Chemical", "Composite", "Conductive",
+        "Crystals", "Heat", "MechanicalComponents", "Shielding", "Thermic",
+    },
+    "encoded": {
+        "DataArchives", "EmissionData", "EncodedFirmware", "EncryptionFiles",
+        "ShieldData", "WakeScans",
+    },
+}
+
+
+def _all_groups():
+    return catalog.load()["groups"]
+
+
+def _all_materials():
+    return catalog.load()["materials"]
+
+
+def _display_recipes():
+    out = {}
+    for group in _all_groups():
+        if group.get("alias_of"):
+            continue
+        grades = {}
+        for recipe in group["recipes"]:
+            grade = int(recipe.get("grade") or 0)
+            grades[grade] = {ingredient["name"]: ingredient["quantity"]
+                             for ingredient in recipe["ingredients"]}
+        out[group["display_name"]] = grades
+    return out
+
+
+# Compatibility exports.  Unlike the v1 starter set these expose the complete
+# 505-group bundled catalog.
+BLUEPRINTS = _display_recipes()
 BLUEPRINT_INFO = {
-    "FSD Increased Range": {
-        "what": "Makes your Frame Shift Drive jump farther — about +50% range at "
-                "Grade 5. The best first upgrade for almost any ship.",
-        "engineer": "Applied by Felicity Farseer in Deciat (easy early unlock), among others.",
-    },
-    "Thrusters Dirty Tuning": {
-        "what": "Faster, more agile thrusters at the cost of extra heat — the "
-                "go-to speed upgrade for nearly every build.",
-        "engineer": "Applied by Professor Palin and others (higher grades need later unlocks).",
-    },
+    group["display_name"]: {
+        "what": f"{catalog.KIND_LABELS.get(group['kind'], group['kind'])}: {group['name']}.",
+        "engineer": ("Available from " + ", ".join(
+            engineer for engineer in group["engineers"] if not engineer.startswith("@")
+        ) + ".") if any(not engineer.startswith("@") for engineer in group["engineers"])
+        else "Created through synthesis, a merchant or a technology broker.",
+    }
+    for group in _all_groups() if not group.get("alias_of")
 }
+MATERIALS = {
+    item["name"]: (item["symbol"], item["kind"], item.get("family"), item.get("grade"))
+    for item in _all_materials()
+}
+_BY_SYMBOL = {value[0]: name for name, value in MATERIALS.items()}
 
-# Where each material family actually comes from, in player terms.
-MATERIAL_SOURCES = {
-    "wake scans": "Scan the high-energy wakes ships leave after jumping away (needs a Frame Shift Wake Scanner; nav beacons and stations are good spots).",
-    "firmware": "Downloaded at planetary settlement data points, or scanned from ships.",
-    "chemical": "Dropped as salvage by destroyed ships; also mission rewards.",
-    "mechanical components": "Dropped as salvage by destroyed ships (transport ships especially); also mission rewards.",
-    "alloys": "Salvage from destroyed ships and crash sites; also mission rewards.",
-}
-_RAW_SOURCE = "Prospect rocks, outcrops and crystals with the SRV on planet surfaces."
+
+def _resolve_group(value) -> dict:
+    text = str(value or "")
+    group_id = LEGACY_PIN_IDS.get(text, text)
+    found = catalog.load()["by_group"].get(group_id)
+    if found:
+        return found
+    folded = text.casefold()
+    for group in _all_groups():
+        if folded in {group["display_name"].casefold(), group["name"].casefold()}:
+            return group
+    raise KeyError(f"Unknown engineering catalog item: {value}")
+
+
+def normalize_wishlist(items) -> tuple[list[dict], bool]:
+    """Return stable v2 wishlist records and whether persistence should update.
+
+    Old ``{"name": ..., "grade": ...}`` pins are accepted and mapped to their
+    catalog IDs.  Compatibility name/grade fields remain in each record so an
+    in-flight journal watcher from an upgraded process also continues safely.
+    """
+    normalized = []
+    for raw in items or ():
+        if not isinstance(raw, Mapping):
+            continue
+        value = raw.get("id") or raw.get("name")
+        try:
+            group = _resolve_group(value)
+        except KeyError:
+            continue
+        grades = list(group["grades"])
+        kind = group["kind"]
+        if kind == "ship-engineering":
+            default_current, default_target = 0, max(grades)
+        elif kind == "odyssey-upgrade":
+            default_current, default_target = max(0, min(grades) - 1), max(grades)
+        elif grades:
+            default_current = 0
+            default_target = grades[-1]
+        else:
+            default_current = default_target = 0
+        try:
+            current = int(raw.get("current_grade", default_current))
+            target = int(raw.get("target_grade", raw.get("grade", default_target)))
+            quantity = int(raw.get("quantity", 1))
+        except (TypeError, ValueError):
+            current, target, quantity = default_current, default_target, 1
+        quantity = max(1, min(99, quantity))
+        if grades:
+            target = min(grades, key=lambda grade: abs(grade - target))
+            if kind in {"ship-engineering", "odyssey-upgrade"}:
+                current = max(0, min(current, target - 1))
+            else:
+                current = 0
+        else:
+            current = target = 0
+        normalized.append({
+            "id": group["id"],
+            "name": group["display_name"],
+            "current_grade": current,
+            "target_grade": target,
+            "grade": target,
+            "quantity": quantity,
+        })
+    return normalized, normalized != list(items or ())
 
 
 def material_source(family):
-    return MATERIAL_SOURCES.get(family) or (_RAW_SOURCE if family.startswith("raw") else None)
+    for item in _all_materials():
+        if item.get("family") == family:
+            return _source_text(item)
+    return None
 
-# name -> grade -> {material display name: qty per roll}
-BLUEPRINTS = {
-    "FSD Increased Range": {
-        1: {"Atypical Disrupted Wake Echoes": 1},
-        2: {"Atypical Disrupted Wake Echoes": 1, "Chemical Processors": 1},
-        3: {"Phase Alloys": 1, "Chemical Processors": 1, "Strange Wake Solutions": 1},
-        4: {"Manganese": 1, "Chemical Distillery": 1, "Eccentric Hyperspace Trajectories": 1},
-        5: {"Arsenic": 1, "Chemical Manipulators": 1, "Datamined Wake Exceptions": 1},
-    },
-    "Thrusters Dirty Tuning": {
-        1: {"Specialised Legacy Firmware": 1},
-        2: {"Specialised Legacy Firmware": 1, "Mechanical Equipment": 1},
-        3: {"Specialised Legacy Firmware": 1, "Chromium": 1, "Mechanical Components": 1},
-        4: {"Modified Consumer Firmware": 1, "Selenium": 1, "Mechanical Components": 1},
-        5: {"Cracked Industrial Firmware": 1, "Cadmium": 1, "Pharmaceutical Isolators": 1},
-    },
-}
 
-# Material catalog for everything the recipes (and trade suggestions) touch:
-# display name -> (journal symbol, kind, family, grade). Families are the
-# material-trader columns; conversions are only suggested within a family.
-MATERIALS = {
-    # encoded: wake scans
-    "Atypical Disrupted Wake Echoes": ("disruptedwakeechoes", "encoded", "wake scans", 1),
-    "Anomalous FSD Telemetry": ("fsdtelemetry", "encoded", "wake scans", 2),
-    "Strange Wake Solutions": ("wakesolutions", "encoded", "wake scans", 3),
-    "Eccentric Hyperspace Trajectories": ("hyperspacetrajectories", "encoded", "wake scans", 4),
-    "Datamined Wake Exceptions": ("dataminedwake", "encoded", "wake scans", 5),
-    # encoded: firmware
-    "Specialised Legacy Firmware": ("legacyfirmware", "encoded", "firmware", 1),
-    "Modified Consumer Firmware": ("consumerfirmware", "encoded", "firmware", 2),
-    "Cracked Industrial Firmware": ("industrialfirmware", "encoded", "firmware", 3),
-    "Security Firmware Patch": ("securityfirmware", "encoded", "firmware", 4),
-    "Modified Embedded Firmware": ("embeddedfirmware", "encoded", "firmware", 5),
-    # manufactured: chemical
-    "Chemical Storage Units": ("chemicalstorageunits", "manufactured", "chemical", 1),
-    "Chemical Processors": ("chemicalprocessors", "manufactured", "chemical", 2),
-    "Chemical Distillery": ("chemicaldistillery", "manufactured", "chemical", 3),
-    "Chemical Manipulators": ("chemicalmanipulators", "manufactured", "chemical", 4),
-    "Pharmaceutical Isolators": ("pharmaceuticalisolators", "manufactured", "chemical", 5),
-    # manufactured: mechanical components
-    "Mechanical Scrap": ("mechanicalscrap", "manufactured", "mechanical components", 1),
-    "Mechanical Equipment": ("mechanicalequipment", "manufactured", "mechanical components", 2),
-    "Mechanical Components": ("mechanicalcomponents", "manufactured", "mechanical components", 3),
-    "Configurable Components": ("configurablecomponents", "manufactured", "mechanical components", 4),
-    "Improvised Components": ("improvisedcomponents", "manufactured", "mechanical components", 5),
-    # manufactured: alloys
-    "Salvaged Alloys": ("salvagedalloys", "manufactured", "alloys", 1),
-    "Galvanising Alloys": ("galvanisingalloys", "manufactured", "alloys", 2),
-    "Phase Alloys": ("phasealloys", "manufactured", "alloys", 3),
-    "Proto Light Alloys": ("protolightalloys", "manufactured", "alloys", 4),
-    "Proto Radiolic Alloys": ("protoradiolicalloys", "manufactured", "alloys", 5),
-    # raw (grades 1-4; families are the trader columns)
-    "Carbon": ("carbon", "raw", "raw 2", 1),
-    "Vanadium": ("vanadium", "raw", "raw 2", 2),
-    "Niobium": ("niobium", "raw", "raw 2", 3),
-    "Yttrium": ("yttrium", "raw", "raw 2", 4),
-    "Phosphorus": ("phosphorus", "raw", "raw 3", 1),
-    "Chromium": ("chromium", "raw", "raw 3", 2),
-    "Molybdenum": ("molybdenum", "raw", "raw 3", 3),
-    "Technetium": ("technetium", "raw", "raw 3", 4),
-    "Sulphur": ("sulphur", "raw", "raw 4", 1),
-    "Manganese": ("manganese", "raw", "raw 4", 2),
-    "Cadmium": ("cadmium", "raw", "raw 4", 3),
-    "Ruthenium": ("ruthenium", "raw", "raw 4", 4),
-    "Iron": ("iron", "raw", "raw 5", 1),
-    "Zinc": ("zinc", "raw", "raw 5", 2),
-    "Tin": ("tin", "raw", "raw 5", 3),
-    "Selenium": ("selenium", "raw", "raw 5", 4),
-    "Nickel": ("nickel", "raw", "raw 6", 1),
-    "Germanium": ("germanium", "raw", "raw 6", 2),
-    "Tungsten": ("tungsten", "raw", "raw 6", 3),
-    "Tellurium": ("tellurium", "raw", "raw 6", 4),
-    "Rhenium": ("rhenium", "raw", "raw 7", 1),
-    "Arsenic": ("arsenic", "raw", "raw 7", 2),
-    "Mercury": ("mercury", "raw", "raw 7", 3),
-    "Polonium": ("polonium", "raw", "raw 7", 4),
-}
-
-_BY_SYMBOL = {v[0]: name for name, v in MATERIALS.items()}
+def _source_text(item) -> str:
+    parts = list(item.get("sources") or ())
+    if item.get("settlement_types"):
+        parts.append("Settlements: " + ", ".join(item["settlement_types"]))
+    if item.get("building_types"):
+        parts.append("Buildings: " + ", ".join(item["building_types"]))
+    if item.get("container_types"):
+        parts.append("Containers: " + ", ".join(item["container_types"]))
+    if not parts:
+        if item.get("kind") == "commodity":
+            parts.append("Purchase from a commodity market and keep it in ship cargo.")
+        elif item.get("kind") == "odyssey":
+            parts.append("Search Odyssey settlements or take it as a mission reward.")
+        elif item.get("kind") == "raw":
+            parts.append("Surface prospecting and mining.")
+        elif item.get("kind") == "manufactured":
+            parts.append("Ship salvage, signal sources and mission rewards.")
+        elif item.get("kind") == "encoded":
+            parts.append("Ship, wake or surface-data scanning and mission rewards.")
+    return "; ".join(dict.fromkeys(parts))
 
 
 def material_info(name):
-    sym, kind, family, grade = MATERIALS[name]
-    return {"name": name, "symbol": sym, "kind": kind, "family": family,
-            "grade": grade, "source": material_source(family)}
+    item = catalog.material(name)
+    if not item:
+        raise KeyError(f"Unknown engineering material: {name}")
+    family = item.get("family")
+    can_trade = bool(
+        item.get("grade") and family in _TRADER_FAMILIES.get(item.get("kind"), set())
+    )
+    return {
+        "name": item["name"],
+        "symbol": item["symbol"],
+        "kind": item["kind"],
+        "family": family,
+        "grade": item.get("grade"),
+        "source": _source_text(item),
+        "sources": list(item.get("sources") or ()),
+        "tradeable": can_trade,
+    }
 
 
-def requirements(blueprint, target_grade, rolls=None):
-    """Total estimated materials for a G1→target climb: {material name: qty}."""
-    recipe = BLUEPRINTS.get(blueprint)
-    if not recipe:
-        raise KeyError(f"Unknown blueprint: {blueprint}")
-    rolls = rolls or ROLLS_PER_GRADE
+def _recipe_steps(group, current_grade, target_grade, quantity=1, rolls=None):
+    quantity = max(1, int(quantity or 1))
+    kind = group["kind"]
+    recipes = sorted(group["recipes"], key=lambda recipe: int(recipe.get("grade") or 0))
+    steps = []
+    if kind == "ship-engineering":
+        costs = rolls or ROLLS_PER_GRADE
+        for recipe in recipes:
+            grade = int(recipe.get("grade") or 0)
+            if int(current_grade or 0) < grade <= int(target_grade):
+                steps.append((recipe, int(costs.get(grade, grade)) * quantity))
+    elif kind == "odyssey-upgrade":
+        for recipe in recipes:
+            grade = int(recipe.get("grade") or 0)
+            if int(current_grade or 0) < grade <= int(target_grade):
+                steps.append((recipe, quantity))
+    else:
+        selected = recipes
+        if group["grades"] and target_grade:
+            exact = [recipe for recipe in recipes if int(recipe.get("grade") or 0) == int(target_grade)]
+            if exact:
+                selected = exact
+        steps.extend((recipe, quantity) for recipe in selected)
+    return steps
+
+
+def _requirements_by_symbol(group, current_grade, target_grade, quantity=1, rolls=None):
     need = {}
-    for g in range(1, int(target_grade) + 1):
-        for mat, qty in (recipe.get(g) or {}).items():
-            need[mat] = need.get(mat, 0) + qty * rolls.get(g, 3)
+    for recipe, applications in _recipe_steps(group, current_grade, target_grade, quantity, rolls):
+        for ingredient in recipe["ingredients"]:
+            symbol = ingredient["symbol"]
+            need[symbol] = need.get(symbol, 0) + int(ingredient["quantity"]) * applications
     return need
 
 
+def requirements(blueprint, target_grade, rolls=None, current_grade=0, quantity=1):
+    """Exact material bill from ``current_grade`` to ``target_grade``.
+
+    The legacy call form ``requirements(name, target)`` remains supported.
+    Returned keys are display names for compatibility with v1 consumers.
+    """
+    group = _resolve_group(blueprint)
+    by_symbol = _requirements_by_symbol(group, current_grade, target_grade, quantity, rolls)
+    return {material_info(symbol)["name"]: count for symbol, count in by_symbol.items()}
+
+
+def normalize_inventory(inventory) -> dict[str, int]:
+    """Merge journal materials, Odyssey locker and cargo into catalog symbols."""
+    counts = {}
+
+    def add(identifier, count, fallback=None):
+        try:
+            amount = max(0, int(count or 0))
+        except (TypeError, ValueError):
+            return
+        symbol = catalog.canonical_material_symbol(identifier)
+        if not symbol and fallback:
+            symbol = catalog.canonical_material_symbol(fallback)
+        if symbol and amount:
+            counts[symbol] = counts.get(symbol, 0) + amount
+
+    def visit(value, key_hint=None):
+        if isinstance(value, Mapping):
+            if "count" in value and (value.get("symbol") or value.get("name") or key_hint):
+                add(value.get("symbol") or key_hint or value.get("name"), value.get("count"), value.get("name"))
+                return
+            for key, nested in value.items():
+                if key == "total":
+                    continue
+                if isinstance(nested, (int, float)):
+                    add(key, nested)
+                else:
+                    visit(nested, key)
+        elif isinstance(value, Iterable) and not isinstance(value, (str, bytes)):
+            for nested in value:
+                visit(nested)
+
+    visit(inventory or {})
+    return counts
+
+
+def inventory_from_snapshot(snapshot) -> dict[str, int]:
+    """Build one inventory from AppState's materials, locker and ship cargo."""
+    snap = snapshot or {}
+    return normalize_inventory({
+        "materials": snap.get("materials") or {},
+        "locker": snap.get("ship_locker") or {},
+        "cargo": snap.get("cargo_inventory") or [],
+    })
+
+
 def convertible(surplus, from_grade, to_grade):
-    """Units of the target material obtainable from `surplus` units of a
-    same-family material at a trader. Down: 1 -> 3 per grade; up: 6 -> 1."""
-    if surplus <= 0:
+    """Same-family material-trader output: 6:1 up and 1:3 down."""
+    surplus = int(surplus or 0)
+    if surplus <= 0 or not from_grade or not to_grade:
         return 0
-    if from_grade > to_grade:          # trading down multiplies
+    if from_grade > to_grade:
         return surplus * 3 ** (from_grade - to_grade)
-    if from_grade < to_grade:          # trading up divides
+    if from_grade < to_grade:
         return surplus // 6 ** (to_grade - from_grade)
     return surplus
 
 
-def plan(blueprint, target_grade, inventory, rolls=None):
-    """Deficit plan for one pinned blueprint.
+def _cost_for(wanted, from_grade, to_grade):
+    if from_grade > to_grade:
+        return math.ceil(wanted / (3 ** (from_grade - to_grade)))
+    return wanted * 6 ** (to_grade - from_grade)
 
-    `inventory`: {journal symbol: count} across all material kinds.
-    Returns {"blueprint", "grade", "materials": [row...], "craftable"} where a
-    row carries need/have/deficit and, when short, the best same-family trader
-    conversion that covers (part of) the gap."""
-    need = requirements(blueprint, target_grade, rolls)
-    reserved = {MATERIALS[m][0]: q for m, q in need.items()}  # needed elsewhere isn't surplus
+
+def _rows(need, inventory):
     rows = []
-    for mat, qty in sorted(need.items(), key=lambda kv: -MATERIALS[kv[0]][3]):
-        info = material_info(mat)
-        have = inventory.get(info["symbol"], 0)
-        deficit = max(0, qty - have)
-        row = {**info, "need": qty, "have": have, "deficit": deficit}
-        if deficit:
-            row["trade"] = _best_trade(info, deficit, inventory, reserved)
-        rows.append(row)
+    for symbol, required in need.items():
+        info = material_info(symbol)
+        have = int(inventory.get(symbol, 0))
+        rows.append({**info, "need": required, "have": have,
+                     "deficit": max(0, required - have), "trade": None})
+    return sorted(rows, key=lambda row: (row["deficit"] == 0, -(row.get("grade") or 0), row["name"]))
+
+
+def _attach_trades(rows, inventory, reserved):
+    """Allocate conservative, valid same-column trades without double-spend."""
+    surplus = {symbol: max(0, count - reserved.get(symbol, 0))
+               for symbol, count in inventory.items()}
+    materials = _all_materials()
+    for row in rows:
+        if not row["deficit"] or not row["tradeable"]:
+            continue
+        best = None
+        for source in materials:
+            source_symbol = source["symbol"]
+            if source_symbol == row["symbol"] or source.get("kind") != row["kind"]:
+                continue
+            if source.get("family") != row["family"] or not source.get("grade"):
+                continue
+            available = surplus.get(source_symbol, 0)
+            gain = convertible(available, source["grade"], row["grade"])
+            if gain <= 0:
+                continue
+            covered = min(gain, row["deficit"])
+            spend = _cost_for(covered, source["grade"], row["grade"])
+            candidate = {
+                "from": source["name"], "from_symbol": source_symbol,
+                "spend": spend, "covers": covered,
+                "direction": "down" if source["grade"] > row["grade"] else "up",
+            }
+            score = (covered == row["deficit"], covered, -spend)
+            if best is None or score > best[0]:
+                best = (score, candidate)
+        if best:
+            row["trade"] = best[1]
+            surplus[best[1]["from_symbol"]] -= best[1]["spend"]
+
+
+def _item_plan(entry, inventory, rolls=None, attach_trades=True):
+    group = _resolve_group(entry["id"])
+    need = _requirements_by_symbol(
+        group, entry["current_grade"], entry["target_grade"], entry["quantity"], rolls
+    )
+    rows = _rows(need, inventory)
+    if attach_trades:
+        _attach_trades(rows, inventory, need)
+    total = sum(row["need"] for row in rows)
+    covered = sum(min(row["have"], row["need"]) for row in rows)
     return {
-        "blueprint": blueprint,
-        "grade": int(target_grade),
+        **entry,
+        "blueprint": group["display_name"],
+        "module": group["module"],
+        "upgrade": group["name"],
+        "kind": group["kind"],
+        "kind_label": catalog.KIND_LABELS.get(group["kind"], group["kind"]),
+        "engineers": [e for e in group["engineers"] if not e.startswith("@")],
+        "engineer_access": catalog.engineer_access(group),
         "materials": rows,
-        "craftable": all(r["deficit"] == 0 for r in rows),
+        "applications": sum(applications for _recipe, applications in _recipe_steps(
+            group, entry["current_grade"], entry["target_grade"], entry["quantity"], rolls
+        )),
+        "progress": round(covered * 100 / total) if total else 100,
+        "craftable": all(row["deficit"] == 0 for row in rows),
     }
 
 
-def _best_trade(target, deficit, inventory, reserved):
-    """Best single same-family conversion covering the most of `deficit`."""
-    best = None
-    for name, (sym, kind, family, grade) in MATERIALS.items():
-        if family != target["family"] or name == target["name"]:
-            continue
-        surplus = inventory.get(sym, 0) - reserved.get(sym, 0)
-        gain = convertible(surplus, grade, target["grade"])
-        if gain <= 0:
-            continue
-        used = surplus if gain <= deficit else _cost_for(min(gain, deficit), grade, target["grade"])
-        covered = min(gain, deficit)
-        if best is None or covered > best["covers"]:
-            best = {"from": name, "spend": used, "covers": covered,
-                    "direction": "down" if grade > target["grade"] else "up"}
-    return best
+def plan(blueprint, target_grade, inventory, rolls=None, current_grade=0, quantity=1):
+    """Compatibility single-item material plan."""
+    group = _resolve_group(blueprint)
+    normalized, _changed = normalize_wishlist([{
+        "id": group["id"], "current_grade": current_grade,
+        "target_grade": target_grade, "quantity": quantity,
+    }])
+    return _item_plan(normalized[0], normalize_inventory(inventory), rolls)
 
 
-def _cost_for(wanted, from_grade, to_grade):
-    """Units of the source material a trader takes to produce `wanted` units."""
-    if from_grade > to_grade:
-        per = 3 ** (from_grade - to_grade)
-        return -(-wanted // per)  # ceil
-    return wanted * 6 ** (to_grade - from_grade)
+def plan_wishlist(items, inventory) -> dict:
+    """Plan many items against one shared inventory without double-counting."""
+    wishlist, changed = normalize_wishlist(items)
+    held = normalize_inventory(inventory)
+    total_need = {}
+    for entry in wishlist:
+        group = _resolve_group(entry["id"])
+        for symbol, count in _requirements_by_symbol(
+            group, entry["current_grade"], entry["target_grade"], entry["quantity"]
+        ).items():
+            total_need[symbol] = total_need.get(symbol, 0) + count
+
+    material_rows = _rows(total_need, held)
+    _attach_trades(material_rows, held, total_need)
+
+    # Allocate direct holdings in list order for honest per-item readiness.  The
+    # aggregate rows remain the authoritative shopping/trader list.
+    remaining = dict(held)
+    plans = []
+    for entry in wishlist:
+        item = _item_plan(entry, remaining, attach_trades=False)
+        for row in item["materials"]:
+            remaining[row["symbol"]] = max(0, remaining.get(row["symbol"], 0) - row["need"])
+        plans.append(item)
+
+    total = sum(row["need"] for row in material_rows)
+    covered = sum(min(row["have"], row["need"]) for row in material_rows)
+    trade_covered = sum((row.get("trade") or {}).get("covers", 0) for row in material_rows)
+    return {
+        "entries": wishlist,
+        "items": plans,
+        "materials": material_rows,
+        "progress": round(covered * 100 / total) if total else 100,
+        "craftable": all(row["deficit"] == 0 for row in material_rows),
+        "obtainable_with_suggested_trades": all(
+            row["deficit"] == 0 or (row.get("trade") or {}).get("covers", 0) >= row["deficit"]
+            for row in material_rows
+        ),
+        "direct_units": covered,
+        "required_units": total,
+        "trade_covered_units": trade_covered,
+        "migrated": changed,
+    }

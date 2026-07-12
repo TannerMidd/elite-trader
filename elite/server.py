@@ -2,20 +2,52 @@
 
 import ipaddress
 import logging
+import os
+import socket
 import threading
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from urllib.parse import urlsplit
 
-from flask import Flask, jsonify, request, send_file, send_from_directory
+from flask import Flask, g, jsonify, request, send_file, send_from_directory
 from werkzeug.serving import make_server
 
 from . import alerts, biovalues, launcher, links, marketdb, routes, settings, shipexport, spansh, tts
 from .eddn import LISTENER
 from .errors import UserFacingError
+from .security import (ALL_SCOPES, COOKIE_NAME, RateLimiter, SecurityManager,
+                       SecurityStoreError, is_loopback, normalize_scopes)
 from .seed import SEEDER
 
 UI_DIR = Path(__file__).resolve().parent.parent / "ui"
+DEFAULT_BODY_LIMIT = 64 * 1024
+OPERATIONS_IMPORT_LIMIT = 20 * 1024 * 1024
+_LIVE_GALAXY_ENDPOINTS = {
+    "/api/trade-route", "/api/commodity-search", "/api/mining",
+    "/api/mining/hotspots", "/api/exobio-route", "/api/system-stations",
+    "/api/station-market", "/api/material-traders", "/api/sell-data",
+    "/api/interstellar-factors", "/api/price-history", "/api/riches", "/api/neutron",
+    "/api/station-search", "/api/cargo-sell", "/api/cargo-recovery",
+    "/api/colonisation-sources", "/api/watch",
+}
+
+_PUBLIC_API = {"/api/security/status", "/api/security/pair"}
+_READ_ONLY_POSTS = {
+    "/api/trade-route", "/api/riches", "/api/neutron",
+    "/api/objectives/plan", "/api/cargo-recovery",
+}
+_ADMIN_ENDPOINTS = {
+    "/api/marketdb/seed", "/api/update/apply", "/api/settings",
+    "/api/tts/download", "/api/tts/voice", "/api/security/pairing-code",
+    "/api/security/devices", "/api/journal-dir/validate",
+    "/api/diagnostics/health", "/api/diagnostics/bundle",
+    "/api/extensions", "/api/extensions/reload",
+}
+_CONTROL_ENDPOINTS = {
+    "/api/engineering/pin", "/api/launch-game", "/api/speak",
+    "/api/watch", "/api/watch/remove", "/api/alerts/clear",
+    "/api/plot", "/api/plot/cancel",
+}
 
 
 def _host_allowed(host):
@@ -49,6 +81,137 @@ def _own_hostname():
     return socket.gethostname().lower()
 
 
+def _lan_addresses():
+    """Private addresses suitable for a tablet pairing link (best effort)."""
+    values = set()
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as probe:
+            # UDP connect selects an interface without sending application data.
+            probe.connect(("8.8.8.8", 80))
+            values.add(probe.getsockname()[0])
+    except OSError:
+        pass
+    try:
+        for info in socket.getaddrinfo(socket.gethostname(), None):
+            values.add(info[4][0].split("%", 1)[0])
+    except OSError:
+        pass
+    out = []
+    for value in values:
+        try:
+            address = ipaddress.ip_address(value)
+        except ValueError:
+            continue
+        if (address.is_private or address.is_link_local) and not address.is_loopback:
+            out.append(str(address))
+    return sorted(set(out), key=lambda value: (":" in value, value))
+
+
+def _pairing_urls(path):
+    parsed_host = urlsplit(f"//{request.host}")
+    port = parsed_host.port or (443 if request.scheme == "https" else 80)
+    urls = []
+    for address in _lan_addresses():
+        host = f"[{address}]" if ":" in address else address
+        default_port = (request.scheme == "https" and port == 443) or (request.scheme == "http" and port == 80)
+        urls.append(f"{request.scheme}://{host}{'' if default_port else ':' + str(port)}{path}")
+    own = _own_hostname()
+    if own:
+        urls.append(f"{request.scheme}://{own}.local{'' if port == 80 else ':' + str(port)}{path}")
+    return list(dict.fromkeys(urls))
+
+
+def _request_token():
+    """Extract a bearer credential, falling back to the HttpOnly browser cookie."""
+    authorization = request.headers.get("Authorization", "")
+    if authorization:
+        scheme, _, value = authorization.partition(" ")
+        if scheme.lower() == "bearer" and value:
+            return value.strip(), True
+        return "", True  # malformed Authorization must not fall back to a cookie
+    return request.cookies.get(COOKIE_NAME, ""), False
+
+
+def _required_scope():
+    """Default-deny policy for API routes, including routes added in future."""
+    path = request.path
+    if not path.startswith("/api/") or path in _PUBLIC_API:
+        return None
+    if path == "/api/security/session":
+        return "read"  # every device may revoke its own credential
+    if path.startswith("/api/security/devices/") or path in _ADMIN_ENDPOINTS:
+        return "admin"
+    if path in _CONTROL_ENDPOINTS:
+        return "control"
+    if request.method not in ("GET", "HEAD", "OPTIONS") and path not in _READ_ONLY_POSTS:
+        return "control"
+    return "read"
+
+
+def _is_side_effect():
+    # Keep legacy GET attempts at /api/speak under the strict browser checks
+    # even though the route is POST-only now.
+    return request.method not in ("GET", "HEAD", "OPTIONS") or request.path == "/api/speak"
+
+
+def _origin_matches_host(origin):
+    try:
+        parsed = urlsplit(origin)
+    except ValueError:
+        return False
+    return (parsed.scheme in ("http", "https") and parsed.netloc
+            and parsed.netloc.lower() == request.host.lower()
+            and not parsed.username and not parsed.password)
+
+
+def _journal_path(raw):
+    """Return a safe normalized journal path or (None, player-facing reason).
+
+    Elite journals normally live below the user profile (including Steam
+    Proton) or the Windows Saved Games known folder.  An explicit
+    ED_JOURNAL_DIR is trusted as an additional root.  Resolving existing
+    symlinks/junctions before containment prevents a seemingly safe profile
+    path from escaping to an arbitrary filesystem location.
+    """
+    from . import journal
+
+    text = str(raw or "").strip()
+    if not text:
+        return "", None
+    if "\x00" in text or len(text) > 4096:
+        return None, "That journal folder path is not valid."
+    candidate = Path(text).expanduser()
+    if not candidate.is_absolute():
+        return None, "Choose an absolute journal folder path."
+    try:
+        candidate = candidate.resolve(strict=False)
+    except (OSError, RuntimeError):
+        return None, "That journal folder path could not be resolved safely."
+
+    roots = [(Path.home(), False)]
+    known = journal._windows_saved_games()
+    if known:
+        roots.append((known, True))
+    override = os.environ.get("ED_JOURNAL_DIR")
+    if override:
+        roots.append((Path(override).expanduser(), True))
+    allowed = False
+    for root, allow_exact in roots:
+        try:
+            resolved_root = root.resolve(strict=False)
+            if ((allow_exact and candidate == resolved_root)
+                    or (candidate != resolved_root and candidate.is_relative_to(resolved_root))):
+                allowed = True
+                break
+        except (OSError, RuntimeError, ValueError):
+            continue
+    if not allowed:
+        return None, "Journal folders must be inside your user profile or Saved Games folder."
+    if candidate.exists() and not candidate.is_dir():
+        return None, "The journal path points to a file, not a folder."
+    return str(candidate), None
+
+
 def error_response(exc, status, **extra):
     """JSON error response for an expected failure. Only messages explicitly
     written for the player (UserFacingError.user_message) are echoed to the
@@ -61,26 +224,281 @@ def error_response(exc, status, **extra):
     return jsonify({"error": message, **extra}), status
 
 
-def create_app(state):
+def create_app(state, security_manager=None):
     app = Flask(__name__, static_folder=str(UI_DIR), static_url_path="")
+    # Operations boards can be exchanged as a bounded local JSON document.
+    # Every other API retains a much tighter per-request limit below.
+    app.config["MAX_CONTENT_LENGTH"] = OPERATIONS_IMPORT_LIMIT
+    security = security_manager or SecurityManager(marketdb.DATA_DIR)
+    limiter = RateLimiter()
+    app.extensions["frameshift_security"] = security
+
+    def commander_id():
+        """Use the same profile identity as the in-memory cockpit snapshot."""
+        return getattr(state, "commander_id", None) or marketdb.active_commander_id()
 
     @app.before_request
     def _validate_request_source():
+        request.max_content_length = (
+            OPERATIONS_IMPORT_LIMIT
+            if request.path == "/api/operations/import"
+            else DEFAULT_BODY_LIMIT
+        )
+        if request.content_length is not None and request.content_length > request.max_content_length:
+            return jsonify({"error": "Request body is too large."}), 413
         # DNS rebinding: an attacker page whose domain resolves to us arrives
         # with a foreign Host header.
         if not _host_allowed(request.host):
             return jsonify({"error": "Request blocked: unrecognized Host."}), 403
-        # Cross-site request forgery: browsers attach an Origin header to every
-        # cross-origin POST (even "simple" ones sent without preflight), so a
-        # same-origin match is required whenever one is present. Non-browser
-        # clients (curl, scripts) send no Origin and stay unaffected.
-        if request.method != "GET":
-            origin = request.headers.get("Origin")
-            if origin:
-                netloc = (urlsplit(origin).netloc or "").lower()
-                if netloc != request.host.lower():
-                    return jsonify({"error": "Request blocked: cross-origin."}), 403
+        local = is_loopback(request.remote_addr)
+        g.frameshift_local = local
+        g.frameshift_device = None
+        g.frameshift_bearer = False
+
+        # Reject cross-origin browser requests even before authentication.  In
+        # particular, Sec-Fetch-Site covers tags/forms that omit Origin.
+        origin = request.headers.get("Origin")
+        fetch_site = request.headers.get("Sec-Fetch-Site", "").lower()
+        if origin and not _origin_matches_host(origin):
+            return jsonify({"error": "Request blocked: cross-origin."}), 403
+        if fetch_site == "cross-site" and _is_side_effect():
+            return jsonify({"error": "Request blocked: cross-site."}), 403
+
+        token, bearer = _request_token()
+        if token:
+            g.frameshift_device = security.authenticate(token, request.remote_addr)
+            g.frameshift_bearer = bearer
+
+        # Static assets and the pairing/status bootstrap are intentionally
+        # reachable before enrollment. The remote page needs them in order to
+        # exchange its one-time capability link automatically.
+        scope = _required_scope()
+        if scope is None:
+            if request.path == "/api/security/pair":
+                if (not local and not origin
+                        and fetch_site not in ("same-origin", "same-site")):
+                    return jsonify({"error": "Request blocked: missing same-origin proof."}), 403
+                ok, retry = limiter.check((request.remote_addr, "pair"), 8, 300)
+                if not ok:
+                    response = jsonify({"error": "Too many pairing attempts. Try again shortly."})
+                    response.status_code = 429
+                    response.headers["Retry-After"] = str(retry)
+                    return response
+            return None
+
+        if local:
+            g.frameshift_scopes = list(ALL_SCOPES)
+        else:
+            device = g.frameshift_device
+            if not device:
+                ok, retry = limiter.check((request.remote_addr, "unauthorized"), 120, 60)
+                if not ok:
+                    response = jsonify({"error": "Too many unauthorized requests."})
+                    response.status_code = 429
+                    response.headers["Retry-After"] = str(retry)
+                    return response
+                response = jsonify({
+                    "error": "This device is not paired with Frameshift.",
+                    "pairing_required": True,
+                })
+                response.status_code = 401
+                response.headers["WWW-Authenticate"] = 'Bearer realm="Frameshift"'
+                return response
+            g.frameshift_scopes = device["scopes"]
+            if scope not in device["scopes"]:
+                return jsonify({
+                    "error": f"This device does not have {scope} permission.",
+                    "required_scope": scope,
+                }), 403
+
+        # Cookie-authenticated side effects from another machine must include
+        # the same-origin browser signal. Bearer clients and localhost scripts
+        # do not rely on cookies and remain compatible without Origin.
+        if (_is_side_effect() and not local and not bearer and not origin
+                and fetch_site not in ("same-origin", "same-site")):
+            return jsonify({"error": "Request blocked: missing same-origin proof."}), 403
+
+        # Layered, dependency-free protection against accidental loops and LAN
+        # abuse. Pairing has its own much tighter limiter above.
+        key = device["id"] if not local else request.remote_addr
+        ok, retry = limiter.check((key, "all-api"), 900, 60)
+        if not ok:
+            response = jsonify({"error": "Too many requests. Try again shortly."})
+            response.status_code = 429
+            response.headers["Retry-After"] = str(retry)
+            return response
+        limits = {
+            "/api/update/apply": (3, 300),
+            "/api/marketdb/seed": (3, 300),
+            "/api/launch-game": (10, 60),
+            "/api/plot": (30, 60),
+            "/api/speak": (30, 60),
+            "/api/settings": (30, 60),
+            "/api/trade-route": (30, 60),
+            "/api/commodity-search": (60, 60),
+            "/api/mining": (60, 60),
+            "/api/mining/hotspots": (30, 60),
+            "/api/exobio-route": (30, 60),
+            "/api/riches": (30, 60),
+            "/api/neutron": (30, 60),
+            "/api/colonisation-sources": (30, 60),
+        }
+        endpoint_limit = limits.get(request.path)
+        if _is_side_effect() or endpoint_limit:
+            limit, window = endpoint_limit or (120, 60)
+            ok, retry = limiter.check((key, request.path), limit, window)
+            if not ok:
+                response = jsonify({"error": "Too many requests. Try again shortly."})
+                response.status_code = 429
+                response.headers["Retry-After"] = str(retry)
+                return response
+        if request.path in _LIVE_GALAXY_ENDPOINTS and state.galaxy_mode == "legacy":
+            return jsonify({
+                "error": (
+                    "This tool uses anonymous Live-galaxy community data and is disabled while "
+                    "Elite Dangerous Legacy is running. Commander history remains safely separated."
+                ),
+                "galaxy_mode": "legacy",
+            }), 409
         return None
+
+    @app.after_request
+    def _security_headers(response):
+        response.headers.setdefault("X-Content-Type-Options", "nosniff")
+        response.headers.setdefault("X-Frame-Options", "DENY")
+        response.headers.setdefault("Referrer-Policy", "no-referrer")
+        response.headers.setdefault("Permissions-Policy",
+                                    "camera=(), microphone=(), geolocation=()")
+        response.headers.setdefault("Cross-Origin-Opener-Policy", "same-origin")
+        response.headers.setdefault("Cross-Origin-Resource-Policy", "same-origin")
+        response.headers.setdefault("X-Permitted-Cross-Domain-Policies", "none")
+        response.headers.setdefault(
+            "Content-Security-Policy",
+            "default-src 'self'; base-uri 'none'; object-src 'none'; "
+            "frame-ancestors 'none'; form-action 'self'; script-src 'self'; "
+            # The dashboard uses dynamic inline width/color properties for
+            # gauges and charts. Scripts remain strictly external/self-only.
+            "style-src 'self' 'unsafe-inline'; img-src 'self' data:; media-src 'self' blob:; "
+            "connect-src 'self'",
+        )
+        if request.path.startswith("/api/"):
+            response.headers["Cache-Control"] = "no-store"
+        return response
+
+    @app.get("/api/security/status")
+    def api_security_status():
+        local = bool(g.frameshift_local)
+        device = g.frameshift_device
+        payload = {
+            "local": local,
+            "authenticated": local or bool(device),
+            "pairing_required": not local and not bool(device),
+            "device": device,
+            "scopes": list(ALL_SCOPES) if local else (device or {}).get("scopes", []),
+        }
+        # A trusted desktop/admin view gets a ready-to-share one-time link.
+        if local or (device and "admin" in device["scopes"]):
+            # Status polling must never invalidate a deliberately restricted
+            # link created through /pairing-code by replacing it with an admin
+            # grant.  Create the default only when no live grant exists.
+            grant = security.current_pairing() or security.issue_pairing()
+            payload["pairing"] = {
+                "path": "/?pair=" + grant["code"],
+                "expires_at": grant["expires_at"],
+                "scopes": grant["scopes"],
+            }
+            payload["pairing"]["urls"] = _pairing_urls(payload["pairing"]["path"])
+            if payload["pairing"]["urls"]:
+                from .qrcode import svg as pairing_qr_svg
+
+                payload["pairing"]["qr_svg"] = pairing_qr_svg(
+                    payload["pairing"]["urls"][0])
+            payload["paired_devices"] = len(security.list_devices())
+        return jsonify(payload)
+
+    @app.post("/api/security/pair")
+    def api_security_pair():
+        body = request.get_json(silent=True) or {}
+        try:
+            result = security.pair(body.get("code"), body.get("device_name"),
+                                   request.remote_addr)
+        except SecurityStoreError as exc:
+            return error_response(exc, 500)
+        if not result:
+            return jsonify({
+                "error": "That pairing link is invalid, expired, or has already been used.",
+                "pairing_required": True,
+            }), 403
+        token, device = result
+        payload = {"ok": True, "device": device, "scopes": device["scopes"]}
+        if body.get("return_token") is True:
+            payload["token"] = token
+        response = jsonify(payload)
+        response.set_cookie(
+            COOKIE_NAME, token, max_age=365 * 86400, httponly=True,
+            samesite="Strict", secure=False, path="/",
+        )
+        return response
+
+    @app.post("/api/security/pairing-code")
+    def api_security_pairing_code():
+        body = request.get_json(silent=True) or {}
+        try:
+            scopes = normalize_scopes(body.get("scopes") or ALL_SCOPES)
+            ttl = int(body.get("ttl_seconds") or 900)
+            grant = security.rotate_pairing(scopes, ttl)
+        except (TypeError, ValueError) as exc:
+            return jsonify({"error": str(exc)}), 400
+        return jsonify({
+            "path": "/?pair=" + grant["code"],
+            "expires_at": grant["expires_at"],
+            "scopes": grant["scopes"],
+        })
+
+    @app.get("/api/security/devices")
+    def api_security_devices():
+        return jsonify({"devices": security.list_devices()})
+
+    @app.patch("/api/security/devices/<device_id>")
+    def api_security_device_update(device_id):
+        body = request.get_json(silent=True) or {}
+        try:
+            device = security.update_device(
+                device_id,
+                name=body.get("name") if "name" in body else None,
+                scopes=body.get("scopes") if "scopes" in body else None,
+            )
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
+        except SecurityStoreError as exc:
+            return error_response(exc, 500)
+        if not device:
+            return jsonify({"error": "Paired device not found."}), 404
+        return jsonify({"ok": True, "device": device})
+
+    @app.delete("/api/security/devices/<device_id>")
+    @app.post("/api/security/devices/<device_id>/revoke")
+    def api_security_device_revoke(device_id):
+        try:
+            revoked = security.revoke(device_id)
+        except SecurityStoreError as exc:
+            return error_response(exc, 500)
+        if not revoked:
+            return jsonify({"error": "Paired device not found."}), 404
+        return jsonify({"ok": True})
+
+    @app.delete("/api/security/session")
+    def api_security_session_delete():
+        if g.frameshift_local:
+            return jsonify({"ok": True})
+        device = g.frameshift_device
+        try:
+            security.revoke(device["id"])
+        except SecurityStoreError as exc:
+            return error_response(exc, 500)
+        response = jsonify({"ok": True})
+        response.delete_cookie(COOKIE_NAME, path="/")
+        return response
 
     @app.get("/")
     def index():
@@ -300,27 +718,27 @@ def create_app(state):
 
     @app.get("/api/engineering")
     def api_engineering():
-        """Blueprint catalog + deficit plans for the pinned ones."""
-        from elite import blueprints
+        """Complete local catalog and a shared material plan for the wishlist."""
+        from elite import blueprints, engineering_catalog
 
-        snap = state.snapshot()
-        inventory = {}
-        for cat in ("raw", "manufactured", "encoded"):
-            for m in (snap.get("materials") or {}).get(cat) or []:
-                inventory[m.get("symbol")] = m.get("count", 0)
-        pinned = settings.get("pinned_blueprints", [])
-        plans = []
-        for p in pinned:
-            try:
-                plans.append(blueprints.plan(p["name"], p.get("grade", 5), inventory))
-            except KeyError:
-                continue  # blueprint removed from the catalog; skip quietly
+        inventory = blueprints.inventory_from_snapshot(state.snapshot())
+        saved = settings.get("pinned_blueprints", [])
+        pinned, migrated = blueprints.normalize_wishlist(saved)
+        if migrated:
+            # Includes transparent migration of the two v1 starter-blueprint
+            # names to stable catalog IDs.  No setup or re-pinning required.
+            settings.update({"pinned_blueprints": pinned})
+        wishlist = blueprints.plan_wishlist(pinned, inventory)
         return jsonify({
-            "blueprints": {name: sorted(g) for name, g in
-                           ((n, bp.keys()) for n, bp in blueprints.BLUEPRINTS.items())},
+            "catalog": engineering_catalog.catalog_payload(),
+            "wishlist": wishlist,
             "info": blueprints.BLUEPRINT_INFO,
             "rolls_per_grade": blueprints.ROLLS_PER_GRADE,
-            "pinned": plans,
+            # Compatibility keys keep older browser assets safe during an
+            # in-place executable update.
+            "blueprints": {name: sorted(grade for grade in recipes if grade)
+                           for name, recipes in blueprints.BLUEPRINTS.items()},
+            "pinned": wishlist["items"],
         })
 
     @app.post("/api/engineering/pin")
@@ -328,16 +746,357 @@ def create_app(state):
         from elite import blueprints
 
         body = request.get_json(silent=True) or {}
-        name, grade = body.get("name"), int(body.get("grade") or 5)
+        candidate, _changed = blueprints.normalize_wishlist([body])
+        saved, _migrated = blueprints.normalize_wishlist(settings.get("pinned_blueprints", []))
         if body.get("action") == "unpin":
-            pinned = [p for p in settings.get("pinned_blueprints", []) if p["name"] != name]
+            remove_id = candidate[0]["id"] if candidate else (body.get("id") or body.get("name"))
+            pinned = [p for p in saved if p["id"] != remove_id]
         else:
-            if name not in blueprints.BLUEPRINTS:
-                return jsonify({"error": f"Unknown blueprint: {name}"}), 400
-            pinned = [p for p in settings.get("pinned_blueprints", []) if p["name"] != name]
-            pinned.append({"name": name, "grade": grade})
+            if not candidate:
+                return jsonify({"error": "Unknown engineering catalog item."}), 400
+            item = candidate[0]
+            pinned = [p for p in saved if p["id"] != item["id"]]
+            pinned.append(item)
         settings.update({"pinned_blueprints": pinned})
         return jsonify({"ok": True, "pinned": pinned})
+
+    @app.get("/api/objectives")
+    def api_objectives():
+        from .objectives import ObjectiveStore
+
+        raw = request.args.get("statuses")
+        statuses = tuple(part.strip() for part in raw.split(",") if part.strip()) if raw else (
+            None if request.args.get("all") == "1" else ("open", "active", "blocked")
+        )
+        return jsonify({"objectives": ObjectiveStore(commander_id()).list(statuses=statuses)})
+
+    @app.post("/api/objectives")
+    def api_objectives_create():
+        from .objectives import ObjectiveStore
+
+        body = request.get_json(silent=True) or {}
+        allowed = {
+            key: body.get(key) for key in (
+                "category", "priority", "system", "station", "body", "estimated_seconds",
+                "deadline", "reward", "risk", "payload", "dependencies",
+            ) if key in body
+        }
+        try:
+            objective = ObjectiveStore(commander_id()).create(
+                body.get("title"), source="user", source_ref=body.get("source_ref"), **allowed)
+        except (TypeError, ValueError) as exc:
+            return jsonify({"error": str(exc)}), 400
+        return jsonify({"objective": objective}), 201
+
+    @app.patch("/api/objectives/<objective_id>")
+    def api_objectives_update(objective_id):
+        from .objectives import ObjectiveStore
+
+        try:
+            objective = ObjectiveStore(commander_id()).update(
+                objective_id, **(request.get_json(silent=True) or {}))
+        except (TypeError, ValueError) as exc:
+            return jsonify({"error": str(exc)}), 400
+        if not objective:
+            return jsonify({"error": "Objective not found."}), 404
+        return jsonify({"objective": objective})
+
+    @app.delete("/api/objectives/<objective_id>")
+    def api_objectives_delete(objective_id):
+        from .objectives import ObjectiveStore
+
+        objective = ObjectiveStore(commander_id()).update(objective_id, status="dismissed")
+        if not objective:
+            return jsonify({"error": "Objective not found."}), 404
+        return jsonify({"objective": objective})
+
+    @app.post("/api/objectives/plan")
+    def api_objectives_plan():
+        from . import blueprints
+        from .objectives import ObjectiveEngine
+
+        body = request.get_json(silent=True) or {}
+        try:
+            minutes = max(5, min(24 * 60, int(
+                body.get("minutes") or body.get("time_budget_minutes") or 60)))
+            max_tasks = max(1, min(30, int(body.get("max_tasks") or 12)))
+        except (TypeError, ValueError):
+            return jsonify({"error": "Time budget and task count must be numbers."}), 400
+        snapshot = state.snapshot()
+        inventory = blueprints.inventory_from_snapshot(snapshot)
+        pins, _ = blueprints.normalize_wishlist(settings.get("pinned_blueprints", []))
+        snapshot["engineering_plans"] = blueprints.plan_wishlist(pins, inventory).get("items", [])
+        context = body.get("context") or {}
+        if not isinstance(context, dict):
+            return jsonify({"error": "Planning context must be an object."}), 400
+        # These are optional results from Frameshift's own local/public search
+        # tools. Arbitrary state replacement is intentionally not accepted.
+        for key in (
+            "cargo_rescue", "cargo_options", "colonisation_sources", "powerplay_tasks",
+            "exploration_cash_in",
+        ):
+            if key in context:
+                snapshot[key] = context[key]
+        return jsonify(ObjectiveEngine(commander_id()).plan(
+            minutes, snapshot, max_tasks=max_tasks))
+
+    @app.get("/api/timings")
+    def api_timings():
+        from .timings import TimingModel
+
+        return jsonify(TimingModel(commander_id()).snapshot())
+
+    @app.get("/api/history/summary")
+    def api_history_summary():
+        from .eventledger import EventLedger
+
+        return jsonify(EventLedger(commander_id()).lifetime_summary())
+
+    @app.get("/api/history/events")
+    def api_history_events():
+        from .eventledger import EventLedger
+
+        def parts(name):
+            value = request.args.get(name) or ""
+            return [part.strip() for part in value.split(",") if part.strip()] or None
+
+        try:
+            limit = max(1, min(500, int(request.args.get("limit") or 100)))
+            since = int(request.args["since"]) if request.args.get("since") else None
+            until = int(request.args["until"]) if request.args.get("until") else None
+        except ValueError:
+            return jsonify({"error": "History bounds must be numeric."}), 400
+        events = EventLedger(commander_id()).query(
+            categories=parts("categories"), event_types=parts("types"), since=since,
+            until=until, system=request.args.get("system") or None, limit=limit,
+            ascending=request.args.get("ascending") == "1",
+        )
+        return jsonify({"events": events})
+
+    @app.get("/api/operations")
+    def api_operations():
+        from .operations import OperationsBoard
+
+        ops = OperationsBoard(commander_id())
+        board_id = request.args.get("board_id")
+        if not board_id:
+            return jsonify({"boards": ops.list_boards(), "conflicts": ops.conflicts(limit=50)})
+        try:
+            snapshot = ops.snapshot(board_id)
+        except KeyError:
+            return jsonify({"error": "Operations board not found."}), 404
+        snapshot["conflicts"] = ops.conflicts(board_id, limit=100)
+        return jsonify(snapshot)
+
+    @app.post("/api/operations")
+    def api_operations_create():
+        from .operations import OperationsBoard
+
+        body = request.get_json(silent=True) or {}
+        action = body.get("action") or "create_board"
+        ops = OperationsBoard(commander_id())
+        try:
+            if action == "create_board":
+                result = ops.create_board(body.get("title"), body.get("description") or "")
+            elif action == "add_objective":
+                result = ops.add_objective(
+                    body.get("board_id"), body.get("title"), description=body.get("description") or "",
+                    priority=body.get("priority", 50), system=body.get("system"),
+                    station=body.get("station"), deadline=body.get("deadline"), payload=body.get("payload"),
+                )
+            elif action == "assign":
+                result = ops.assign(
+                    body.get("board_id"), body.get("assignee"), objective_id=body.get("objective_id"),
+                    role=body.get("role") or "", payload=body.get("payload"),
+                )
+            elif action == "reserve":
+                result = ops.reserve(
+                    body.get("board_id"), body.get("resource_type"), body.get("resource_key"),
+                    body.get("amount"), objective_id=body.get("objective_id"), unit=body.get("unit") or "",
+                    assignee=body.get("assignee"), payload=body.get("payload"),
+                )
+            elif action == "contribute":
+                result = ops.contribute(
+                    body.get("board_id"), body.get("contributor"), body.get("kind"), body.get("amount"),
+                    objective_id=body.get("objective_id"), unit=body.get("unit") or "",
+                    note=body.get("note") or "", evidence=body.get("evidence"), payload=body.get("payload"),
+                )
+            else:
+                return jsonify({"error": "Unsupported operations action."}), 400
+        except (KeyError, TypeError, ValueError) as exc:
+            return jsonify({"error": str(exc)}), 400
+        return jsonify({"record": result}), 201
+
+    @app.patch("/api/operations/<kind>/<record_id>")
+    def api_operations_update(kind, record_id):
+        from .operations import OperationsBoard
+
+        try:
+            result = OperationsBoard(commander_id()).update(
+                kind, record_id, **(request.get_json(silent=True) or {}))
+        except KeyError:
+            return jsonify({"error": "Operations record not found."}), 404
+        except (TypeError, ValueError) as exc:
+            return jsonify({"error": str(exc)}), 400
+        return jsonify({"record": result})
+
+    @app.delete("/api/operations/<kind>/<record_id>")
+    def api_operations_delete(kind, record_id):
+        from .operations import OperationsBoard
+
+        try:
+            result = OperationsBoard(commander_id()).remove(kind, record_id)
+        except KeyError:
+            return jsonify({"error": "Operations record not found."}), 404
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
+        return jsonify({"record": result})
+
+    @app.get("/api/operations/export")
+    def api_operations_export():
+        from .operations import OperationsBoard
+
+        try:
+            document = OperationsBoard(commander_id()).export_json(
+                request.args.get("board_id") or None)
+        except KeyError:
+            return jsonify({"error": "Operations board not found."}), 404
+        response = app.response_class(document, mimetype="application/json")
+        response.headers["Content-Disposition"] = 'attachment; filename="frameshift-operations.json"'
+        return response
+
+    @app.post("/api/operations/import")
+    def api_operations_import():
+        from .operations import OperationsBoard
+
+        body = request.get_json(silent=True)
+        document = body.get("document") if isinstance(body, dict) and "document" in body else body
+        try:
+            report = OperationsBoard(commander_id()).import_json(document)
+        except (KeyError, TypeError, ValueError) as exc:
+            return jsonify({"error": str(exc)}), 400
+        return jsonify(report)
+
+    @app.post("/api/cargo-recovery")
+    def api_cargo_recovery():
+        body = request.get_json(silent=True) or {}
+        snapshot = state.snapshot()
+        try:
+            result = routes.recover_cargo(
+                snapshot.get("cargo_inventory") or [], system=snapshot.get("system"),
+                star_pos=snapshot.get("star_pos"), radius=float(body.get("radius") or 100),
+                max_price_age_days=int(body.get("max_age_days") or 7),
+                requires_large_pad=bool(body.get("large_pad")),
+                failed_market_id=body.get("failed_market_id"), limit=int(body.get("limit") or 5),
+            )
+        except routes.RouteError as exc:
+            return error_response(exc, 400)
+        except (TypeError, ValueError) as exc:
+            return jsonify({"error": str(exc)}), 400
+        return jsonify(result)
+
+    def _specialist_facade():
+        from .specialists import SpecialistWorkflows
+
+        workflows = SpecialistWorkflows(commander_id())
+        workflows.exobiology.update_position(state.snapshot().get("pos"))
+        return workflows
+
+    def _specialist_response(workflows):
+        payload = workflows.snapshot()
+        payload["mining"]["history"] = workflows.mining.history(20)
+        payload["combat"]["history"] = workflows.combat.history(20)
+        state.update(specialists=payload)
+        return payload
+
+    @app.get("/api/specialists")
+    def api_specialists():
+        return jsonify(_specialist_response(_specialist_facade()))
+
+    @app.post("/api/specialists/mining/<action>")
+    def api_specialists_mining(action):
+        workflows = _specialist_facade()
+        body = request.get_json(silent=True) or {}
+        if action == "start":
+            workflows.mining.start(context=body.get("context"), force=bool(body.get("force")))
+        elif action == "end":
+            workflows.mining.end(body.get("reason") or "manual")
+        else:
+            return jsonify({"error": "Unsupported mining action."}), 400
+        return jsonify(_specialist_response(workflows))
+
+    @app.post("/api/specialists/combat/<action>")
+    def api_specialists_combat(action):
+        workflows = _specialist_facade()
+        body = request.get_json(silent=True) or {}
+        if action == "start":
+            workflows.combat.start(force=bool(body.get("force")))
+        elif action == "end":
+            workflows.combat.end(body.get("reason") or "manual")
+        else:
+            return jsonify({"error": "Unsupported combat action."}), 400
+        return jsonify(_specialist_response(workflows))
+
+    @app.post("/api/specialists/carrier/config")
+    def api_specialists_carrier_config():
+        workflows = _specialist_facade()
+        body = request.get_json(silent=True) or {}
+        try:
+            workflows.carrier.configure_upkeep(
+                body.get("weekly_upkeep_cr"), body.get("target_weeks", 8),
+                source="commander input",
+            )
+        except (TypeError, ValueError) as exc:
+            return jsonify({"error": str(exc)}), 400
+        return jsonify(_specialist_response(workflows))
+
+    @app.post("/api/specialists/carrier/route")
+    def api_specialists_carrier_route():
+        workflows = _specialist_facade()
+        body = request.get_json(silent=True) or {}
+        try:
+            workflows.carrier.plan_route(
+                body.get("legs") or [], tritium_per_jump_t=body.get("tritium_per_jump_t"),
+                reserve_t=body.get("reserve_t"),
+            )
+        except (TypeError, ValueError) as exc:
+            return jsonify({"error": str(exc)}), 400
+        return jsonify(_specialist_response(workflows))
+
+    @app.post("/api/specialists/carrier/inventory")
+    def api_specialists_carrier_inventory():
+        workflows = _specialist_facade()
+        body = request.get_json(silent=True) or {}
+        try:
+            workflows.carrier.set_inventory(body.get("items") or {}, source="commander input")
+        except (TypeError, ValueError) as exc:
+            return jsonify({"error": str(exc)}), 400
+        return jsonify(_specialist_response(workflows))
+
+    @app.post("/api/specialists/exobiology/pins")
+    def api_specialists_exobiology_pin():
+        workflows = _specialist_facade()
+        body = request.get_json(silent=True) or {}
+        try:
+            workflows.exobiology.add_pin(
+                body.get("label") or "Waypoint", kind=body.get("kind") or "waypoint",
+                position=body.get("position"), metadata=body.get("metadata"),
+            )
+        except (TypeError, ValueError) as exc:
+            return jsonify({"error": str(exc)}), 400
+        return jsonify(_specialist_response(workflows)), 201
+
+    @app.delete("/api/specialists/exobiology/pins/<pin_id>")
+    def api_specialists_exobiology_pin_delete(pin_id):
+        workflows = _specialist_facade()
+        if not workflows.exobiology.remove_pin(pin_id):
+            return jsonify({"error": "Surface pin not found."}), 404
+        return jsonify(_specialist_response(workflows))
+
+    @app.get("/api/specialists/exobiology/geojson")
+    def api_specialists_exobiology_geojson():
+        workflows = _specialist_facade()
+        return jsonify(workflows.exobiology.geojson(request.args.get("body") or None))
 
     @app.get("/api/material-traders")
     def api_material_traders():
@@ -439,11 +1198,12 @@ def create_app(state):
             return error_response(exc, 400)
         return jsonify(tts.status())
 
-    @app.get("/api/speak")
+    @app.post("/api/speak")
     def api_speak():
         """Synthesize a callout with the local neural voice (cached WAVs)."""
+        body = request.get_json(silent=True) or {}
         try:
-            wav = tts.synthesize(request.args.get("text", ""))
+            wav = tts.synthesize(body.get("text", ""))
         except tts.TTSError as exc:
             return error_response(exc, 409)
         # The URL doesn't encode which voice is active, so the browser must
@@ -590,7 +1350,7 @@ def create_app(state):
 
     @app.get("/api/alerts")
     def api_alerts():
-        resp = jsonify(alerts.snapshot())
+        resp = jsonify(alerts.snapshot(commander_id()))
         resp.headers["Cache-Control"] = "no-store"
         return resp
 
@@ -598,7 +1358,7 @@ def create_app(state):
     def api_watch():
         body = request.get_json(silent=True) or {}
         try:
-            watch = alerts.add_loop_watch(body.get("loop") or {})
+            watch = alerts.add_loop_watch(body.get("loop") or {}, commander_id())
         except (UserFacingError, ValueError) as exc:
             return error_response(exc, 400)
         return jsonify({"ok": True, "watch": {"id": watch["id"], "label": watch["label"]}})
@@ -606,11 +1366,11 @@ def create_app(state):
     @app.post("/api/watch/remove")
     def api_watch_remove():
         body = request.get_json(silent=True) or {}
-        return jsonify({"ok": alerts.remove_watch(body.get("id", 0))})
+        return jsonify({"ok": alerts.remove_watch(body.get("id", 0), commander_id())})
 
     @app.post("/api/alerts/clear")
     def api_alerts_clear():
-        alerts.clear_alerts()
+        alerts.clear_alerts(commander_id())
         return jsonify({"ok": True})
 
     @app.get("/api/analytics")
@@ -621,10 +1381,12 @@ def create_app(state):
             days = 30
         now = marketdb.now_epoch()
         since = now - days * 86400
+        active_commander_id = commander_id()
         conn = marketdb.connect()
         try:
             balance = conn.execute(
-                "SELECT ts, balance FROM balance_log WHERE ts >= ? ORDER BY ts", (since,)
+                "SELECT ts, balance FROM balance_log WHERE commander_id = ? AND ts >= ? ORDER BY ts",
+                (active_commander_id, since),
             ).fetchall()
             if len(balance) > 400:  # downsample, keep first/last
                 step = len(balance) // 400 + 1
@@ -633,14 +1395,15 @@ def create_app(state):
                 """SELECT date(ts, 'unixepoch') AS d,
                           SUM(CASE WHEN event = 'sell' THEN COALESCE(profit, 0) ELSE 0 END),
                           SUM(CASE WHEN event = 'sell' THEN count ELSE 0 END)
-                   FROM trade_log WHERE ts >= ? GROUP BY d ORDER BY d""",
-                (since,),
+                   FROM trade_log WHERE commander_id = ? AND ts >= ? GROUP BY d ORDER BY d""",
+                (active_commander_id, since),
             ).fetchall()
 
             def profit_since(cutoff):
                 row = conn.execute(
                     "SELECT SUM(COALESCE(profit, 0)), SUM(count), COUNT(*) FROM trade_log"
-                    " WHERE event = 'sell' AND ts >= ?", (cutoff,)
+                    " WHERE commander_id = ? AND event = 'sell' AND ts >= ?",
+                    (active_commander_id, cutoff),
                 ).fetchone()
                 return {"profit": row[0] or 0, "tons": row[1] or 0, "sales": row[2] or 0}
 
@@ -650,11 +1413,13 @@ def create_app(state):
                 out = {c: 0 for c in ("trade",) + marketdb.INCOME_CATEGORIES}
                 out["trade"] = conn.execute(
                     "SELECT COALESCE(SUM(profit), 0) FROM trade_log"
-                    " WHERE event = 'sell' AND ts >= ?", (cutoff,)
+                    " WHERE commander_id = ? AND event = 'sell' AND ts >= ?",
+                    (active_commander_id, cutoff),
                 ).fetchone()[0] or 0
                 for cat, amt in conn.execute(
-                    "SELECT category, SUM(amount) FROM income_log WHERE ts >= ? GROUP BY category",
-                    (cutoff,),
+                    "SELECT category, SUM(amount) FROM income_log"
+                    " WHERE commander_id = ? AND ts >= ? GROUP BY category",
+                    (active_commander_id, cutoff),
                 ).fetchall():
                     out[cat] = (out.get(cat) or 0) + (amt or 0)
                 out["total"] = sum(out.values())
@@ -662,9 +1427,9 @@ def create_app(state):
 
             top = conn.execute(
                 """SELECT symbol, name, SUM(COALESCE(profit, 0)) AS p, SUM(count) AS c
-                   FROM trade_log WHERE event = 'sell' AND ts >= ?
+                   FROM trade_log WHERE commander_id = ? AND event = 'sell' AND ts >= ?
                    GROUP BY symbol ORDER BY p DESC LIMIT 8""",
-                (since,),
+                (active_commander_id, since),
             ).fetchall()
             day_start = now - (now % 86400)
             today = profit_since(day_start)
@@ -748,6 +1513,40 @@ def create_app(state):
         resp.headers["Cache-Control"] = "no-store"
         return resp
 
+    @app.get("/api/diagnostics/health")
+    def api_diagnostics_health():
+        from .diagnostics import health_snapshot
+
+        return jsonify(health_snapshot())
+
+    @app.post("/api/diagnostics/bundle")
+    def api_diagnostics_bundle():
+        from .diagnostics import create_bundle
+
+        try:
+            bundle = create_bundle()
+        except Exception as exc:
+            return error_response(exc, 500)
+        return send_file(
+            bundle,
+            mimetype="application/zip",
+            as_attachment=True,
+            download_name=bundle.name,
+            max_age=0,
+        )
+
+    @app.get("/api/extensions")
+    def api_extensions():
+        from .extensions import EXTENSIONS
+
+        return jsonify(EXTENSIONS.snapshot())
+
+    @app.post("/api/extensions/reload")
+    def api_extensions_reload():
+        from .extensions import EXTENSIONS
+
+        return jsonify(EXTENSIONS.reload())
+
     @app.get("/api/settings")
     def api_settings_get():
         import sys
@@ -768,7 +1567,16 @@ def create_app(state):
     @app.post("/api/settings")
     def api_settings_set():
         body = request.get_json(silent=True) or {}
-        return jsonify({"settings": settings.update(body)})
+        if "journal_dir" in body:
+            safe_path, reason = _journal_path(body.get("journal_dir"))
+            if reason:
+                return jsonify({"error": reason}), 400
+            body["journal_dir"] = safe_path
+        try:
+            saved = settings.update(body)
+        except settings.SettingsError as exc:
+            return error_response(exc, 500)
+        return jsonify({"settings": saved})
 
     @app.get("/api/journal-dir/validate")
     def api_journal_dir_validate():
@@ -780,9 +1588,6 @@ def create_app(state):
         Saved Games, the auto-detected folder) — anything else is reported as
         unchecked rather than touched, closing off arbitrary-path probing.
         SAVE never depends on this check."""
-        import os.path
-        from pathlib import Path
-
         from . import journal
 
         raw = (request.args.get("path") or "").strip()
@@ -795,23 +1600,18 @@ def create_app(state):
             resp.headers["Cache-Control"] = "no-store"
             return resp
 
-        # Windows filesystems are case-insensitive; fold both sides there so
-        # the containment check can't be dodged by casing.
-        norm = os.path.normpath(os.path.abspath(raw))
-        display = norm
-        roots = tuple(os.path.normpath(str(r)) + os.sep for r in journal.probe_roots())
-        if os.name == "nt":
-            norm = norm.lower()
-            roots = tuple(r.lower() for r in roots)
-        if norm.startswith(roots):
-            path = Path(norm)
-            exists = path.is_dir()
-            files = len(journal.journal_files(path)) if exists else 0
-            unchecked = False
-        else:
-            exists, files, unchecked = None, 0, True
-        resp = jsonify({"path": display, "auto": False, "exists": exists,
-                        "files": files, "unchecked": unchecked})
+        safe_path, reason = _journal_path(raw)
+        if reason:
+            resp = jsonify({"path": raw, "auto": False, "exists": None,
+                            "files": 0, "unchecked": True, "error": reason})
+            resp.status_code = 400
+            resp.headers["Cache-Control"] = "no-store"
+            return resp
+        path = Path(safe_path)
+        exists = path.is_dir()
+        files = len(journal.journal_files(path)) if exists else 0
+        resp = jsonify({"path": safe_path, "auto": False, "exists": exists,
+                        "files": files, "unchecked": False})
         resp.headers["Cache-Control"] = "no-store"
         return resp
 
@@ -857,13 +1657,47 @@ def create_app(state):
 class ServerThread:
     def __init__(self, state, host="0.0.0.0", port=8666):
         logging.getLogger("werkzeug").setLevel(logging.WARNING)
-        self._server = make_server(host, port, create_app(state), threaded=True)
+        self.security = SecurityManager(marketdb.DATA_DIR)
+        self._server = make_server(
+            host, port, create_app(state, security_manager=self.security), threaded=True
+        )
         self._thread = threading.Thread(
             target=self._server.serve_forever, name="http-server", daemon=True
         )
+        self._lifecycle_lock = threading.Lock()
+        self._started = False
+        self._closed = False
+
+    def pairing_path(self):
+        """One-time capability path for the startup LAN link / desktop QR."""
+        grant = self.security.issue_pairing()
+        return "/?pair=" + grant["code"]
 
     def start(self):
-        self._thread.start()
+        with self._lifecycle_lock:
+            if self._closed:
+                raise RuntimeError("server is already closed")
+            if self._started:
+                return self._thread
+            self._started = True
+            self._thread.start()
+            return self._thread
+
+    def running(self):
+        with self._lifecycle_lock:
+            return self._started and not self._closed and self._thread.is_alive()
 
     def shutdown(self):
-        self._server.shutdown()
+        with self._lifecycle_lock:
+            if self._closed:
+                return
+            self._closed = True
+            started = self._started
+        # BaseServer.shutdown() deadlocks if serve_forever() was never started.
+        try:
+            if started:
+                self._server.shutdown()
+        finally:
+            self._server.server_close()
+            if started and self._thread is not threading.current_thread():
+                self._thread.join(timeout=5)

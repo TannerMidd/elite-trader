@@ -30,6 +30,7 @@ class Seeder:
         self.total_bytes = 0
         self.systems_done = 0
         self.stations_done = 0
+        self.commodities_done = 0
         self.started_at = None
         self.finished_at = None
 
@@ -42,6 +43,7 @@ class Seeder:
                 "total_mb": round(self.total_bytes / 1e6),
                 "systems_done": self.systems_done,
                 "stations_done": self.stations_done,
+                "commodities_done": self.commodities_done,
                 "started_at": self.started_at,
                 "finished_at": self.finished_at,
             }
@@ -103,10 +105,9 @@ class Seeder:
     def _import(self, include_carriers):
         self._set(phase="importing")
         # Build into a sidecar file and only swap it in once the import has
-        # fully succeeded — the live database stays intact if this crashes,
-        # errors, or the machine goes down mid-rebuild. (Live EDDN updates
-        # arriving during the ~15 min import land in the old file and are
-        # superseded by the swap; the dump is at most a day older.)
+        # fully succeeded. Commander history lives in commander.db and is
+        # never part of the replacement set. Live EDDN updates received during
+        # the import are replayed from the old cache before promotion.
         build = marketdb.build_path()
         for leftover in (build, Path(str(build) + "-wal"), Path(str(build) + "-shm")):
             leftover.unlink(missing_ok=True)
@@ -131,6 +132,10 @@ class Seeder:
                         in_batch = 0
             marketdb.set_meta(cur, "seeded_at", marketdb.utc_now_iso())
             marketdb.set_meta(cur, "seed_source", DUMP_URL)
+            marketdb.set_meta(cur, "seed_systems", self.systems_done)
+            marketdb.set_meta(cur, "seed_stations", self.stations_done)
+            marketdb.set_meta(cur, "seed_commodities", self.commodities_done)
+            marketdb.set_meta(cur, "seed_include_carriers", int(bool(include_carriers)))
             conn.commit()
             conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
         finally:
@@ -142,7 +147,16 @@ class Seeder:
 
         LISTENER.pause_db()
         try:
-            marketdb.swap_in(build)
+            marketdb.swap_in(
+                build,
+                minimum_counts={
+                    # Small tolerance for duplicate/upstream-corrected IDs;
+                    # grossly partial imports are still rejected.
+                    "systems": max(1, int(self.systems_done * 0.95)),
+                    "stations": max(1, int(self.stations_done * 0.95)),
+                    "commodities": max(1, int(self.commodities_done * 0.95)),
+                },
+            )
         finally:
             LISTENER.resume_db()
             for leftover in (Path(str(build) + "-wal"), Path(str(build) + "-shm")):
@@ -159,6 +173,7 @@ class Seeder:
             stations.extend(body.get("stations") or [])
 
         station_rows = []
+        commodity_rows = 0
         for st in stations:
             market = st.get("market") or {}
             commodities = market.get("commodities") or []
@@ -192,6 +207,7 @@ class Seeder:
                  st.get("distanceToArrival"), 1 if (pads.get("large") or 0) > 0 else 0, updated)
             )
             marketdb.replace_market(cur, market_id, rows)
+            commodity_rows += len(rows)
 
         if not station_rows:
             return
@@ -207,6 +223,7 @@ class Seeder:
         with self._lock:
             self.systems_done += 1
             self.stations_done += len(station_rows)
+            self.commodities_done += commodity_rows
 
 
 SEEDER = Seeder()

@@ -1,5 +1,8 @@
-flask>=3.0
-pywebview>=5.0
-requests>=2.31
-pydirectinput>=1.0.4; sys_platform == "win32"
-pyzmq>=25.0
+# Runtime versions are intentionally pinned so a release can be reproduced and
+# a dependency update cannot silently change the packaged executable.  Update
+# these through a reviewed dependency PR and run both CI platforms first.
+flask==3.1.3
+pywebview==6.2.1
+requests==2.34.2
+pydirectinput==1.0.4; sys_platform == "win32"
+pyzmq==27.1.0

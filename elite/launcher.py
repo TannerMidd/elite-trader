@@ -30,11 +30,14 @@ def is_running(process=GAME_PROCESS):
     itself failed (callers should keep their previous answer on None)."""
     try:
         if sys.platform == "win32":
-            out = subprocess.run(
+            result = subprocess.run(
                 ["tasklist", "/FI", f"IMAGENAME eq {process}", "/NH"],
                 capture_output=True, text=True, timeout=10,
                 creationflags=subprocess.CREATE_NO_WINDOW,
-            ).stdout or ""
+            )
+            if result.returncode != 0:
+                return None
+            out = result.stdout or ""
             return process.lower() in out.lower()
         # Linux/Steam Deck: the Windows exe is visible in the process table
         # under Proton. pgrep exits 1 for "no match", >1 for real errors.

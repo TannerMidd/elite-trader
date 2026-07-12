@@ -1,5 +1,6 @@
 """Thread-safe store for everything the app knows about the game."""
 
+import copy
 import threading
 from collections import deque
 
@@ -10,6 +11,7 @@ class AppState:
 
         # Commander / ship
         self.commander = None
+        self.commander_id = None  # stable local profile key; never a network identity
         self.ship_type = None
         self.ship_name = None
         self.ship_ident = None
@@ -17,6 +19,8 @@ class AppState:
         self.max_jump_range = None
         self.fuel_capacity = None
         self.rebuy = None  # insurance cost from Loadout
+        self.horizons = None
+        self.odyssey = None
 
         # Location
         self.system = None
@@ -85,6 +89,9 @@ class AppState:
         self.ship_locker = None   # {"items": [...], "components": [...], "data": [...], "consumables": [...]}
         # Fleet carrier (CarrierStats & friends); None until the player owns one
         self.carrier = None
+        # Durable specialist reducers (mining, combat/AX, carrier planning,
+        # surface exobiology). Populated once the commander profile is known.
+        self.specialists = None
 
         # Galaxy (background sim): Powerplay pledge + current-system power
         # status, BGS factions/conflicts, community goals, squadron.
@@ -100,6 +107,7 @@ class AppState:
         # consumers can tell Live from Legacy data.
         self.game_version = None
         self.game_build = None
+        self.galaxy_mode = "unknown"  # live | legacy | unknown
 
         # Combat: session counters + kills per faction while that faction has
         # active massacre missions (drives the stack-progress card).
@@ -124,6 +132,64 @@ class AppState:
     def update(self, **kwargs):
         with self._lock:
             for key, value in kwargs.items():
+                setattr(self, key, value)
+
+    def reset_commander_context(self, *, commander=None, commander_id=None):
+        """Atomically discard state owned by the previous commander.
+
+        Elite can switch accounts (and Live/Legacy galaxies) without Frameshift
+        restarting.  Reusing the old in-memory snapshot during that handover is
+        worse than briefly showing an empty cockpit: missions, cargo, balances,
+        surface coordinates and other private state would be attributed to the
+        newly active profile.  Start from the same safe defaults as a fresh app
+        while retaining only process/journal facts established by Fileheader.
+        """
+        fresh = AppState()
+        with self._lock:
+            preserved = {
+                "game_version": self.game_version,
+                "game_build": self.game_build,
+                "galaxy_mode": self.galaxy_mode,
+                "horizons": self.horizons,
+                "odyssey": self.odyssey,
+                "game_running": self.game_running,
+                "last_journal_event": self.last_journal_event,
+                "journal_dir_found": self.journal_dir_found,
+            }
+            for key, value in fresh.__dict__.items():
+                if key != "_lock":
+                    setattr(self, key, value)
+            for key, value in preserved.items():
+                setattr(self, key, value)
+            self.commander = commander
+            self.commander_id = commander_id
+
+    def capture_commander_context(self):
+        """Take a private copy used while a new journal awaits its identity."""
+        with self._lock:
+            return {
+                key: copy.deepcopy(value)
+                for key, value in self.__dict__.items()
+                if key != "_lock"
+            }
+
+    def restore_commander_context(self, captured):
+        """Restore a same-commander session while retaining new Fileheader facts."""
+        with self._lock:
+            header = {
+                "game_version": self.game_version,
+                "game_build": self.game_build,
+                "galaxy_mode": self.galaxy_mode,
+                "horizons": self.horizons,
+                "odyssey": self.odyssey,
+                "game_running": self.game_running,
+                "last_journal_event": self.last_journal_event,
+                "journal_dir_found": self.journal_dir_found,
+            }
+            for key, value in (captured or {}).items():
+                if key != "_lock":
+                    setattr(self, key, copy.deepcopy(value))
+            for key, value in header.items():
                 setattr(self, key, value)
 
     def add_jump(self, system, dist, timestamp):
@@ -370,6 +436,7 @@ class AppState:
             synth = self._synth_snapshot()
             return {
                 "commander": self.commander,
+                "commander_id": self.commander_id,
                 "ship_type": self.ship_type,
                 "ship_name": self.ship_name,
                 "ship_ident": self.ship_ident,
@@ -377,9 +444,14 @@ class AppState:
                 "max_jump_range": self.max_jump_range,
                 "fuel_capacity": self.fuel_capacity,
                 "rebuy": self.rebuy,
+                "horizons": self.horizons,
+                "odyssey": self.odyssey,
+                "game_version": self.game_version,
+                "game_build": self.game_build,
                 "has_loadout": self.loadout_raw is not None,
                 "system": self.system,
                 "star_pos": self.star_pos,
+                "pos": dict(self.pos) if self.pos else None,
                 "body": self.body,
                 "docked": self.docked,
                 "station": self.station,
@@ -420,6 +492,7 @@ class AppState:
                 "stored_ships": dict(self.stored_ships) if self.stored_ships else None,
                 "ship_locker": dict(self.ship_locker) if self.ship_locker else None,
                 "carrier": dict(self.carrier) if self.carrier else None,
+                "specialists": dict(self.specialists) if self.specialists else None,
                 "session": self._session_snapshot(),
                 "combat": self._combat_snapshot(),
                 "nav": self._nav_snapshot(synth=synth),
@@ -427,6 +500,7 @@ class AppState:
                 "last_journal_event": self.last_journal_event,
                 "journal_dir_found": self.journal_dir_found,
                 "game_running": self.game_running,
+                "galaxy_mode": self.galaxy_mode,
             }
 
     def _bio_signals_snapshot(self):

@@ -4,7 +4,6 @@ station whose system we know (seeded from the Spansh dump)."""
 
 import json
 import threading
-import time
 import zlib
 
 from . import marketdb
@@ -13,6 +12,7 @@ RELAY = "tcp://eddn.edcd.io:9500"
 COMMODITY_SCHEMA = "https://eddn.edcd.io/schemas/commodity/3"
 RECV_TIMEOUT_MS = 60_000
 RECONNECT_DELAY = 10
+SHUTDOWN_POLL_MS = 250
 
 
 class EddnListener:
@@ -28,13 +28,19 @@ class EddnListener:
         # loop keeps no database connection open; _db_released confirms it.
         self._pause = threading.Event()
         self._db_released = threading.Event()
+        self._stop = threading.Event()
+        self._lifecycle_lock = threading.Lock()
+        self._thread = None
 
     def pause_db(self, timeout=20):
         """Ask the listener to close its long-lived DB connection and hold off
         until resume_db(). Returns once it has (or after `timeout` if the
         listener is wedged in a long recv — swap_in's retries cover that)."""
         self._pause.set()
-        self._db_released.wait(timeout)
+        if not self.running():
+            self._db_released.set()
+            return True
+        return self._db_released.wait(timeout)
 
     def resume_db(self):
         self._db_released.clear()
@@ -78,51 +84,106 @@ class EddnListener:
         return digits.isdigit() and int(digits) < 4
 
     def start(self):
-        thread = threading.Thread(target=self._run_forever, name="eddn-listener", daemon=True)
-        thread.start()
-        return thread
+        """Start the subscriber once and return its worker thread."""
+        with self._lifecycle_lock:
+            if self._thread is not None and self._thread.is_alive():
+                return self._thread
+            self._stop.clear()
+            self._db_released.clear()
+            self._thread = threading.Thread(
+                target=self._run_forever, name="eddn-listener", daemon=True
+            )
+            self._thread.start()
+            return self._thread
+
+    def running(self):
+        with self._lifecycle_lock:
+            return self._thread is not None and self._thread.is_alive()
+
+    def stop(self, timeout=5):
+        """Stop the worker and release its ZeroMQ and SQLite resources."""
+        self._stop.set()
+        # A database swap may have parked the listener in the pause loop.
+        self._pause.clear()
+        with self._lifecycle_lock:
+            thread = self._thread
+        if thread is not None and thread is not threading.current_thread():
+            thread.join(max(0, timeout))
+        stopped = thread is None or not thread.is_alive()
+        if stopped:
+            with self._lock:
+                self.connected = False
+        return stopped
 
     # ---------- internals ----------
 
     def _run_forever(self):
         import zmq
 
-        context = zmq.Context.instance()
-        while True:
-            socket = context.socket(zmq.SUB)
-            socket.setsockopt(zmq.SUBSCRIBE, b"")
-            socket.setsockopt(zmq.RCVTIMEO, RECV_TIMEOUT_MS)
-            try:
-                socket.connect(RELAY)
-                with self._lock:
-                    self.connected = True
-                while self._pause.is_set():  # don't reopen mid-swap
-                    time.sleep(0.5)
-                conn = marketdb.connect()
+        # The subscriber owns its context. A process-global Context.instance()
+        # can deadlock interpreter finalisation while this daemon still owns a
+        # socket and a long-lived SQLite connection.
+        context = zmq.Context()
+        try:
+            while not self._stop.is_set():
+                socket = context.socket(zmq.SUB)
+                socket.setsockopt(zmq.SUBSCRIBE, b"")
+                socket.setsockopt(
+                    zmq.RCVTIMEO, min(RECV_TIMEOUT_MS, SHUTDOWN_POLL_MS)
+                )
                 try:
-                    while True:
-                        if self._pause.is_set():
-                            conn.close()
-                            self._db_released.set()
-                            while self._pause.is_set():
-                                time.sleep(0.5)
-                            conn = marketdb.connect()
-                        raw = socket.recv()  # raises zmq.Again on timeout
-                        self._handle(conn, raw)
-                finally:
-                    try:
-                        conn.close()
-                    except Exception:
-                        pass
+                    socket.connect(RELAY)
+                    with self._lock:
+                        self.connected = True
                     if self._pause.is_set():
-                        self._db_released.set()  # never leave a swap waiting on us
-            except Exception:
-                pass  # timeout, network drop, relay restart - just reconnect
-            finally:
-                with self._lock:
-                    self.connected = False
-                socket.close(linger=0)
-            time.sleep(RECONNECT_DELAY)
+                        # No connection exists yet, which already satisfies a
+                        # database-swap request. Do not make pause_db() wait for
+                        # its full timeout just because startup hit this edge.
+                        self._db_released.set()
+                        while self._pause.is_set() and not self._stop.wait(0.1):
+                            pass  # don't open the database mid-swap
+                    if self._stop.is_set():
+                        break
+                    self._db_released.clear()
+                    conn = marketdb.connect()
+                    try:
+                        while not self._stop.is_set():
+                            if self._pause.is_set():
+                                conn.close()
+                                self._db_released.set()
+                                while self._pause.is_set() and not self._stop.wait(0.1):
+                                    pass
+                                if self._stop.is_set():
+                                    break
+                                self._db_released.clear()
+                                conn = marketdb.connect()
+                            try:
+                                raw = socket.recv()
+                            except zmq.Again:
+                                continue
+                            self._handle(conn, raw)
+                    finally:
+                        try:
+                            conn.close()
+                        except Exception:
+                            pass
+                        if self._pause.is_set() or self._stop.is_set():
+                            self._db_released.set()
+                except Exception:
+                    if self._stop.is_set():
+                        break
+                    # Network drop or relay restart: reconnect below.
+                    pass
+                finally:
+                    with self._lock:
+                        self.connected = False
+                    socket.close(linger=0)
+                self._stop.wait(RECONNECT_DELAY)
+        finally:
+            self._db_released.set()
+            # Every socket was closed above by this same worker, so termination
+            # cannot wait on a socket owned by another thread.
+            context.term()
 
     def _handle(self, conn, raw):
         try:

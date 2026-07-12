@@ -2,10 +2,22 @@
    desktop window (pywebview) and any browser on the LAN. */
 
 const $ = (id) => document.getElementById(id);
+const GalaxyData = window.FrameshiftGalaxyData;
 
 let state = null;
 let marketSort = { key: "sell", dir: -1 };
 let routeFormTouched = false;
+let galaxyHistory = [];
+let galaxyHistoryCommander = null;
+let securityStatus = null;
+let opsState = {
+  objectives: [], plan: null, timings: null, boards: [], snapshot: null,
+  conflicts: [], activeBoardId: localStorage.getItem("opsBoardId") || "",
+};
+let opsWorkspaceLoading = null;
+let specialistState = null;
+let specialistLoading = null;
+let specialistLastFetch = 0;
 
 /* Active route being flown (persisted): { kind, label, waypoints:[{system,note}], index } */
 let activeRoute = null;
@@ -35,6 +47,218 @@ function copyText(text, btn) {
     ta.select();
     try { document.execCommand("copy"); done(); } catch (e) {}
     ta.remove();
+  }
+}
+
+/* ---------- zero-account LAN pairing ---------- */
+
+function friendlyDeviceName() {
+  const platform = navigator.userAgentData?.platform || navigator.platform || "Browser";
+  const mobile = /Android|iPhone|iPad|Mobile/i.test(navigator.userAgent || "");
+  return `${platform}${mobile ? " tablet" : " browser"}`.slice(0, 80);
+}
+
+function showPairingGate(title, message, retry) {
+  const gate = $("pairing-gate");
+  gate.classList.remove("hidden");
+  $("pairing-title").textContent = title;
+  $("pairing-message").textContent = message;
+  $("pairing-retry").classList.toggle("hidden", !retry);
+}
+
+async function fetchSecurityStatus() {
+  const resp = await fetch("/api/security/status", { cache: "no-store" });
+  if (!resp.ok) throw new Error("Frameshift security status is unavailable.");
+  securityStatus = await resp.json();
+  return securityStatus;
+}
+
+async function bootstrapSecurity() {
+  const url = new URL(window.location.href);
+  const code = url.searchParams.get("pair");
+  try {
+    if (code) {
+      showPairingGate("Pairing this device…", "Exchanging the one-time cockpit link. No account or password is required.", false);
+      const response = await fetch("/api/security/pair", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ code, device_name: friendlyDeviceName() }),
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || "The pairing link was not accepted.");
+      url.searchParams.delete("pair");
+      history.replaceState({}, "", url.pathname + (url.search ? url.search : "") + url.hash);
+    }
+    const status = await fetchSecurityStatus();
+    if (status.pairing_required) {
+      showPairingGate(
+        "This device is not paired",
+        "Open the current one-time LAN link shown in Frameshift on the gaming PC. Previously paired devices reconnect automatically.",
+        true,
+      );
+      return false;
+    }
+    $("pairing-gate").classList.add("hidden");
+    return true;
+  } catch (error) {
+    showPairingGate("Pairing could not finish", String(error.message || error), true);
+    return false;
+  }
+}
+
+function pairingAbsoluteUrl(status) {
+  const pairing = status?.pairing;
+  if (!pairing) return "";
+  if (pairing.urls?.length) return pairing.urls[0];
+  return window.location.origin + pairing.path;
+}
+
+async function refreshSecurityPanel(rotate = false) {
+  try {
+    if (rotate) {
+      const response = await fetch("/api/security/pairing-code", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ scopes: ["admin"] }),
+      });
+      if (!response.ok) throw new Error("Could not create a pairing link.");
+    }
+    const status = await fetchSecurityStatus();
+    const admin = status.scopes?.includes("admin");
+    $("pairing-refresh").classList.toggle("hidden", !admin);
+    $("security-state").textContent = status.local
+      ? `Desktop access is automatic · ${status.paired_devices || 0} paired device${status.paired_devices === 1 ? "" : "s"}`
+      : `Paired as ${status.device?.name || "LAN device"} · ${status.scopes.join(" / ")}`;
+    const link = pairingAbsoluteUrl(status);
+    $("pairing-share").classList.toggle("hidden", !link);
+    if (link) {
+      $("pairing-link").value = link;
+      const qr = $("pairing-qr");
+      const qrSvg = status.pairing.qr_svg || "";
+      qr.classList.toggle("hidden", !qrSvg);
+      if (qrSvg) qr.src = "data:image/svg+xml;charset=utf-8," + encodeURIComponent(qrSvg);
+      const seconds = Math.max(0, Math.round((status.pairing.expires_at * 1000 - Date.now()) / 1000));
+      $("pairing-expiry").textContent = `Single use · expires in about ${Math.max(1, Math.ceil(seconds / 60))} minute${seconds > 60 ? "s" : ""}. The device remains paired afterwards.`;
+    }
+    await renderPairedDevices(admin);
+  } catch (error) {
+    $("security-state").textContent = String(error.message || error);
+  }
+}
+
+async function renderPairedDevices(admin) {
+  const list = $("paired-devices");
+  list.innerHTML = "";
+  if (!admin) return;
+  const response = await fetch("/api/security/devices", { cache: "no-store" });
+  if (!response.ok) return;
+  const devices = (await response.json()).devices || [];
+  for (const device of devices) {
+    const row = document.createElement("div");
+    row.className = "paired-device";
+    const main = document.createElement("div");
+    main.className = "device-main";
+    main.innerHTML = `<div class="device-name">${esc(device.name || "LAN device")}</div>` +
+      `<div class="dim">${esc(device.last_ip || "address unknown")} · last seen ${esc(device.last_seen || "never")}</div>`;
+    const scope = document.createElement("select");
+    for (const value of ["read", "control", "admin"]) {
+      const option = document.createElement("option");
+      option.value = value;
+      option.textContent = value.toUpperCase();
+      option.selected = (device.scopes || []).includes(value) &&
+        !(device.scopes || []).some((other) => ["read", "control", "admin"].indexOf(other) > ["read", "control", "admin"].indexOf(value));
+      scope.appendChild(option);
+    }
+    scope.title = "READ views data; CONTROL can plot/speak; ADMIN can change settings and pair devices.";
+    scope.addEventListener("change", async () => {
+      await fetch(`/api/security/devices/${encodeURIComponent(device.id)}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ scopes: [scope.value] }),
+      });
+      refreshSecurityPanel();
+    });
+    const revoke = document.createElement("button");
+    revoke.className = "copy";
+    revoke.textContent = "REVOKE";
+    revoke.addEventListener("click", async () => {
+      await fetch(`/api/security/devices/${encodeURIComponent(device.id)}`, { method: "DELETE" });
+      refreshSecurityPanel();
+    });
+    row.append(main, scope, revoke);
+    list.appendChild(row);
+  }
+}
+
+async function loadLocalServices() {
+  const card = $("local-services-card");
+  const admin = securityStatus?.scopes?.includes("admin");
+  card.classList.toggle("hidden", !admin);
+  if (!admin) return;
+  try {
+    const [healthResponse, extensionResponse] = await Promise.all([
+      fetch("/api/diagnostics/health", { cache: "no-store" }),
+      fetch("/api/extensions", { cache: "no-store" }),
+    ]);
+    if (!healthResponse.ok || !extensionResponse.ok) throw new Error("Local diagnostics are unavailable.");
+    const health = await healthResponse.json();
+    const extensions = await extensionResponse.json();
+    const db = health.market_database || {};
+    const integrity = health.sqlite_integrity || (health.market_database_error ? "unavailable" : "unknown");
+    $("local-health").textContent =
+      `Frameshift ${health.version || "?"} · database ${integrity}` +
+      `${db.markets != null ? ` · ${Number(db.markets).toLocaleString()} markets` : ""}` +
+      " · logs rotate locally";
+    const loaded = extensions.loaded || [];
+    const errors = extensions.errors || [];
+    $("extensions-status").innerHTML =
+      `<b>${loaded.length} extension pack${loaded.length === 1 ? "" : "s"} loaded</b>` +
+      `<span class="dim"> from the local extensions folder` +
+      `${errors.length ? ` · ${errors.length} rejected (details included in diagnostics)` : ""}</span>`;
+  } catch (error) {
+    $("local-health").textContent = String(error.message || error);
+  }
+}
+
+async function downloadSupportBundle() {
+  const button = $("diagnostics-bundle");
+  const original = button.textContent;
+  button.disabled = true;
+  button.textContent = "BUILDING…";
+  try {
+    const response = await fetch("/api/diagnostics/bundle", { method: "POST" });
+    if (!response.ok) throw new Error("Support bundle could not be created.");
+    const blob = await response.blob();
+    const disposition = response.headers.get("Content-Disposition") || "";
+    const match = disposition.match(/filename\*?=(?:UTF-8''|\")?([^\";]+)/i);
+    const filename = decodeURIComponent(match?.[1] || "frameshift-diagnostics.zip");
+    const href = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = href;
+    anchor.download = filename;
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    setTimeout(() => URL.revokeObjectURL(href), 1000);
+    button.textContent = "SAVED";
+  } catch (error) {
+    button.textContent = "FAILED";
+  } finally {
+    setTimeout(() => { button.textContent = original; button.disabled = false; }, 1200);
+  }
+}
+
+async function reloadExtensions() {
+  const button = $("extensions-reload");
+  button.disabled = true;
+  try {
+    const response = await fetch("/api/extensions/reload", { method: "POST" });
+    if (!response.ok) throw new Error("Extension packs could not be reloaded.");
+    await loadLocalServices();
+  } catch (error) {
+    $("extensions-status").textContent = String(error.message || error);
+  } finally {
+    button.disabled = false;
   }
 }
 
@@ -128,12 +352,24 @@ let ttsReady = false;
 const neuralVoiceEnabled = () => ttsReady && localStorage.getItem("neuralVoice") !== "0";
 let calloutAudio = null;
 
-function playNeural(text) {
+let calloutObjectUrl = null;
+
+async function playNeural(text) {
   if (calloutAudio) calloutAudio.pause();  // don't stack stale callouts
-  // Cache-buster: same phrase + different active voice = same URL, and
-  // Chromium's media cache will happily replay the old voice otherwise.
-  calloutAudio = new Audio("/api/speak?text=" + encodeURIComponent(text) + "&r=" + Date.now());
+  if (calloutObjectUrl) URL.revokeObjectURL(calloutObjectUrl);
+  const resp = await fetch("/api/speak", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ text }),
+  });
+  if (!resp.ok) throw new Error("voice synthesis failed");
+  calloutObjectUrl = URL.createObjectURL(await resp.blob());
+  calloutAudio = new Audio(calloutObjectUrl);
   calloutAudio.volume = voiceVolume();
+  calloutAudio.addEventListener("ended", () => {
+    if (calloutObjectUrl) URL.revokeObjectURL(calloutObjectUrl);
+    calloutObjectUrl = null;
+  }, { once: true });
   return calloutAudio.play();
 }
 
@@ -186,7 +422,7 @@ function setVoice(on, announce) {
 
 /* ---------- flight panel mode ---------- */
 
-const PANEL_PAGES = ["status", "trade", "commodities", "bio", "guides", "analytics", "engineering", "galaxy", "local", "database"];
+const PANEL_PAGES = ["status", "trade", "commodities", "bio", "guides", "analytics", "engineering", "galaxy", "ops", "specialists", "local", "database"];
 
 function setPanelMode(on) {
   document.body.classList.toggle("panel-mode", on);
@@ -842,6 +1078,7 @@ function render() {
   $("legal").textContent = state.legal_state || "—";
   renderRebuy($("rebuy"));
 
+  renderGalaxyModeNotice();
   renderBanner();
   renderGameState();
   handleAlerts();
@@ -861,13 +1098,30 @@ function render() {
   renderCarrier();
   renderGalaxy();
   refreshLoadoutExport();
-  // Re-plan pinned blueprints when the material inventory changes.
-  const matTotal = (state.materials && state.materials.total) || 0;
-  if (engMatsSig !== matTotal) { engMatsSig = matTotal; loadEngineering(); }
+  // Re-plan against all three inventories used by ship, synthesis and Odyssey
+  // recipes whenever any one of them changes.
+  const engineeringInventorySig = JSON.stringify([
+    state.materials || null,
+    state.ship_locker || null,
+    state.cargo_inventory || null,
+  ]);
+  if (engMatsSig !== engineeringInventorySig) {
+    engMatsSig = engineeringInventorySig;
+    loadEngineering();
+  }
   if (syncRouteToPosition()) saveActiveRoute();
   renderRouteProgress();
   renderPanel();
   seedRouteForm();
+}
+
+function renderGalaxyModeNotice() {
+  const banner = $("galaxy-mode-banner");
+  const legacy = String(state.galaxy_mode || "live").toLowerCase() === "legacy";
+  banner.classList.toggle("hidden", !legacy);
+  if (legacy) {
+    banner.textContent = "LEGACY GALAXY detected — commander history, engineering, objectives, and local specialist tools remain available. Live community market, routing, outfitting, and galaxy searches are disabled so Horizons 3.8 data cannot be mixed with the Live galaxy.";
+  }
 }
 
 /* ---------- small DOM helpers ---------- */
@@ -1156,94 +1410,233 @@ function renderMassacre() {
 }
 
 /* ---------- engineering planner ---------- */
-let engMatsSig = null;  // refetch plans when the materials inventory changes
-
-let engInfo = {};  // blueprint name -> {what, engineer}
+let engMatsSig = null;
+let engCatalog = [];
+let engCatalogById = new Map();
+let engKindLabels = {};
 
 async function loadEngineering() {
+  const summary = $("engplan-summary");
   try {
     const resp = await fetch("/api/engineering");
     const data = await resp.json();
-    engInfo = data.info || {};
-    fillBlueprintSelect(data.blueprints || {});
-    renderEngPlans(data.pinned || []);
-  } catch (e) { /* planner card degrades to empty */ }
-}
-
-function showBlueprintDesc() {
-  const info = engInfo[$("ep-blueprint").value];
-  $("ep-desc").textContent = info ? `${info.what} ${info.engineer}` : "";
-}
-
-function fillBlueprintSelect(bps) {
-  const sel = $("ep-blueprint");
-  if (!sel) return;
-  if (!sel.options.length) {
-    for (const name of Object.keys(bps).sort()) {
-      const o = document.createElement("option");
-      o.value = o.textContent = name;
-      sel.appendChild(o);
-    }
-    sel.addEventListener("change", showBlueprintDesc);
+    if (!resp.ok) throw new Error(data.error || `HTTP ${resp.status}`);
+    const localCatalog = data.catalog || {};
+    engCatalog = (localCatalog.groups || []).filter((item) => !item.alias_of);
+    engCatalogById = new Map(engCatalog.map((item) => [item.id, item]));
+    engKindLabels = localCatalog.kind_labels || {};
+    const catalogStats = localCatalog.stats || {};
+    fillEngineeringKinds(catalogStats);
+    fillEngineeringCatalog();
+    renderEngPlans(data.wishlist || { items: data.pinned || [], materials: [] });
+    setText("ep-catalog-count", `${engCatalog.length.toLocaleString()} items · ${(catalogStats.recipes || 0).toLocaleString()} recipes`);
+  } catch (error) {
+    if (summary) summary.innerHTML = `<div class="warn ep-api-error">Engineering planner unavailable: ${esc(error.message)}</div>`;
   }
-  showBlueprintDesc();
 }
 
-function renderEngPlans(plans) {
-  const list = $("engplan-list");
-  if (!list) return;
-  list.innerHTML = "";
-  if (!plans.length) {
-    list.innerHTML = '<div class="dim empty">Nothing pinned yet — pick a blueprint above and press PIN to get a live checklist against your materials. ' +
-      'New player tip: <b>FSD Increased Range</b> is the best first upgrade for almost any ship.</div>';
+function fillEngineeringKinds(stats) {
+  const select = $("ep-kind");
+  if (!select || select.options.length > 1) return;
+  const counts = stats.categories || {};
+  for (const [kind, label] of Object.entries(engKindLabels)) {
+    if (!counts[kind]) continue;
+    const option = document.createElement("option");
+    option.value = kind;
+    option.textContent = `${label} (${counts[kind]})`;
+    select.appendChild(option);
+  }
+}
+
+function engineeringMatches(item, query, kind) {
+  if (kind && item.kind !== kind) return false;
+  const haystack = [item.display_name, item.module, item.name, item.kind_label,
+    ...(item.engineers || [])].join(" ").toLowerCase();
+  return query.toLowerCase().split(/\s+/).filter(Boolean).every((word) => haystack.includes(word));
+}
+
+function fillEngineeringCatalog(preferredId) {
+  const select = $("ep-blueprint");
+  if (!select) return;
+  const previous = preferredId || select.value;
+  const query = ($("ep-search") && $("ep-search").value.trim()) || "";
+  const kind = ($("ep-kind") && $("ep-kind").value) || "";
+  const matches = engCatalog.filter((item) => engineeringMatches(item, query, kind));
+  select.innerHTML = "";
+  const groups = new Map();
+  for (const item of matches) {
+    const label = item.kind_label || item.kind;
+    if (!groups.has(label)) groups.set(label, []);
+    groups.get(label).push(item);
+  }
+  for (const [label, items] of groups) {
+    const optgroup = document.createElement("optgroup");
+    optgroup.label = label;
+    for (const item of items) {
+      const option = document.createElement("option");
+      option.value = item.id;
+      option.textContent = item.display_name;
+      optgroup.appendChild(option);
+    }
+    select.appendChild(optgroup);
+  }
+  if (matches.some((item) => item.id === previous)) select.value = previous;
+  setText("ep-match-count", `${matches.length} matching ${matches.length === 1 ? "recipe" : "recipes"}`);
+  $("ep-pin").disabled = !matches.length;
+  updateEngineeringGradeFields();
+}
+
+function addGradeOption(select, value, label) {
+  const option = document.createElement("option");
+  option.value = value;
+  option.textContent = label;
+  select.appendChild(option);
+}
+
+function updateEngineeringGradeFields(preferredCurrent, preferredTarget) {
+  const item = engCatalogById.get($("ep-blueprint").value);
+  const currentWrap = $("ep-current-wrap");
+  const targetWrap = $("ep-target-wrap");
+  if (!item) {
+    currentWrap.classList.add("hidden");
+    targetWrap.classList.add("hidden");
+    setText("ep-desc", "No matching recipe.");
     return;
   }
-  for (const p of plans) {
-    const div = document.createElement("div");
-    div.className = "engplan" + (p.craftable ? " done" : "");
-    const total = p.materials.reduce((a, m) => a + m.need, 0);
-    const haveTotal = p.materials.reduce((a, m) => a + Math.min(m.have, m.need), 0);
-    const pct = total ? Math.round((haveTotal / total) * 100) : 0;
-    const rows = p.materials.map((m) => {
-      const short = m.deficit > 0;
-      const trade = short && m.trade
-        ? ` <span class="dim ep-trade" title="Material traders swap within a family: 6 lower-grade make 1 higher-grade; 1 higher-grade makes 3 lower.">` +
-          `→ swap ${m.trade.spend}× ${esc(m.trade.from)} at a material trader to cover ` +
-          `${m.trade.covers >= m.deficit ? "the rest" : m.trade.covers + " of them"}</span>`
-        : "";
-      const need = short ? `<span class="warn">${m.have} of ${m.need} — need ${m.deficit} more</span>`
-        : `<span class="dim">${m.have} of ${m.need} ✓</span>`;
-      return `<div class="ep-mat" title="${esc(m.source || "")}">` +
-        `<span class="${short ? "warn" : "good"}">${short ? "○" : "●"}</span> ` +
-        `<b>${esc(m.name)}</b> ${need} ` +
-        `<span class="dim">· grade ${m.grade} ${esc(m.kind)} material</span>${trade}</div>`;
-    }).join("");
-    div.innerHTML =
-      `<div class="stack-line"><b>${esc(p.blueprint)}</b><span class="dim">full upgrade to grade ${p.grade}</span>` +
-      `<span class="${p.craftable ? "profit" : "dim"}">${p.craftable ? "✓ ALL MATERIALS COLLECTED — visit the engineer" : pct + "% of materials collected"}</span></div>` +
-      `<div class="stack-bar"><div style="width:${pct}%"></div></div>` +
-      `<div class="ep-mats">${rows}</div>` +
-      `<div class="dim ep-hint">Hover a material to see where to find it.</div>`;
-    const line = div.querySelector(".stack-line");
-    const un = document.createElement("button");
-    un.className = "copy";
-    un.textContent = "✕";
-    un.title = "Unpin " + p.blueprint;
-    un.addEventListener("click", () => pinBlueprint(p.blueprint, p.grade, "unpin"));
-    line.appendChild(un);
-    list.appendChild(div);
+  const isClimb = item.kind === "ship-engineering" || item.kind === "odyssey-upgrade";
+  currentWrap.classList.toggle("hidden", !isClimb);
+  targetWrap.classList.toggle("hidden", !isClimb);
+  const grades = item.grades || [];
+  if (isClimb && grades.length) {
+    const target = $("ep-target");
+    const oldTarget = Number(preferredTarget != null ? preferredTarget : grades[grades.length - 1]);
+    target.innerHTML = "";
+    for (const grade of grades) addGradeOption(target, grade, `Grade ${grade}${grade === grades[grades.length - 1] ? " (max)" : ""}`);
+    target.value = grades.includes(oldTarget) ? String(oldTarget) : String(grades[grades.length - 1]);
+    const targetGrade = Number(target.value);
+    const current = $("ep-current");
+    const defaultCurrent = item.kind === "odyssey-upgrade" ? Math.max(0, grades[0] - 1) : 0;
+    const oldCurrent = Number(preferredCurrent != null ? preferredCurrent : defaultCurrent);
+    current.innerHTML = "";
+    addGradeOption(current, defaultCurrent, defaultCurrent ? `Grade ${defaultCurrent}` : "Stock / unengineered");
+    for (const grade of grades.filter((grade) => grade < targetGrade && grade > defaultCurrent)) {
+      addGradeOption(current, grade, `Grade ${grade}`);
+    }
+    const valid = [...current.options].some((option) => Number(option.value) === oldCurrent);
+    current.value = String(valid ? oldCurrent : defaultCurrent);
   }
+  const access = (item.engineer_access || []).map((engineer) =>
+    `${engineer.name}${engineer.max_grade ? ` G${engineer.max_grade}` : ""}`);
+  const engineerText = access.length ? ` · ${access.join(", ")}` : "";
+  const gradeText = !isClimb && grades.length ? ` · tier G${grades.join("/")}` : "";
+  $("ep-desc").innerHTML = `<b>${esc(item.kind_label || item.kind)}</b> · ${esc(item.module)}${gradeText}${esc(engineerText)}`;
 }
 
-async function pinBlueprint(name, grade, action) {
+function engineeringGradeText(item) {
+  if (item.kind === "ship-engineering" || item.kind === "odyssey-upgrade") {
+    const from = item.current_grade ? `G${item.current_grade}` : "stock";
+    return `${from} → G${item.target_grade}`;
+  }
+  const catalogItem = engCatalogById.get(item.id);
+  return catalogItem && catalogItem.grades.length ? `G${catalogItem.grades.join("/")} recipe` : "exact recipe";
+}
+
+function renderEngPlans(wishlist) {
+  const list = $("engplan-list");
+  const materials = $("engplan-materials");
+  const summary = $("engplan-summary");
+  if (!list || !materials || !summary) return;
+  const items = wishlist.items || [];
+  list.innerHTML = "";
+  materials.innerHTML = "";
+  if (!items.length) {
+    summary.innerHTML = "";
+    list.innerHTML = '<div class="dim empty ep-empty">Your wishlist is empty. Search the complete catalog above, choose the grade path and quantity, then add it here. A strong first ship upgrade is <b>Frame Shift Drive · Increased FSD Range</b>.</div>';
+    return;
+  }
+  const readiness = wishlist.craftable ? "Everything is aboard"
+    : wishlist.obtainable_with_suggested_trades ? "Material trades can close every listed gap"
+      : `${wishlist.progress || 0}% directly collected`;
+  summary.innerHTML = `<div class="ep-summary-head"><div><span class="ep-count">${items.length}</span> ` +
+    `wishlist ${items.length === 1 ? "item" : "items"}</div><div class="${wishlist.craftable ? "good" : "dim"}">${esc(readiness)}</div></div>` +
+    `<div class="stack-bar"><div style="width:${wishlist.progress || 0}%"></div></div>`;
+
+  for (const item of items) {
+    const card = document.createElement("div");
+    card.className = "engplan ep-wish-item" + (item.craftable ? " done" : "");
+    const engineers = (item.engineer_access || []).length
+      ? item.engineer_access.map((engineer) => `${engineer.name}${engineer.max_grade ? ` G${engineer.max_grade}` : ""}`).join(", ")
+      : "Synthesis / broker / merchant";
+    const applicationText = item.kind === "ship-engineering"
+      ? `${item.applications} deterministic application${item.applications === 1 ? "" : "s"}`
+      : `${item.quantity} item${item.quantity === 1 ? "" : "s"}`;
+    card.innerHTML = `<div class="ep-wish-main"><div><span class="chip ep-kind-chip">${esc(item.kind_label)}</span>` +
+      `<b>${esc(item.blueprint)}</b></div><div class="ep-wish-actions"></div></div>` +
+      `<div class="ep-wish-facts"><span>${esc(engineeringGradeText(item))}</span><span>×${item.quantity}</span>` +
+      `<span>${esc(applicationText)}</span><span class="${item.craftable ? "good" : "dim"}">${item.craftable ? "Ready" : `${item.progress}% allocated`}</span></div>` +
+      `<div class="dim ep-engineers">${esc(engineers)}</div>`;
+    const actions = card.querySelector(".ep-wish-actions");
+    const edit = document.createElement("button");
+    edit.type = "button";
+    edit.className = "copy";
+    edit.textContent = "EDIT";
+    edit.addEventListener("click", () => editEngineeringItem(item));
+    const remove = document.createElement("button");
+    remove.type = "button";
+    remove.className = "copy ep-remove";
+    remove.textContent = "REMOVE";
+    remove.addEventListener("click", () => pinBlueprint({ id: item.id, action: "unpin" }));
+    actions.append(edit, remove);
+    list.appendChild(card);
+  }
+
+  const materialRows = wishlist.materials || [];
+  materials.innerHTML = `<div class="ep-shopping-head"><div class="label">CONSOLIDATED SHOPPING LIST</div>` +
+    `<div class="dim">${materialRows.length} distinct ${materialRows.length === 1 ? "requirement" : "requirements"} · inventory is reserved once across the whole wishlist</div></div>`;
+  const rows = document.createElement("div");
+  rows.className = "ep-material-rows";
+  for (const material of materialRows) {
+    const short = material.deficit > 0;
+    const grade = material.grade ? `G${material.grade} ` : "";
+    const trade = material.trade ? `<div class="ep-trade"><b>VALID TRADE</b> ${material.trade.spend}× ${esc(material.trade.from)} ` +
+      `covers ${material.trade.covers >= material.deficit ? "this shortfall" : `${material.trade.covers} of ${material.deficit}`}</div>` : "";
+    const row = document.createElement("div");
+    row.className = "ep-material-row" + (short ? " short" : " ready");
+    row.innerHTML = `<div class="ep-material-status ${short ? "warn" : "good"}">${short ? "○" : "✓"}</div>` +
+      `<div class="ep-material-body"><div class="ep-material-main"><b>${esc(material.name)}</b>` +
+      `<span class="chip">${grade}${esc(material.kind)}</span><span class="ep-counts ${short ? "warn" : ""}">` +
+      `${material.have} / ${material.need}${short ? ` · need ${material.deficit}` : ""}</span></div>` +
+      `${trade}<details class="ep-source"><summary>WHERE TO FIND IT</summary><div>${esc(material.source || "No source note in the bundled catalog.")}</div></details></div>`;
+    rows.appendChild(row);
+  }
+  materials.appendChild(rows);
+}
+
+function editEngineeringItem(item) {
+  $("ep-search").value = "";
+  $("ep-kind").value = item.kind;
+  fillEngineeringCatalog(item.id);
+  $("ep-blueprint").value = item.id;
+  updateEngineeringGradeFields(item.current_grade, item.target_grade);
+  $("ep-quantity").value = item.quantity;
+  $("ep-pin").textContent = "UPDATE WISHLIST";
+  $("engplan-form").scrollIntoView({ behavior: "smooth", block: "center" });
+}
+
+async function pinBlueprint(item) {
   try {
-    await fetch("/api/engineering/pin", {
+    const resp = await fetch("/api/engineering/pin", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name, grade, action }),
+      body: JSON.stringify(item),
     });
-    loadEngineering();
-  } catch (e) { /* next load reflects reality */ }
+    const data = await resp.json();
+    if (!resp.ok) throw new Error(data.error || `HTTP ${resp.status}`);
+    $("ep-pin").textContent = "ADD TO WISHLIST";
+    await loadEngineering();
+  } catch (error) {
+    $("engplan-summary").innerHTML = `<div class="warn ep-api-error">Could not update wishlist: ${esc(error.message)}</div>`;
+  }
 }
 
 async function findTraders() {
@@ -1707,28 +2100,109 @@ function renderCarrier() {
   }
 }
 
-/* ---------- galaxy: powerplay · factions · conflicts · community goals ---------- */
+/* ---------- galaxy: local Powerplay · BGS · conflicts · visit history ---------- */
 
-function repBand(rep) {
-  if (rep == null) return null;
-  if (rep <= -35) return ["HOSTILE", "bad"];
-  if (rep <= -10) return ["UNFRIENDLY", "bad"];
-  if (rep < 10) return null; // neutral — not worth a chip
-  if (rep < 35) return ["CORDIAL", "dim"];
-  if (rep < 90) return ["FRIENDLY", "good"];
-  return ["ALLIED", "good"];
+function galaxyHistoryKey(commander) {
+  return "galaxyHistory:v1:" + encodeURIComponent(commander || "unknown");
+}
+
+function loadGalaxyHistory(commander) {
+  galaxyHistoryCommander = commander || "unknown";
+  try {
+    const value = JSON.parse(localStorage.getItem(galaxyHistoryKey(galaxyHistoryCommander)) || "[]");
+    galaxyHistory = Array.isArray(value) ? value : [];
+  } catch (e) {
+    galaxyHistory = [];
+  }
+}
+
+function saveGalaxyHistory() {
+  try {
+    localStorage.setItem(galaxyHistoryKey(galaxyHistoryCommander), JSON.stringify(galaxyHistory));
+  } catch (e) { /* a full/disabled browser store must never break live rendering */ }
+}
+
+function updateGalaxyHistory(gal) {
+  const commander = state.commander || "unknown";
+  if (galaxyHistoryCommander !== commander) loadGalaxyHistory(commander);
+  const entry = GalaxyData.observation(state.system, gal, new Date().toISOString());
+  const previousLength = galaxyHistory.length;
+  const previousTail = galaxyHistory[previousLength - 1];
+  galaxyHistory = GalaxyData.appendObservation(galaxyHistory, entry, 300);
+  const nextTail = galaxyHistory[galaxyHistory.length - 1];
+  if (galaxyHistory.length !== previousLength || previousTail !== nextTail) saveGalaxyHistory();
+  const systemEntries = galaxyHistory.filter((item) => item.system === state.system);
+  const latest = systemEntries[systemEntries.length - 1] || null;
+  const current = entry && latest && latest.signature === entry.signature ? latest : null;
+  return {
+    all: galaxyHistory,
+    entries: systemEntries,
+    current,
+    previous: current ? systemEntries[systemEntries.length - 2] || null : null,
+  };
 }
 
 function renderGalaxy() {
   const gal = state.galaxy || {};
-  renderPowerplay(gal);
-  renderFactions(gal);
+  const history = updateGalaxyHistory(gal);
+  renderPowerplay(gal, history);
+  renderFactions(gal, history);
   renderConflicts(gal);
+  renderGalaxyHistory(history);
   renderCommunityGoals(gal);
   renderSquadron(gal);
 }
 
-function renderPowerplay(gal) {
+function ppProgressPercent(value) {
+  if (value == null || value === "") return null;
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return null;
+  return Math.max(0, Math.min(100, numeric <= 1 ? numeric * 100 : numeric));
+}
+
+function powerplayStateNote(powerplayState) {
+  const notes = {
+    homesystem: "This is the Power's home system.",
+    unoccupied: "No Power currently controls this system.",
+    acquisition: "An uncontrolled system being worked for acquisition.",
+    contested: "Multiple Powers are competing for this system.",
+    exploited: "Power-controlled at the Exploited control band.",
+    fortified: "Power-controlled at the Fortified control band.",
+    stronghold: "Power-controlled at the Stronghold control band.",
+  };
+  const key = String(powerplayState || "").toLowerCase().replace(/[^a-z]/g, "");
+  return notes[key] || "System state reported by the local journal snapshot.";
+}
+
+function powerplayRewardsHtml(pp) {
+  const progress = GalaxyData.moduleProgress(pp.power, pp.rank, pp.merits);
+  const pips = GalaxyData.MODULE_RANKS.map((rank, index) => {
+    const item = progress.order[index];
+    const unlocked = pp.rank != null && Number(pp.rank) >= rank;
+    const title = item ? `${item.module} · rank ${rank}` : `Powerplay module · rank ${rank}`;
+    return `<span class="pp-reward-pip ${unlocked ? "on" : ""}" title="${esc(title)}">${rank}</span>`;
+  }).join("");
+  let next;
+  if (progress.complete) {
+    next = `<b class="good">ALL 12 POWERPLAY MODULES AVAILABLE</b>`;
+  } else {
+    const moduleName = progress.nextModule ? `<b>${esc(progress.nextModule)}</b> · ` : "";
+    const meritsLeft = progress.remainingMerits != null
+      ? ` · ${fmtNum(progress.remainingMerits)} merits remaining` : "";
+    next = `Next: ${moduleName}rank ${progress.nextRank}${meritsLeft}`;
+  }
+  const bar = !progress.complete && progress.fraction != null
+    ? `<div class="pp-reward-bar" title="Progress toward the next module milestone"><div style="width:${(progress.fraction * 100).toFixed(1)}%"></div></div>`
+    : "";
+  return `<div class="pp-rewards">
+    <div class="pp-reward-head"><span class="label" title="Built-in Powerplay 2.0 reward table, verified ${GalaxyData.DATA_AS_OF}; no online lookup">PP2 MODULE TRACK</span><span class="dim">${progress.unlockedCount}/12 unlocked</span></div>
+    <div class="pp-reward-pips">${pips}</div>${bar}
+    <div class="pp-reward-next">${next}</div>
+    <div class="dim pp-reward-note">Rank and merits do not decay between cycles while you stay pledged. Leaving or defecting resets that Powerplay progression.</div>
+  </div>`;
+}
+
+function renderPowerplay(gal, history) {
   const card = $("powerplay-card");
   if (!card) return;
   const pp = gal.powerplay;
@@ -1746,46 +2220,74 @@ function renderPowerplay(gal) {
     const weeks = pp.time_pledged_s != null ? Math.floor(pp.time_pledged_s / 604800) : null;
     $("pp-pledge").innerHTML =
       `<div class="pp-row"><b>${esc(pp.power || "?")}</b>` +
-      ` <span class="chip" title="Your standing with this Power — climb it by earning merits. Higher ratings unlock weekly rewards and, at rating 3+, the Power's unique module.">RATING ${pp.rank != null ? pp.rank : "?"}</span>` +
+      ` <span class="chip" title="Your persistent Powerplay 2.0 rank. It rises with lifetime merits for this pledge.">RANK ${pp.rank != null ? pp.rank : "?"}</span>` +
       `<span class="dim"> · ${fmtNum(pp.merits || 0)} merits` +
-      (weeks != null ? ` · pledged ${weeks >= 1 ? weeks + "w" : "under a week"}` : "") + `</span></div>`;
+      (weeks != null ? ` · pledged ${weeks >= 1 ? weeks + "w" : "under a week"}` : "") + `</span></div>` +
+      powerplayRewardsHtml(pp);
   }
   if (sys) {
-    const prog = sys.control_progress != null ? Math.max(0, Math.min(1, sys.control_progress)) : null;
-    const reinf = sys.reinforcement || 0;
-    const under = sys.undermining || 0;
+    const prog = ppProgressPercent(sys.control_progress);
+    const reinf = sys.reinforcement;
+    const under = sys.undermining;
+    const contenders = GalaxyData.contestingPowers(sys);
     let stateLine = `<b>${esc(sys.controlling || "Uncontrolled")}</b>` +
       (sys.state ? ` <span class="chip">${esc(sys.state).toUpperCase()}</span>` : "");
-    if (sys.powers && sys.powers.length > 1) {
-      stateLine += ` <span class="dim">· contested by ${esc(sys.powers.join(", "))}</span>`;
+    if (contenders.length) {
+      stateLine += ` <span class="dim">· other Powers present: ${esc(contenders.join(", "))}</span>`;
     }
+    const previousPowerplay = history.previous && history.previous.powerplay;
+    const currentPowerplay = history.current && history.current.powerplay;
+    const progressDelta = previousPowerplay && currentPowerplay &&
+      previousPowerplay.controlling === currentPowerplay.controlling &&
+      previousPowerplay.control_progress != null && currentPowerplay.control_progress != null
+      ? ppProgressPercent(currentPowerplay.control_progress) - ppProgressPercent(previousPowerplay.control_progress)
+      : null;
+    const scores = reinf != null || under != null
+      ? `<div class="pp-scores dim" title="Raw reinforcement and undermining scores reported by the journal; these are not a forecast.">` +
+        `<span class="good">▲ ${fmtNum(reinf || 0)} reinforcement</span>` +
+        ` <span>vs</span> <span class="warn">▼ ${fmtNum(under || 0)} undermining</span></div>`
+      : "";
+    const conflictProgress = (sys.conflict_progress || []).filter((item) => item && item.power);
+    const conflictHtml = conflictProgress.length
+      ? `<div class="pp-conflict-progress"><div class="label">POWER CONFLICT PROGRESS <span class="dim">journal snapshot</span></div>` +
+        conflictProgress.map((item) => {
+          const pct = ppProgressPercent(item.progress);
+          return `<div class="pp-conflict-row"><span>${esc(item.power)}</span>` +
+            `<div class="pp-mini-bar" title="Conflict progress reported by the journal; not a prediction"><div style="width:${pct == null ? 0 : pct.toFixed(1)}%"></div></div>` +
+            `<b>${pct == null ? "—" : pct.toFixed(1) + "%"}</b></div>`;
+        }).join("") + `</div>`
+      : "";
     $("pp-sys").innerHTML =
       `<div class="label">THIS SYSTEM <span class="dim">${esc(state.system || "")}</span></div>` +
-      `<div class="pp-row">${stateLine}</div>` +
+      `<div class="pp-row">${stateLine}</div><div class="dim pp-state-note">${esc(powerplayStateNote(sys.state))}</div>` +
       (prog != null
-        ? `<div class="pp-bar" title="How firmly the controlling power holds this system (100% = fully fortified for this cycle)"><div style="width:${Math.round(prog * 100)}%"></div></div>` +
-          `<div class="dim">control ${(prog * 100).toFixed(1)}%` +
-          (reinf || under ? ` · <span class="good">▲ ${fmtNum(reinf)} reinforced</span> vs <span class="warn">▼ ${fmtNum(under)} undermined</span> this cycle` : "") +
+        ? `<div class="pp-bar" title="Progress within the system's currently reported Powerplay control state; not a simple fortification meter"><div style="width:${prog.toFixed(1)}%"></div></div>` +
+          `<div class="dim">current-state progress ${prog.toFixed(1)}%` +
+          (progressDelta != null && Math.abs(progressDelta) >= 0.05
+            ? ` · <span class="${progressDelta >= 0 ? "good" : "warn"}">${progressDelta >= 0 ? "+" : ""}${progressDelta.toFixed(1)} pp since your prior observation</span>` : "") +
           `</div>`
-        : "");
+        : "") + scores + conflictHtml;
   }
 }
 
-function renderFactions(gal) {
+function renderFactions(gal, history) {
   const list = $("factions-list");
   if (!list) return;
   const factions = gal.factions || [];
   $("factions-empty").classList.toggle("hidden", factions.length > 0);
   $("factions-count").textContent = factions.length
     ? `${factions.length} factions · ${gal.controlling_faction || "?"} controls` : "";
-  const sig = JSON.stringify([factions, gal.controlling_faction]);
+  const deltas = GalaxyData.factionDeltas(history.current, history.previous);
+  const deltaByFaction = new Map(deltas.map((item) => [item.name, item.delta]));
+  const sig = JSON.stringify([factions, gal.controlling_faction, deltas]);
   if (list.dataset.sig === sig) return;
   list.dataset.sig = sig;
   list.innerHTML = "";
   for (const f of factions) {
     const inf = f.influence != null ? f.influence : 0;
     const controls = f.name === gal.controlling_faction;
-    const rep = repBand(f.my_reputation);
+    const rep = GalaxyData.reputationBand(f.my_reputation);
+    const delta = deltaByFaction.get(f.name);
     const states = []
       .concat((f.active_states || []).map((s) => [s, ""]))
       .concat((f.pending_states || []).map((s) => [s, " (pending)"]))
@@ -1795,7 +2297,9 @@ function renderFactions(gal) {
     div.innerHTML =
       `<div class="fact-top"><b>${esc(f.name || "?")}</b>` +
       (controls ? ' <span class="chip" title="Currently controls this system — owns the main station and sets security">CONTROLS</span>' : "") +
-      (rep ? ` <span class="chip ${rep[1]}" title="Your personal reputation with this faction">${rep[0]}</span>` : "") +
+      (rep ? ` <span class="chip ${rep.className}" title="Your personal reputation with this faction">${rep.label}</span>` : "") +
+      (delta != null && Math.abs(delta) >= 0.005
+        ? ` <span class="fact-delta ${delta >= 0 ? "good" : "warn"}" title="Influence change in percentage points since this browser's previous observation">${delta >= 0 ? "+" : ""}${delta.toFixed(1)} pp</span>` : "") +
       `<span class="fact-inf">${(inf * 100).toFixed(1)}%</span></div>` +
       `<div class="fact-bar"><div style="width:${Math.min(100, inf * 100).toFixed(1)}%"></div></div>` +
       (states.length || f.government
@@ -1820,6 +2324,7 @@ function renderConflicts(gal) {
   list.innerHTML = "";
   for (const c of conflicts) {
     const f1 = c.faction1 || {}, f2 = c.faction2 || {};
+    const isElection = String(c.war_type || "").toLowerCase().includes("election");
     const div = document.createElement("div");
     div.className = "conflict-row";
     const side = (f, other) =>
@@ -1829,9 +2334,66 @@ function renderConflicts(gal) {
       `<div class="conflict-head"><span class="chip">${esc((c.war_type || "war").toUpperCase())}</span>` +
       ` <span class="dim">${c.status === "active" ? "days won — first to 4 of 7 wins" : esc(c.status || "")}</span></div>` +
       `<div class="conflict-sides">${side(f1, f2)}<span class="dim conflict-vs">vs</span>${side(f2, f1)}</div>` +
-      `<div class="dim">Fight for a side in the system's conflict zones, or hand in combat bonds and war-support missions.</div>`;
+      (isElection
+        ? `<div class="dim conflict-guidance"><b>Election:</b> support a side with missions, trade, exploration data and other non-combat BGS actions. Elections have no conflict zones or combat bonds.</div>`
+        : `<div class="dim conflict-guidance"><b>${esc(c.war_type || "War")}:</b> support a side in conflict zones, with combat bonds and with appropriate missions.</div>`);
     list.appendChild(div);
   }
+}
+
+function renderGalaxyHistory(history) {
+  const summary = $("galhistory-summary");
+  const list = $("galhistory-list");
+  if (!summary || !list) return;
+  const current = history.current;
+  const previous = history.previous;
+  $("galhistory-count").textContent = history.entries.length
+    ? `${history.entries.length} observation${history.entries.length === 1 ? "" : "s"} here` : "";
+  $("galhistory-empty").classList.toggle("hidden", !!previous);
+  const sig = JSON.stringify(history.entries);
+  if (list.dataset.sig === sig) return;
+  list.dataset.sig = sig;
+  summary.innerHTML = "";
+  list.innerHTML = "";
+
+  if (current && previous) {
+    const elapsed = (Date.parse(current.observed_at) - Date.parse(previous.observed_at)) / 1000;
+    const deltas = GalaxyData.factionDeltas(current, previous).filter((item) => Math.abs(item.delta) >= 0.005);
+    const changes = deltas.slice(0, 5).map((item) =>
+      `<span class="history-delta ${item.delta >= 0 ? "good" : "warn"}"><b>${esc(item.name)}</b> ${item.delta >= 0 ? "+" : ""}${item.delta.toFixed(1)} pp</span>`);
+    if (current.controlling_faction !== previous.controlling_faction) {
+      changes.unshift(`<span class="history-delta warn">Control changed: <b>${esc(previous.controlling_faction || "none")}</b> → <b>${esc(current.controlling_faction || "none")}</b></span>`);
+    }
+    if (current.powerplay && previous.powerplay && current.powerplay.state !== previous.powerplay.state) {
+      changes.unshift(`<span class="history-delta">Powerplay state: <b>${esc(previous.powerplay.state || "none")}</b> → <b>${esc(current.powerplay.state || "none")}</b></span>`);
+    }
+    summary.innerHTML = `<div class="history-summary-head">CHANGE SINCE PREVIOUS OBSERVATION <span class="dim">${elapsed >= 0 ? fmtDuration(elapsed) + " ago" : "earlier"}</span></div>` +
+      (changes.length ? `<div class="history-deltas">${changes.join("")}</div>`
+        : `<div class="dim">No material faction influence, control or Powerplay-state change observed.</div>`);
+  }
+
+  for (const entry of history.entries.slice(-5).reverse()) {
+    const when = new Date(entry.observed_at);
+    const timestamp = Number.isNaN(when.getTime()) ? "time unknown" : when.toLocaleString();
+    const detail = [entry.controlling_faction ? entry.controlling_faction + " controls" : null,
+      entry.powerplay && entry.powerplay.state ? "PP " + entry.powerplay.state : null].filter(Boolean).join(" · ");
+    const row = document.createElement("div");
+    row.className = "galhistory-row";
+    row.innerHTML = `<b>${esc(entry.system)}</b><span class="dim">${esc(timestamp)}</span>` +
+      (detail ? `<span>${esc(detail)}</span>` : "");
+    list.appendChild(row);
+  }
+}
+
+function clearGalaxyHistory() {
+  if (!window.confirm("Clear the Galaxy observations saved in this browser and make the current system a new baseline?")) return;
+  if (galaxyHistoryCommander == null) galaxyHistoryCommander = (state && state.commander) || "unknown";
+  galaxyHistory = [];
+  saveGalaxyHistory();
+  $("galaxy-history-card").dataset.sig = "";
+  $("galhistory-list").dataset.sig = "";
+  $("powerplay-card").dataset.sig = "";
+  if (state) renderGalaxy();
 }
 
 function renderCommunityGoals(gal) {
@@ -2303,6 +2865,31 @@ function esc(s) {
     ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 }
 
+function confidenceAgeText(seconds) {
+  if (seconds == null || !Number.isFinite(Number(seconds))) return "age unknown";
+  const value = Math.max(0, Number(seconds));
+  if (value < 3600) return `${Math.max(1, Math.round(value / 60))}m old`;
+  if (value < 172800) return `${Math.round(value / 3600)}h old`;
+  return `${Math.round(value / 86400)}d old`;
+}
+
+function confidenceHtml(confidence) {
+  if (!confidence) return "";
+  const allowed = new Set(["high", "medium", "low"]);
+  const band = allowed.has(String(confidence.band).toLowerCase())
+    ? String(confidence.band).toLowerCase() : "low";
+  const score = Number.isFinite(Number(confidence.score)) ? Math.round(Number(confidence.score)) : "?";
+  const reasons = Array.isArray(confidence.reasons) && confidence.reasons.length
+    ? confidence.reasons.join("; ") : "no material freshness or depth warning";
+  const detail = `${confidence.source || "market observation"}; ${confidenceAgeText(confidence.age_s)}; ${reasons}`;
+  return `<span class="confidence confidence-${band}" title="${esc(detail)}">${band.toUpperCase()} ${score}</span>`;
+}
+
+function creditRangeHtml(range, suffix = "cr") {
+  if (!range || range.low == null || range.observed == null) return "";
+  return `<span class="risk-range">conservative ${fmtNum(range.low)}–${fmtNum(range.observed)} ${esc(suffix)}</span>`;
+}
+
 /* ---------- trade routes ---------- */
 
 async function findRoutes(ev) {
@@ -2462,7 +3049,18 @@ function renderAlerts(alerts) {
   strip.innerHTML = "";
   for (const a of alerts.slice(0, 3)) {
     const row = document.createElement("div");
-    row.textContent = `⚠ ${a.text}`;
+    row.className = "alert-row";
+    const message = document.createElement("span");
+    message.textContent = `⚠ ${a.text}`;
+    row.appendChild(message);
+    if (a.market_id != null) {
+      const recover = document.createElement("button");
+      recover.className = "plotbtn alert-recover";
+      recover.textContent = "RECOVER CARGO";
+      recover.title = "Use the cargo currently aboard to find a different buyer, excluding the degraded market";
+      recover.addEventListener("click", () => recoverCargo(a.market_id, recover));
+      row.appendChild(recover);
+    }
     strip.appendChild(row);
   }
   const dismiss = document.createElement("button");
@@ -2489,18 +3087,22 @@ function renderLoops(loops) {
       `<b>${esc(l.a.station)}</b><span class="dim">${esc(l.a.system)}</span>` +
       `<span class="arrow">⇄</span>` +
       `<b>${esc(l.b.station)}</b><span class="dim">${esc(l.b.system)}</span>` +
+      confidenceHtml(l.confidence) +
       `<span class="profit">${l.profit_per_hour != null ? "+" + fmtNum(l.profit_per_hour) + " cr/hr" : "+" + fmtNum(l.profit) + " cr / trip"}</span>` +
       `</div>` +
       `<div class="commodities">` +
-      `+${fmtNum(l.profit)} cr / round trip` +
+      `observed +${fmtNum(l.profit)} cr / round trip` +
+      (l.profit_range ? ` · ${creditRangeHtml(l.profit_range)}` : "") +
       (l.minutes_per_trip != null ? ` · ≈${l.minutes_per_trip} min/trip` : "") +
       ` · ${l.distance} ly apart · start ${l.a.from_player} ly from you` +
+      (l.positioning_minutes != null ? ` · ${fmtNum(l.positioning_minutes)} min positioning` : "") +
+      (l.first_trip_profit_per_hour != null ? ` · first run ${fmtNum(l.first_trip_profit_per_hour)} cr/hr incl. positioning` : "") +
       ` · ${l.a.dist_ls != null ? fmtNum(l.a.dist_ls) : "?"} / ${l.b.dist_ls != null ? fmtNum(l.b.dist_ls) : "?"} ls to pads` +
       (tons ? ` · ${fmtNum(l.profit / tons)} cr/t moved` : "") +
       `</div>` +
-      `<div class="leg-label">OUTBOUND <span class="profit-cell">+${fmtNum(l.outbound.profit)}</span></div>` +
+      `<div class="leg-label">OUTBOUND ${confidenceHtml(l.outbound.confidence)} <span class="profit-cell">+${fmtNum(l.outbound.profit)}</span></div>` +
       commodityTableHtml(l.outbound.commodities) +
-      `<div class="leg-label">RETURN <span class="profit-cell">${l.inbound.commodities.length ? "+" + fmtNum(l.inbound.profit) : "fly back empty"}</span></div>` +
+      `<div class="leg-label">RETURN ${confidenceHtml(l.inbound.confidence)} <span class="profit-cell">${l.inbound.commodities.length ? "+" + fmtNum(l.inbound.profit) : "fly back empty"}</span></div>` +
       commodityTableHtml(l.inbound.commodities);
     const line = div.querySelector(".route-line");
     const btnA = plotButton(l.a.system);
@@ -2523,9 +3125,10 @@ function renderRoutes(hops) {
   if (!hops.length) return;
 
   // Route-wide totals for the summary bar.
-  let totalProfit = 0, totalDist = 0, totalTons = 0, firstOutlay = 0;
+  let totalProfit = 0, totalLow = 0, totalDist = 0, totalTons = 0, firstOutlay = 0;
   hops.forEach((h, i) => {
     totalProfit += h.profit || 0;
+    totalLow += h.profit_range?.low ?? h.profit ?? 0;
     totalDist += h.distance || 0;
     for (const c of h.commodities || []) {
       totalTons += c.amount || 0;
@@ -2536,6 +3139,7 @@ function renderRoutes(hops) {
   summary.className = "route-summary";
   summary.innerHTML =
     `<span class="profit">+${fmtNum(totalProfit)} cr total</span>` +
+    `<span class="risk-range">conservative ${fmtNum(totalLow)}–${fmtNum(totalProfit)} cr</span>` +
     `<span>${hops.length} hop${hops.length > 1 ? "s" : ""}</span>` +
     `<span>${totalDist.toFixed(1)} ly</span>` +
     `<span>${fmtNum(totalTons)} t moved</span>` +
@@ -2563,6 +3167,7 @@ function renderRoutes(hops) {
       `<b>${esc(h.from_station)}</b><span class="dim">${esc(h.from_system)}</span>` +
       `<span class="arrow">➜</span>` +
       `<b>${esc(h.to_station)}</b><span class="dim">${esc(h.to_system)}</span>` +
+      confidenceHtml(h.confidence) +
       `<span class="profit">+${fmtNum(h.profit)} cr</span>` +
       `</div>` +
       commodityTableHtml(h.commodities) +
@@ -2571,6 +3176,7 @@ function renderRoutes(hops) {
       (h.to_dist_ls != null ? ` · ${fmtNum(h.to_dist_ls)} ls to station` : "") +
       (tons ? ` · ${fmtNum(h.profit / tons)} cr/t` : "") +
       (outlay ? ` · costs ${fmtNum(outlay)} cr to load` : "") +
+      (h.profit_range ? ` · ${creditRangeHtml(h.profit_range)}` : "") +
       (h.cumulative_profit != null ? ` · total so far: ${fmtNum(h.cumulative_profit)} cr` : "") +
       `</div>`;
     if (h.to_system) {
@@ -2642,7 +3248,7 @@ async function searchCommodity(ev) {
         `<td class="num">${fmtNum(units)}</td>` +
         `<td class="num">${r.distance} ly</td>` +
         `<td class="num">${r.dist_ls != null ? fmtNum(r.dist_ls) + " ls" : "?"}</td>` +
-        `<td class="num">${ageText(r.updated_at)}</td>`;
+        `<td class="num freshness-cell">${ageText(r.updated_at)} ${confidenceHtml(r.confidence)}</td>`;
       const td = document.createElement("td");
       td.appendChild(plotButton(r.system));
       tr.appendChild(td);
@@ -2689,7 +3295,7 @@ async function searchMining(ev) {
         `<td><b>${esc(r.name)}</b></td>` +
         `<td><span class="mine-method mine-${esc(r.method)}">${esc(r.method)}</span></td>` +
         `<td class="num orange">${fmtNum(r.sell_price)}</td>` +
-        `<td>${esc(r.station)}${r.large_pad ? "" : ' <span class="sub">no L pad</span>'}<div class="sub">${esc(r.system)}</div></td>` +
+        `<td>${esc(r.station)}${r.large_pad ? "" : ' <span class="sub">no L pad</span>'}<div class="sub">${esc(r.system)} · ${confidenceAgeText(r.confidence?.age_s)} ${confidenceHtml(r.confidence)}</div></td>` +
         `<td class="num">${r.distance} ly</td>` +
         `<td class="num">${fmtNum(r.demand)}</td>`;
       const td = document.createElement("td");
@@ -3149,6 +3755,36 @@ function renderColonisation() {
 
 /* ---------- best sell for current cargo ---------- */
 
+function renderCargoBuyers(results, recovery = false) {
+  const out = $("cargo-sell-results");
+  out.innerHTML = "";
+  results.slice(0, 5).forEach((r, idx) => {
+    const div = document.createElement("div");
+    div.className = "hop";
+    div.style.setProperty("--i", idx);
+    const items = (r.items || []).map((item) =>
+      `${esc(item.name)} ×${fmtNum(item.units)} @ ${fmtNum(item.sell_price)}${item.partial ? " (demand-capped)" : ""}`
+    ).join(" · ");
+    div.innerHTML =
+      `<div class="route-line"><b>${esc(r.station)}</b><span class="dim">${esc(r.system)}</span>` +
+      confidenceHtml(r.confidence) +
+      `<span class="profit">+${fmtNum(r.total)} cr observed</span></div>` +
+      `<div class="commodities">${r.distance} ly · ${r.dist_ls != null ? fmtNum(r.dist_ls) + " ls" : "?"}` +
+      `${r.large_pad ? "" : " · no L pad"}` +
+      (r.payout_range ? ` · ${creditRangeHtml(r.payout_range, "cr payout")}` : "") +
+      ` · ${confidenceAgeText(r.confidence?.age_s)} · ${items}</div>`;
+    const line = div.querySelector(".route-line");
+    if (recovery && idx === 0) {
+      const mark = document.createElement("span");
+      mark.className = "recovery-mark";
+      mark.textContent = "RECOMMENDED DIVERSION";
+      line.insertBefore(mark, line.querySelector(".profit"));
+    }
+    line.insertBefore(plotButton(r.system), line.querySelector(".profit"));
+    out.appendChild(div);
+  });
+}
+
 async function findCargoSell() {
   const status = $("cargo-sell-status");
   const out = $("cargo-sell-results");
@@ -3163,25 +3799,43 @@ async function findCargoSell() {
     status.textContent = results.length
       ? `Top ${results.length} buyers for your cargo within 50 ly:`
       : "Nobody nearby is buying what you're carrying — try after the next EDDN update or widen the net.";
-    results.slice(0, 5).forEach((r, idx) => {
-      const div = document.createElement("div");
-      div.className = "hop";
-      div.style.setProperty("--i", idx);
-      const items = r.items.map((i) =>
-        `${esc(i.name)} ×${fmtNum(i.units)} @ ${fmtNum(i.sell_price)}${i.partial ? " (demand-capped)" : ""}`
-      ).join(" · ");
-      div.innerHTML =
-        `<div class="route-line"><b>${esc(r.station)}</b><span class="dim">${esc(r.system)}</span>` +
-        `<span class="profit">+${fmtNum(r.total)} cr</span></div>` +
-        `<div class="commodities">${r.distance} ly · ${r.dist_ls != null ? fmtNum(r.dist_ls) + " ls" : "?"}` +
-        `${r.large_pad ? "" : " · no L pad"} · ${items}</div>`;
-      const line = div.querySelector(".route-line");
-      line.insertBefore(plotButton(r.system), line.querySelector(".profit"));
-      out.appendChild(div);
-    });
+    renderCargoBuyers(results);
   } catch (err) {
     status.classList.add("error");
     status.textContent = String(err.message || err);
+  }
+}
+
+async function recoverCargo(failedMarketId, button) {
+  const status = $("cargo-sell-status");
+  const original = button.textContent;
+  button.disabled = true;
+  button.textContent = "REPLANNING…";
+  try {
+    const response = await fetch("/api/cargo-recovery", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ failed_market_id: failedMarketId, radius: 100, max_age_days: 7, limit: 5 }),
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || "Cargo recovery failed");
+    const results = [data.recommended, ...(data.alternatives || [])].filter(Boolean);
+    if (document.body.classList.contains("panel-mode")) setPanelPage("local");
+    else activateTab("local");
+    status.classList.toggle("error", !results.length);
+    status.textContent = results.length
+      ? "Diversion calculated from the cargo currently aboard. The failed market is excluded; payouts remain observations, not guarantees."
+      : "No viable replacement buyer was found within 100 ly using market reports from the last 7 days.";
+    renderCargoBuyers(results, true);
+    $("cargo-sell-results").scrollIntoView({ behavior: "smooth", block: "start" });
+  } catch (error) {
+    status.classList.add("error");
+    status.textContent = String(error.message || error);
+    if (document.body.classList.contains("panel-mode")) setPanelPage("local");
+    else activateTab("local");
+  } finally {
+    button.disabled = false;
+    button.textContent = original;
   }
 }
 
@@ -4076,6 +4730,1326 @@ async function saveSetting(key, value, row) {
   }
 }
 
+/* ---------- OPS: local objectives, session planning and learned timings ---------- */
+
+async function opsJson(url, options = {}) {
+  const response = await fetch(url, options);
+  const raw = await response.text();
+  let data = {};
+  if (raw) {
+    try { data = JSON.parse(raw); }
+    catch (error) { data = { error: raw.slice(0, 300) }; }
+  }
+  if (!response.ok) throw new Error(data.error || data.message || `Local OPS request failed (${response.status}).`);
+  return data;
+}
+
+function opsEpochLabel(value) {
+  if (value == null || value === "") return "";
+  const numeric = Number(value);
+  const date = Number.isFinite(numeric)
+    ? new Date(numeric > 10_000_000_000 ? numeric : numeric * 1000)
+    : new Date(value);
+  return Number.isNaN(date.getTime()) ? "" : date.toLocaleString([], { dateStyle: "medium", timeStyle: "short" });
+}
+
+function opsDateInput(value) {
+  if (!value) return "";
+  const date = new Date(Number(value) * 1000);
+  if (Number.isNaN(date.getTime())) return "";
+  return new Date(date.getTime() - date.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+}
+
+function opsActivityName(value) {
+  return String(value || "other").replaceAll("_", " ").replace(/\b\w/g, (char) => char.toUpperCase());
+}
+
+function opsTimingProvenance(activity, plannedSeconds) {
+  const estimate = opsState.timings?.activities?.[activity];
+  const planned = plannedSeconds ? `Plan estimate ${fmtDuration(plannedSeconds)}.` : "";
+  if (!estimate) return `${planned} No timing provenance is available for this activity.`.trim();
+  if (estimate.source === "personal_median") {
+    const context = estimate.context ? ` for ${estimate.context}` : "";
+    const margin = estimate.conservative_margin
+      ? `; +${Math.round(estimate.conservative_margin * 100)}% planning margin` : "";
+    return `${planned} Personal median${context}: ${fmtDuration(estimate.median_seconds)} from ` +
+      `${estimate.sample_count} local journal sample${estimate.sample_count === 1 ? "" : "s"}${margin}.`;
+  }
+  const partial = estimate.sample_count
+    ? ` (${estimate.sample_count} sample${estimate.sample_count === 1 ? "" : "s"}; 3 required for a personal median)` : "";
+  return `${planned} Conservative built-in default: ${fmtDuration(estimate.seconds)}${partial}.`;
+}
+
+function renderOpsTimings() {
+  const timings = opsState.timings || {};
+  const activities = Object.entries(timings.activities || {});
+  const personal = activities.filter(([, value]) => value.source === "personal_median");
+  $("ops-timing-summary").textContent = activities.length
+    ? `${personal.length} PERSONAL · ${activities.length - personal.length} DEFAULT`
+    : "NO TIMING DATA";
+  if (!activities.length) {
+    $("ops-timing-list").innerHTML = '<div class="empty dim">No timing model is available yet.</div>';
+    return;
+  }
+  const pending = (timings.pending || []).length
+    ? `<div class="dim empty">Currently learning ${(timings.pending || []).map((row) => esc(opsActivityName(row.activity))).join(", ")}.</div>` : "";
+  $("ops-timing-list").innerHTML = pending + '<div class="ops-timing-table">' + activities
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([activity, value]) => {
+      const source = value.source === "personal_median"
+        ? `${value.sample_count} samples · median ${fmtDuration(value.median_seconds)} · planned ${fmtDuration(value.seconds)}`
+        : `conservative default · ${fmtDuration(value.seconds)}${value.sample_count ? ` · ${value.sample_count}/3 samples` : ""}`;
+      return `<div class="ops-timing-row"><b>${esc(opsActivityName(activity))}</b><span>${esc(source)}</span></div>`;
+    }).join("") + "</div>";
+}
+
+async function loadOpsTimings() {
+  try {
+    const data = await opsJson("/api/timings", { cache: "no-store" });
+    opsState.timings = data.timings || data;
+    renderOpsTimings();
+    if (opsState.plan) renderOpsPlan(opsState.plan);
+  } catch (error) {
+    $("ops-timing-summary").textContent = "UNAVAILABLE";
+    $("ops-timing-list").innerHTML = `<div class="empty warn">${esc(error.message)}</div>`;
+  }
+}
+
+function opsAlternativeReason(task, plan, selectedIds, nodeById) {
+  const dependencies = (task.depends_on || []).map((id) => nodeById.get(id)).filter(Boolean);
+  const missing = dependencies.filter((item) => !selectedIds.has(item.id));
+  if (missing.length) return `Its required bundle also includes ${missing.map((item) => item.title).join(", ")}.`;
+  if ((task.estimated_minutes || Math.ceil((task.estimated_seconds || 0) / 60)) > plan.remaining_minutes) {
+    return `Needs about ${task.estimated_minutes || Math.ceil(task.estimated_seconds / 60)} minutes; ` +
+      `${plan.remaining_minutes} remain after selected work.`;
+  }
+  return "Ranked behind selected work by priority, reward per minute and duration, or its dependency bundle did not fit.";
+}
+
+function opsTaskMarkup(task, index, selected, plan, nodeById) {
+  const destination = task.plot || {};
+  const place = [destination.system, destination.station || destination.body].filter(Boolean).join(" · ");
+  const facts = [
+    `<span class="ops-fact">${esc(opsActivityName(task.activity))}</span>`,
+    `<span class="ops-fact">${esc(fmtDuration(task.estimated_seconds || 0))}</span>`,
+    `<span class="ops-fact">PRIORITY ${Number(task.priority || 0)}</span>`,
+  ];
+  if (task.reward) facts.push(`<span class="ops-fact reward">${esc(fmtCr(task.reward))}</span>`);
+  if (place) facts.push(`<span class="ops-fact">⌖ ${esc(place)}</span>`);
+  if (task.deadline) facts.push(`<span class="ops-fact urgent">DUE ${esc(opsEpochLabel(task.deadline))}</span>`);
+  if (task.risk) facts.push(`<span class="ops-fact urgent">RISK ${esc(String(task.risk).toUpperCase())}</span>`);
+  const dependencies = (task.depends_on || []).map((id) => nodeById.get(id)).filter(Boolean);
+  const requiredBy = selected
+    ? (plan.selected || []).filter((candidate) => (candidate.depends_on || []).includes(task.id)) : [];
+  let decision;
+  if (requiredBy.length) {
+    decision = `Included first because ${requiredBy.map((item) => item.title).join(", ")} depends on it.`;
+  } else if (selected) {
+    decision = "Selected by priority, reward per minute and duration; its dependency bundle fits this budget.";
+  } else {
+    const selectedIds = new Set((plan.selected || []).map((item) => item.id));
+    decision = opsAlternativeReason(task, plan, selectedIds, nodeById);
+  }
+  const dependencyLine = dependencies.length
+    ? `<div class="ops-dependencies"><b>Requires:</b> ${dependencies.map((item) => esc(item.title)).join(" → ")}</div>` : "";
+  const plot = destination.system
+    ? `<button class="copy ops-task-action" type="button" data-ops-plot="${esc(destination.system)}">PLOT ${esc(destination.system)}</button>` : "";
+  return `<article class="ops-task${selected ? "" : " alternative"}">` +
+    `<div class="ops-task-number">${selected ? index + 1 : `A${index + 1}`}</div>` +
+    `<div><div class="ops-task-title">${esc(task.title || "Untitled task")}</div>` +
+    `<div class="ops-task-why">${esc(task.why || "Known local objective")} · ${esc(decision)}</div>` +
+    `<div class="ops-task-facts">${facts.join("")}</div>${dependencyLine}` +
+    `<div class="ops-provenance"><b>Timing:</b> ${esc(opsTimingProvenance(task.activity, task.estimated_seconds))}</div></div>${plot}</article>`;
+}
+
+function renderOpsPlan(plan) {
+  opsState.plan = plan;
+  const graphNodes = plan.graph?.nodes || [...(plan.selected || []), ...(plan.alternatives || [])];
+  const nodeById = new Map(graphNodes.map((task) => [task.id, task]));
+  $("ops-plan-meta").textContent = `${plan.planned_minutes || 0} / ${plan.budget_minutes || 0} MIN`;
+  $("ops-plan-status").textContent = (plan.selected || []).length
+    ? `${plan.selected.length} task${plan.selected.length === 1 ? "" : "s"} selected · ` +
+      `${plan.remaining_minutes || 0} minutes deliberately left uncommitted · generated ${new Date(plan.generated_at || Date.now()).toLocaleTimeString()}`
+    : "No known work fit this budget. Review the warnings and alternatives below.";
+  const warnings = plan.warnings || [];
+  $("ops-plan-warnings").classList.toggle("hidden", !warnings.length);
+  $("ops-plan-warnings").innerHTML = warnings.map((warning) => `<div>▲ ${esc(warning)}</div>`).join("");
+  $("ops-plan-selected").innerHTML = (plan.selected || []).length
+    ? (plan.selected || []).map((task, index) => opsTaskMarkup(task, index, true, plan, nodeById)).join("")
+    : '<div class="empty dim">No selected tasks.</div>';
+  const alternatives = plan.alternatives || [];
+  const visibleAlternatives = alternatives.slice(0, 50);
+  $("ops-alternatives-wrap").classList.toggle("hidden", !alternatives.length);
+  $("ops-alternative-count").textContent = alternatives.length
+    ? `${alternatives.length} NOT SELECTED${alternatives.length > 50 ? " · SHOWING 50" : ""}` : "";
+  $("ops-plan-alternatives").innerHTML = visibleAlternatives
+    .map((task, index) => opsTaskMarkup(task, index, false, plan, nodeById)).join("");
+}
+
+async function buildOpsPlan(event) {
+  event.preventDefault();
+  const button = $("ops-plan-go");
+  button.disabled = true;
+  button.textContent = "PLANNING…";
+  $("ops-plan-status").textContent = "Evaluating current journal state, saved objectives and dependency bundles…";
+  try {
+    const data = await opsJson("/api/objectives/plan", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        minutes: Number($("ops-budget").value),
+        time_budget_minutes: Number($("ops-budget").value),
+        max_tasks: Number($("ops-max-tasks").value),
+      }),
+    });
+    renderOpsPlan(data.plan || data);
+  } catch (error) {
+    $("ops-plan-status").innerHTML = `<span class="warn">${esc(error.message)}</span>`;
+  } finally {
+    button.disabled = false;
+    button.textContent = "BUILD SESSION PLAN";
+  }
+}
+
+function opsObjectiveQuery() {
+  const filter = $("ops-objective-filter")?.value || "current";
+  if (filter === "done") return "done,dismissed";
+  if (filter === "all") return "open,active,blocked,done,dismissed";
+  return "open,active,blocked";
+}
+
+function renderOpsObjectives() {
+  const objectives = opsState.objectives || [];
+  $("ops-objective-count").textContent = String(objectives.length);
+  $("ops-objective-statusline").textContent = objectives.length
+    ? "Status changes are saved immediately. EDIT exposes every stored planning field."
+    : "No objectives match this view.";
+  const statuses = ["open", "active", "blocked", "done", "dismissed"];
+  $("ops-objective-list").innerHTML = objectives.map((objective) => {
+    const facts = [opsActivityName(objective.category)];
+    if (objective.estimated_seconds) facts.push(fmtDuration(objective.estimated_seconds));
+    if (objective.system) facts.push(objective.system +
+      (objective.station || objective.body ? ` · ${objective.station || objective.body}` : ""));
+    if (objective.deadline) facts.push(`due ${opsEpochLabel(objective.deadline)}`);
+    if (objective.reward) facts.push(fmtCr(objective.reward));
+    const options = statuses.map((value) =>
+      `<option value="${value}"${objective.status === value ? " selected" : ""}>${value.toUpperCase()}</option>`).join("");
+    return `<article class="ops-record ${esc(objective.status)}" data-objective-id="${esc(objective.id)}">` +
+      `<div><div class="ops-record-title">${esc(objective.title)}</div>` +
+      `<div class="ops-record-meta"><span>PRIORITY ${Number(objective.priority || 0)}</span>` +
+      facts.map((fact) => `<span>${esc(fact)}</span>`).join("") + `</div></div>` +
+      `<div class="ops-record-controls"><select data-objective-status="${esc(objective.id)}" aria-label="Status for ${esc(objective.title)}">${options}</select>` +
+      `<button class="copy" type="button" data-objective-edit="${esc(objective.id)}">EDIT</button>` +
+      `<button class="copy danger" type="button" data-objective-delete="${esc(objective.id)}">DELETE</button></div></article>`;
+  }).join("");
+}
+
+async function loadOpsObjectives() {
+  try {
+    const statuses = encodeURIComponent(opsObjectiveQuery());
+    const data = await opsJson(`/api/objectives?statuses=${statuses}`, { cache: "no-store" });
+    opsState.objectives = data.objectives || (Array.isArray(data) ? data : []);
+    renderOpsObjectives();
+  } catch (error) {
+    $("ops-objective-statusline").innerHTML = `<span class="warn">${esc(error.message)}</span>`;
+  }
+}
+
+function resetOpsObjectiveForm() {
+  $("ops-objective-form").reset();
+  $("ops-objective-id").value = "";
+  $("ops-objective-priority").value = "50";
+  $("ops-objective-status").value = "open";
+  $("ops-objective-save").textContent = "ADD OBJECTIVE";
+  $("ops-objective-cancel").classList.add("hidden");
+}
+
+function editOpsObjective(objectiveId) {
+  const objective = opsState.objectives.find((item) => item.id === objectiveId);
+  if (!objective) return;
+  $("ops-objective-id").value = objective.id;
+  $("ops-objective-title").value = objective.title || "";
+  $("ops-objective-category").value = objective.category || "other";
+  $("ops-objective-priority").value = objective.priority ?? 50;
+  $("ops-objective-minutes").value = objective.estimated_seconds
+    ? Math.max(1, Math.round(objective.estimated_seconds / 60)) : "";
+  $("ops-objective-system").value = objective.system || "";
+  $("ops-objective-station").value = objective.station || "";
+  $("ops-objective-body").value = objective.body || "";
+  $("ops-objective-deadline").value = opsDateInput(objective.deadline);
+  $("ops-objective-status").value = objective.status || "open";
+  $("ops-objective-save").textContent = "SAVE CHANGES";
+  $("ops-objective-cancel").classList.remove("hidden");
+  $("ops-objective-title").focus();
+}
+
+async function saveOpsObjective(event) {
+  event.preventDefault();
+  const objectiveId = $("ops-objective-id").value;
+  const minutes = Number($("ops-objective-minutes").value);
+  const deadlineValue = $("ops-objective-deadline").value;
+  const payload = {
+    title: $("ops-objective-title").value.trim(),
+    category: $("ops-objective-category").value,
+    priority: Number($("ops-objective-priority").value),
+    estimated_seconds: minutes > 0 ? Math.round(minutes * 60) : null,
+    system: $("ops-objective-system").value.trim() || null,
+    station: $("ops-objective-station").value.trim() || null,
+    body: $("ops-objective-body").value.trim() || null,
+    deadline: deadlineValue ? new Date(deadlineValue).toISOString() : null,
+    status: $("ops-objective-status").value,
+  };
+  const button = $("ops-objective-save");
+  button.disabled = true;
+  try {
+    const saved = await opsJson(objectiveId ? `/api/objectives/${encodeURIComponent(objectiveId)}` : "/api/objectives", {
+      method: objectiveId ? "PATCH" : "POST",
+      headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload),
+    });
+    const createdId = saved.objective?.id || saved.id;
+    if (!objectiveId && createdId && payload.status !== "open") {
+      await opsJson(`/api/objectives/${encodeURIComponent(createdId)}`, {
+        method: "PATCH", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: payload.status }),
+      });
+    }
+    resetOpsObjectiveForm();
+    await loadOpsObjectives();
+    $("ops-plan-status").textContent = "Objectives changed. Build a new session plan when ready.";
+  } catch (error) {
+    $("ops-objective-statusline").innerHTML = `<span class="warn">${esc(error.message)}</span>`;
+  } finally {
+    button.disabled = false;
+  }
+}
+
+async function patchOpsObjective(objectiveId, changes) {
+  try {
+    await opsJson(`/api/objectives/${encodeURIComponent(objectiveId)}`, {
+      method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(changes),
+    });
+    await loadOpsObjectives();
+  } catch (error) {
+    $("ops-objective-statusline").innerHTML = `<span class="warn">${esc(error.message)}</span>`;
+    await loadOpsObjectives();
+  }
+}
+
+async function deleteOpsObjective(objectiveId) {
+  const objective = opsState.objectives.find((item) => item.id === objectiveId);
+  if (!confirm(`Delete objective “${objective?.title || objectiveId}”?`)) return;
+  try {
+    await opsJson(`/api/objectives/${encodeURIComponent(objectiveId)}`, { method: "DELETE" });
+    if ($("ops-objective-id").value === objectiveId) resetOpsObjectiveForm();
+    await loadOpsObjectives();
+  } catch (error) {
+    $("ops-objective-statusline").innerHTML = `<span class="warn">${esc(error.message)}</span>`;
+  }
+}
+
+/* ---------- OPS: account-free operations boards ---------- */
+
+function opsStatusOptions(values, current) {
+  return values.map((value) =>
+    `<option value="${value}"${value === current ? " selected" : ""}>${value.toUpperCase()}</option>`).join("");
+}
+
+function renderOpsBoardSelector() {
+  const select = $("ops-board-select");
+  select.innerHTML = "";
+  if (!opsState.boards.length) {
+    const option = document.createElement("option");
+    option.value = "";
+    option.textContent = "NO BOARDS";
+    select.appendChild(option);
+    select.disabled = true;
+    return;
+  }
+  select.disabled = false;
+  for (const board of opsState.boards) {
+    const option = document.createElement("option");
+    option.value = board.id;
+    option.textContent = `${board.title} · ${String(board.status || "active").toUpperCase()}`;
+    option.selected = board.id === opsState.activeBoardId;
+    select.appendChild(option);
+  }
+}
+
+function opsObjectiveTitle(objectiveId) {
+  if (!objectiveId) return "Whole board";
+  return (opsState.snapshot?.objectives || []).find((item) => item.id === objectiveId)?.title || "Unknown objective";
+}
+
+function fillOpsBoardObjectiveSelects() {
+  const objectives = opsState.snapshot?.objectives || [];
+  for (const id of ["ops-assignment-objective", "ops-reservation-objective", "ops-contribution-objective"]) {
+    const select = $(id);
+    const previous = select.value;
+    select.innerHTML = '<option value="">Whole board</option>';
+    for (const objective of objectives) {
+      const option = document.createElement("option");
+      option.value = objective.id;
+      option.textContent = objective.title;
+      select.appendChild(option);
+    }
+    if ([...select.options].some((option) => option.value === previous)) select.value = previous;
+  }
+}
+
+function opsBoardRecordMarkup(record, kind) {
+  let title = record.title || "Untitled record";
+  const facts = [];
+  let statuses = null;
+  if (kind === "objectives") {
+    statuses = ["open", "active", "blocked", "done"];
+    if (record.description) facts.push(record.description);
+    if (record.system) facts.push(record.system + (record.station ? ` · ${record.station}` : ""));
+    if (record.deadline) facts.push(`due ${opsEpochLabel(record.deadline)}`);
+    facts.push(`priority ${record.priority ?? 50}`);
+  } else if (kind === "assignments") {
+    title = record.assignee || "Unassigned";
+    statuses = ["assigned", "active", "done", "released"];
+    facts.push(opsObjectiveTitle(record.objective_id));
+    if (record.role) facts.push(record.role);
+  } else if (kind === "reservations") {
+    title = record.resource_key || "Reserved resource";
+    statuses = ["reserved", "fulfilled", "released"];
+    facts.push(`${Number(record.amount || 0).toLocaleString()}${record.unit ? ` ${record.unit}` : ""}`);
+    facts.push(record.resource_type || "resource");
+    facts.push(opsObjectiveTitle(record.objective_id));
+    if (record.assignee) facts.push(`by ${record.assignee}`);
+  } else if (kind === "contributions") {
+    title = `${record.contributor || "Commander"} · ${record.kind || "contribution"}`;
+    facts.push(`${Number(record.amount || 0).toLocaleString()}${record.unit ? ` ${record.unit}` : ""}`);
+    facts.push(opsObjectiveTitle(record.objective_id));
+    if (record.note) facts.push(record.note);
+  }
+  facts.push(`rev ${record.revision || 1}`);
+  const statusClass = String(record.status || "").toLowerCase().replace(/[^a-z-]/g, "");
+  const selector = statuses
+    ? `<select data-op-status data-kind="${kind}" data-id="${esc(record.id)}" aria-label="${esc(kind)} status">` +
+      opsStatusOptions(statuses, record.status) + "</select>" : "";
+  return `<article class="ops-record ${statusClass}"><div><div class="ops-record-title">${esc(title)}</div>` +
+    `<div class="ops-record-meta">${facts.filter(Boolean).map((fact) => `<span>${esc(fact)}</span>`).join("")}</div></div>` +
+    `<div class="ops-record-controls">${selector}` +
+    `<button class="copy danger" type="button" data-op-delete data-kind="${kind}" data-id="${esc(record.id)}">REMOVE</button>` +
+    `</div></article>`;
+}
+
+function renderOpsConflicts() {
+  const conflicts = opsState.conflicts || [];
+  const box = $("ops-conflicts");
+  box.classList.toggle("hidden", !conflicts.length);
+  if (!conflicts.length) {
+    box.innerHTML = "";
+    return;
+  }
+  box.innerHTML = `<b>▲ ${conflicts.length} merge conflict${conflicts.length === 1 ? "" : "s"} recorded</b>` +
+    `<div class="dim">The deterministic winner is already active. The losing version remains in local conflict history for review.</div>` +
+    conflicts.slice(0, 20).map((conflict) => {
+      const table = String(conflict.table_name || "record").replace("operation_", "");
+      return `<div class="ops-conflict-row">${esc(table)} · ${esc(conflict.record_id || "unknown")} · ` +
+        `${esc(opsEpochLabel(conflict.detected_at) || conflict.detected_at || "time unknown")} · ` +
+        `local ${esc(String(conflict.local_version || "?").slice(0, 28))} / incoming ` +
+        `${esc(String(conflict.incoming_version || "?").slice(0, 28))}</div>`;
+    }).join("");
+}
+
+function renderOperationsBoard() {
+  renderOpsBoardSelector();
+  const snapshot = opsState.snapshot;
+  const board = snapshot?.board;
+  $("ops-board-empty").textContent = "Create a board here or import one shared by another commander.";
+  $("ops-board-empty").classList.toggle("hidden", !!board);
+  $("ops-board-workspace").classList.toggle("hidden", !board);
+  $("ops-board-export").disabled = !board;
+  if (!board) return;
+  $("ops-board-name").textContent = board.title || "Untitled board";
+  $("ops-board-briefing").textContent = board.description || "No briefing supplied.";
+  $("ops-board-meta").textContent = `REVISION ${board.revision || 1} · ` +
+    `updated ${opsEpochLabel(board.updated_at) || board.updated_at || "unknown"} · ` +
+    `node ${String(board.updated_by || "local").slice(0, 24)}`;
+  const boardStatus = $("ops-board-status");
+  if (![...boardStatus.options].some((option) => option.value === board.status)) {
+    const option = document.createElement("option");
+    option.value = board.status;
+    option.textContent = String(board.status || "active").toUpperCase();
+    boardStatus.appendChild(option);
+  }
+  boardStatus.value = board.status || "active";
+  fillOpsBoardObjectiveSelects();
+  $("ops-board-objectives").innerHTML = (snapshot.objectives || []).length
+    ? snapshot.objectives.map((record) => opsBoardRecordMarkup(record, "objectives")).join("")
+    : '<div class="empty dim">No board objectives yet.</div>';
+  $("ops-assignments").innerHTML = (snapshot.assignments || []).length
+    ? snapshot.assignments.map((record) => opsBoardRecordMarkup(record, "assignments")).join("")
+    : '<div class="empty dim">No assignments yet.</div>';
+  $("ops-reservations").innerHTML = (snapshot.reservations || []).length
+    ? snapshot.reservations.map((record) => opsBoardRecordMarkup(record, "reservations")).join("")
+    : '<div class="empty dim">No resource reservations yet.</div>';
+  $("ops-contributions").innerHTML = (snapshot.contributions || []).length
+    ? snapshot.contributions.map((record) => opsBoardRecordMarkup(record, "contributions")).join("")
+    : '<div class="empty dim">No contributions logged yet.</div>';
+  renderOpsConflicts();
+}
+
+async function loadOperations() {
+  try {
+    const listData = await opsJson("/api/operations", { cache: "no-store" });
+    opsState.boards = listData.boards || (Array.isArray(listData) ? listData : []);
+    const selectedExists = opsState.boards.some((board) => board.id === opsState.activeBoardId);
+    if (!selectedExists) {
+      opsState.activeBoardId = opsState.boards[0]?.id || "";
+      if (opsState.activeBoardId) localStorage.setItem("opsBoardId", opsState.activeBoardId);
+      else localStorage.removeItem("opsBoardId");
+    }
+    let detailData = null;
+    if (opsState.activeBoardId) {
+      detailData = await opsJson(`/api/operations?board_id=${encodeURIComponent(opsState.activeBoardId)}`, { cache: "no-store" });
+    }
+    opsState.snapshot = detailData?.snapshot || (detailData?.board ? detailData : null);
+    opsState.conflicts = detailData?.conflicts || listData.conflicts || [];
+    renderOperationsBoard();
+  } catch (error) {
+    $("ops-board-empty").classList.remove("hidden");
+    $("ops-board-empty").innerHTML = `<span class="warn">${esc(error.message)}</span>`;
+    $("ops-board-workspace").classList.add("hidden");
+  }
+}
+
+async function postOperation(kind, payload) {
+  const actions = {
+    boards: "create_board", objectives: "add_objective", assignments: "assign",
+    reservations: "reserve", contributions: "contribute",
+  };
+  const data = await opsJson("/api/operations", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ action: actions[kind], ...payload }),
+  });
+  return data.record || data.board || data.objective || data.assignment || data.reservation || data.contribution || data;
+}
+
+async function createOperationsBoard(event) {
+  event.preventDefault();
+  try {
+    const board = await postOperation("boards", {
+      title: $("ops-board-title").value.trim(),
+      description: $("ops-board-description").value.trim(),
+    });
+    $("ops-board-form").reset();
+    $("ops-new-board-wrap").open = false;
+    opsState.activeBoardId = board.id || "";
+    if (opsState.activeBoardId) localStorage.setItem("opsBoardId", opsState.activeBoardId);
+    await loadOperations();
+  } catch (error) {
+    $("ops-import-report").innerHTML = `<span class="warn">${esc(error.message)}</span>`;
+  }
+}
+
+async function addOperationsObjective(event) {
+  event.preventDefault();
+  try {
+    const deadline = $("ops-board-objective-deadline").value;
+    await postOperation("objectives", {
+      board_id: opsState.activeBoardId,
+      title: $("ops-board-objective-title").value.trim(),
+      description: $("ops-board-objective-description").value.trim(),
+      system: $("ops-board-objective-system").value.trim() || null,
+      station: $("ops-board-objective-station").value.trim() || null,
+      deadline: deadline ? Math.floor(new Date(deadline).getTime() / 1000) : null,
+      priority: Number($("ops-board-objective-priority").value),
+    });
+    $("ops-board-objective-form").reset();
+    $("ops-board-objective-priority").value = "50";
+    await loadOperations();
+  } catch (error) { $("ops-import-report").innerHTML = `<span class="warn">${esc(error.message)}</span>`; }
+}
+
+async function addOperationsAssignment(event) {
+  event.preventDefault();
+  try {
+    await postOperation("assignments", {
+      board_id: opsState.activeBoardId,
+      objective_id: $("ops-assignment-objective").value || null,
+      assignee: $("ops-assignment-name").value.trim(), role: $("ops-assignment-role").value.trim(),
+    });
+    $("ops-assignment-form").reset();
+    await loadOperations();
+  } catch (error) { $("ops-import-report").innerHTML = `<span class="warn">${esc(error.message)}</span>`; }
+}
+
+async function addOperationsReservation(event) {
+  event.preventDefault();
+  try {
+    await postOperation("reservations", {
+      board_id: opsState.activeBoardId,
+      objective_id: $("ops-reservation-objective").value || null,
+      resource_type: $("ops-reservation-type").value,
+      resource_key: $("ops-reservation-key").value.trim(),
+      amount: Number($("ops-reservation-amount").value),
+      unit: $("ops-reservation-unit").value.trim(),
+      assignee: $("ops-reservation-assignee").value.trim() || null,
+    });
+    $("ops-reservation-form").reset();
+    await loadOperations();
+  } catch (error) { $("ops-import-report").innerHTML = `<span class="warn">${esc(error.message)}</span>`; }
+}
+
+async function addOperationsContribution(event) {
+  event.preventDefault();
+  try {
+    await postOperation("contributions", {
+      board_id: opsState.activeBoardId,
+      objective_id: $("ops-contribution-objective").value || null,
+      contributor: $("ops-contribution-name").value.trim(),
+      kind: $("ops-contribution-kind").value.trim(),
+      amount: Number($("ops-contribution-amount").value),
+      unit: $("ops-contribution-unit").value.trim(),
+      note: $("ops-contribution-note").value.trim(),
+    });
+    const commander = $("ops-contribution-name").value;
+    $("ops-contribution-form").reset();
+    $("ops-contribution-name").value = commander;
+    await loadOperations();
+  } catch (error) { $("ops-import-report").innerHTML = `<span class="warn">${esc(error.message)}</span>`; }
+}
+
+async function patchOperation(kind, recordId, changes) {
+  try {
+    await opsJson(`/api/operations/${encodeURIComponent(kind)}/${encodeURIComponent(recordId)}`, {
+      method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(changes),
+    });
+    await loadOperations();
+  } catch (error) {
+    $("ops-import-report").innerHTML = `<span class="warn">${esc(error.message)}</span>`;
+    await loadOperations();
+  }
+}
+
+async function deleteOperation(kind, recordId) {
+  const noun = kind === "boards" ? "operations board and its visible workspace" : kind.slice(0, -1);
+  if (!confirm(`Remove this ${noun}? The tombstone is retained for deterministic board merging.`)) return;
+  try {
+    await opsJson(`/api/operations/${encodeURIComponent(kind)}/${encodeURIComponent(recordId)}`, { method: "DELETE" });
+    if (kind === "boards") {
+      opsState.activeBoardId = "";
+      localStorage.removeItem("opsBoardId");
+    }
+    await loadOperations();
+  } catch (error) {
+    $("ops-import-report").innerHTML = `<span class="warn">${esc(error.message)}</span>`;
+  }
+}
+
+async function exportOperationsBoard() {
+  if (!opsState.activeBoardId) return;
+  const button = $("ops-board-export");
+  button.disabled = true;
+  try {
+    const response = await fetch(`/api/operations/export?board_id=${encodeURIComponent(opsState.activeBoardId)}`, { cache: "no-store" });
+    if (!response.ok) throw new Error("Operations export could not be created.");
+    const blob = await response.blob();
+    const disposition = response.headers.get("Content-Disposition") || "";
+    const match = disposition.match(/filename\*?=(?:UTF-8''|\")?([^\";]+)/i);
+    const boardName = opsState.snapshot?.board?.title || "operation";
+    const filename = decodeURIComponent(match?.[1] || `frameshift-${boardName.replace(/[^A-Za-z0-9_-]+/g, "-")}.json`);
+    const href = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = href;
+    anchor.download = filename;
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    setTimeout(() => URL.revokeObjectURL(href), 1000);
+  } catch (error) {
+    $("ops-import-report").innerHTML = `<span class="warn">${esc(error.message)}</span>`;
+  } finally {
+    button.disabled = false;
+  }
+}
+
+async function importOperationsBoard(event) {
+  const input = event.currentTarget;
+  const file = input.files?.[0];
+  if (!file) return;
+  try {
+    if (file.size > 20 * 1024 * 1024) throw new Error("Operations imports are limited to 20 MB.");
+    const documentValue = JSON.parse(await file.text());
+    if (documentValue.format !== "frameshift.operations" || Number(documentValue.version) !== 1) {
+      throw new Error("This is not a supported Frameshift operations export.");
+    }
+    const data = await opsJson("/api/operations/import", {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(documentValue),
+    });
+    const report = data.report || data;
+    const firstBoard = documentValue.records?.boards?.[0]?.id;
+    if (firstBoard) {
+      opsState.activeBoardId = firstBoard;
+      localStorage.setItem("opsBoardId", firstBoard);
+    }
+    $("ops-import-report").innerHTML = `<span class="good">Import complete: ` +
+      `${Number(report.inserted || 0)} inserted, ${Number(report.updated || 0)} updated, ` +
+      `${Number(report.kept_local || 0)} kept local, ${Number(report.conflicts || 0)} conflicts.</span>`;
+    await loadOperations();
+  } catch (error) {
+    $("ops-import-report").innerHTML = `<span class="warn">${esc(error.message)}</span>`;
+  } finally {
+    input.value = "";
+  }
+}
+
+async function loadOpsWorkspace() {
+  if (opsWorkspaceLoading) return opsWorkspaceLoading;
+  if (state?.commander) {
+    if (!$("ops-assignment-name").value) $("ops-assignment-name").value = state.commander;
+    if (!$("ops-contribution-name").value) $("ops-contribution-name").value = state.commander;
+  }
+  opsWorkspaceLoading = Promise.all([loadOpsObjectives(), loadOpsTimings(), loadOperations()])
+    .finally(() => { opsWorkspaceLoading = null; });
+  return opsWorkspaceLoading;
+}
+
+/* ---------- local specialist workflows ---------- */
+
+const SPECIALIST_NAMES = ["mining", "combat", "carrier", "exobiology"];
+
+function setSpecialistWorkflow(name) {
+  if (!SPECIALIST_NAMES.includes(name)) name = "mining";
+  localStorage.setItem("specialistWorkflow", name);
+  document.querySelectorAll(".sp-switcher [data-specialist]").forEach((button) => {
+    const active = button.dataset.specialist === name;
+    button.classList.toggle("active", active);
+    button.setAttribute("aria-selected", String(active));
+    button.tabIndex = active ? 0 : -1;
+  });
+  document.querySelectorAll(".sp-workflow").forEach((panel) => {
+    panel.classList.toggle("hidden", panel.id !== `sp-workflow-${name}`);
+  });
+}
+
+function specialistVisible() {
+  const pane = $("tab-specialists");
+  return !!pane && !pane.classList.contains("hidden") && !document.hidden;
+}
+
+function specialistError(error, fallback = "The specialist service is unavailable.") {
+  if (error instanceof Error && error.message) return error.message;
+  if (typeof error === "string" && error.trim()) return error.trim();
+  if (error && typeof error.message === "string" && error.message.trim()) return error.message.trim();
+  return fallback;
+}
+
+async function specialistJson(url, options = {}) {
+  const request = { cache: "no-store", ...options };
+  const isFormData = typeof FormData !== "undefined" && request.body instanceof FormData;
+  if (request.body != null && !isFormData) {
+    request.headers = { "Content-Type": "application/json", ...(request.headers || {}) };
+    if (typeof request.body !== "string") request.body = JSON.stringify(request.body);
+  }
+  const response = await fetch(url, request);
+  const raw = await response.text();
+  let data = {};
+  try { data = raw ? JSON.parse(raw) : {}; } catch { data = { error: raw }; }
+  if (!response.ok) {
+    throw new Error(data.error || data.message || `Request failed (${response.status})`);
+  }
+  return data;
+}
+
+function normaliseSpecialistSnapshot(data) {
+  if (!data || typeof data !== "object") return {};
+  const snapshot = data.snapshot || data.specialists || data;
+  if (snapshot !== data && (data.history || data.histories)) {
+    return { ...snapshot, history: data.history || data.histories };
+  }
+  return snapshot;
+}
+
+function specialistWorkflow(name) {
+  return specialistState?.[name] || {};
+}
+
+function specialistHistory(name) {
+  const workflow = specialistWorkflow(name);
+  const history = workflow.history || specialistState?.history?.[name]
+    || specialistState?.histories?.[name] || specialistState?.[`${name}_history`] || [];
+  return Array.isArray(history) ? history : [];
+}
+
+async function loadSpecialists(silent = false) {
+  if (specialistLoading) return specialistLoading;
+  const status = $("sp-global-status");
+  if (!silent && status) status.textContent = "Loading local specialist records…";
+  specialistLoading = specialistJson("/api/specialists")
+    .then((data) => {
+      specialistState = normaliseSpecialistSnapshot(data);
+      specialistLastFetch = Date.now();
+      renderSpecialists();
+      if (status) {
+        status.textContent = "Journal and explicit-input records are stored locally per commander.";
+        status.classList.remove("error");
+      }
+      return specialistState;
+    })
+    .catch((error) => {
+      if (status) {
+        status.textContent = `Specialist records unavailable: ${specialistError(error)}`;
+        status.classList.add("error");
+      }
+      return null;
+    })
+    .finally(() => { specialistLoading = null; });
+  return specialistLoading;
+}
+
+function specialistDuration(session, active) {
+  if (!session) return null;
+  if (active && session.started_ts != null) {
+    const raw = Number(session.started_ts);
+    const startedMs = raw < 10_000_000_000 ? raw * 1000 : raw;
+    if (Number.isFinite(startedMs)) return Math.max(0, (Date.now() - startedMs) / 1000);
+  }
+  return session.duration_s == null ? null : Number(session.duration_s);
+}
+
+function specialistTimestamp(value) {
+  if (value == null || value === "") return "Unknown time";
+  const raw = typeof value === "number" || /^\d+(?:\.\d+)?$/.test(String(value)) ? Number(value) : value;
+  const millis = typeof raw === "number" && raw < 10_000_000_000 ? raw * 1000 : raw;
+  const date = new Date(millis);
+  return Number.isNaN(date.getTime()) ? "Unknown time" : date.toLocaleString();
+}
+
+function specialistAgo(value) {
+  if (value == null || value === "") return "unknown time";
+  const raw = Number(value);
+  if (!Number.isFinite(raw)) return specialistTimestamp(value);
+  const millis = raw < 10_000_000_000 ? raw * 1000 : raw;
+  const elapsed = Math.max(0, Date.now() - millis);
+  const minutes = Math.floor(elapsed / 60000);
+  if (minutes < 1) return "just now";
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  return days < 30 ? `${days}d ago` : specialistTimestamp(value);
+}
+
+function specialistNumber(value, suffix = "") {
+  if (value == null || value === "") return "—";
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return "—";
+  return `${numeric.toLocaleString(undefined, { maximumFractionDigits: 2 })}${suffix}`;
+}
+
+function specialistHumanName(value) {
+  return String(value || "unknown")
+    .replace(/^hpt_|^int_|^ext_/, "")
+    .replace(/_/g, " ")
+    .replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+
+function renderSpecialistFacts(id, facts) {
+  const target = $(id);
+  if (!target) return;
+  target.innerHTML = facts.map(([label, value, note]) =>
+    `<div class="sp-fact"><span>${esc(label)}</span><b>${esc(value)}</b>` +
+    `${note ? `<small>${esc(note)}</small>` : ""}</div>`
+  ).join("");
+}
+
+function renderSpecialistHistory(id, history, formatter) {
+  const target = $(id);
+  if (!target) return;
+  if (!history.length) {
+    target.innerHTML = '<div class="dim empty">No completed sessions recorded for this commander yet.</div>';
+    return;
+  }
+  target.innerHTML = history.slice(0, 8).map((item) => {
+    const detail = formatter(item);
+    const timestamp = item.ended_ts || item.started_ts;
+    return `<div class="sp-history-row"><div><b>${esc(detail.title)}</b><span>${esc(detail.subtitle)}</span></div>` +
+      `<time title="${esc(specialistTimestamp(timestamp))}">${esc(specialistAgo(timestamp))}</time></div>`;
+  }).join("");
+}
+
+function renderMiningSpecialist() {
+  const mining = specialistWorkflow("mining");
+  const session = mining.session;
+  const active = !!mining.active;
+  const badge = $("sp-mining-state");
+  badge.textContent = active ? "RUN ACTIVE" : session ? "LAST RUN" : "IDLE";
+  badge.className = `sp-state ${active ? "active" : "idle"}`;
+  $("sp-mining-start").disabled = active;
+  $("sp-mining-end").disabled = !active;
+  $("sp-mining-message").textContent = active
+    ? [session?.system, session?.body || session?.ring].filter(Boolean).join(" · ") || "Mining activity is being recorded from the journal."
+    : session?.end_reason ? `Last run ended: ${specialistHumanName(session.end_reason)}.`
+      : "A run also starts automatically when the journal reports mining activity.";
+
+  setText("sp-mining-duration", fmtDuration(specialistDuration(session, active)));
+  setText("sp-mining-refined", session ? specialistNumber(session.refined_t, " t") : "—");
+  setText("sp-mining-rate", session?.tons_per_hour == null ? "—" : `${specialistNumber(session.tons_per_hour)} t/hr`);
+  setText("sp-mining-prospected", session ? specialistNumber(session.asteroids_prospected || 0) : "—");
+  setText("sp-mining-cracked", session ? specialistNumber(session.asteroids_cracked || 0) : "—");
+  setText("sp-mining-revenue", session ? fmtCr(session.attributed_revenue_cr || 0) : "—");
+
+  const yields = session?.cargo_yield || session?.refined || [];
+  $("sp-mining-yield").innerHTML = yields.map((row) =>
+    `<tr><td>${esc(row.name || row.symbol)}</td><td class="num">${specialistNumber(row.count, " t")}</td>` +
+    `<td class="num">${row.cargo_delta == null ? "—" : specialistNumber(row.cargo_delta, " t")}</td>` +
+    `<td class="num">${row.sold_t == null ? "—" : specialistNumber(row.sold_t, " t")}</td></tr>`
+  ).join("");
+  $("sp-mining-yield-empty").classList.toggle("hidden", yields.length > 0);
+
+  const targets = session?.prospected_materials || [];
+  $("sp-mining-targets").innerHTML = targets.map((row) =>
+    `<tr><td>${esc(row.name || row.symbol)}</td><td class="num">${specialistNumber(row.sightings || 0)}</td>` +
+    `<td class="num">${specialistNumber(row.best_pct, "%")}</td><td class="num">${specialistNumber(row.average_pct, "%")}</td></tr>`
+  ).join("");
+  $("sp-mining-targets-empty").classList.toggle("hidden", targets.length > 0);
+
+  const limpets = session?.limpets || {};
+  renderSpecialistFacts("sp-mining-limpets", [
+    ["Prospectors used", session ? specialistNumber(limpets.prospectors_used || 0) : "—", "journal launches / prospected rocks"],
+    ["Collectors launched", session ? specialistNumber(limpets.collectors_launched || 0) : "—", "journal launches"],
+    ["Estimated used", session ? specialistNumber(limpets.estimated_used || 0) : "—", limpets.inventory_accounting == null ? "launch events only" : "inventory cross-check"],
+    ["Remaining", limpets.remaining == null ? "—" : specialistNumber(limpets.remaining), "latest Cargo snapshot"],
+    ["Cost / tonne", limpets.cost_per_tonne_cr == null ? "—" : fmtCr(limpets.cost_per_tonne_cr), limpets.cost_source || "purchase price not observed"],
+    ["Net after limpet cash", session ? fmtCr(session.net_after_limpet_cash_cr || 0) : "—", "attributed sales − buys + returns"],
+  ]);
+
+  renderSpecialistHistory("sp-mining-history", specialistHistory("mining"), (item) => ({
+    title: `${specialistNumber(item.refined_t || 0, " t")} refined · ${item.tons_per_hour == null ? "rate unavailable" : `${specialistNumber(item.tons_per_hour)} t/hr`}`,
+    subtitle: `${item.asteroids_prospected || 0} rocks · ${fmtCr(item.attributed_revenue_cr || 0)} attributed revenue · ${fmtDuration(item.duration_s)}`,
+  }));
+}
+
+function renderCombatSpecialist() {
+  const combat = specialistWorkflow("combat");
+  const readiness = combat.readiness || {};
+  const levelNames = {
+    not_ax_equipped: "NO AX WEAPONS OBSERVED",
+    limited: "LIMITED AX TOOLING",
+    scout_or_support_ready: "SCOUT / SUPPORT TOOLING PRESENT",
+    interceptor_tooling_present: "INTERCEPTOR TOOLING PRESENT",
+  };
+  $("sp-combat-level").textContent = levelNames[readiness.level] || "NO LOADOUT OBSERVED";
+  const score = Math.max(0, Math.min(100, Number(readiness.score) || 0));
+  $("sp-combat-score").style.setProperty("--score", `${score * 3.6}deg`);
+  $("sp-combat-score").querySelector("b").textContent = String(score);
+
+  const checklistLabels = {
+    ax_weapons: "AX weapons", heat_sinks: "Heat sinks", xeno_scanners: "Xeno scanner",
+    flak: "Remote-release flak", shutdown_neutralisers: "Shutdown neutraliser",
+    caustic_sinks: "Caustic sinks", repair_or_decon: "Repair / decon limpets",
+    hull_reinforcement: "Hull reinforcement", module_reinforcement: "Module reinforcement",
+  };
+  $("sp-combat-checklist").innerHTML = Object.entries(checklistLabels).map(([key, label]) => {
+    const present = !!readiness.checklist?.[key];
+    return `<span class="${present ? "present" : "missing"}"><i>${present ? "✓" : "—"}</i>${esc(label)}</span>`;
+  }).join("");
+
+  const ammo = readiness.ammo?.by_module || [];
+  $("sp-combat-ammo").innerHTML = ammo.map((row) =>
+    `<tr><td>${esc(specialistHumanName(row.item))}</td><td>${esc(row.slot || "—")}</td>` +
+    `<td class="num">${specialistNumber(row.clip || 0)}</td><td class="num">${specialistNumber(row.hopper || 0)}</td>` +
+    `<td class="num">${specialistNumber(row.total || 0)}</td></tr>`
+  ).join("");
+  $("sp-combat-ammo-empty").classList.toggle("hidden", ammo.length > 0);
+
+  const session = combat.session;
+  const active = !!combat.active;
+  const badge = $("sp-combat-state");
+  badge.textContent = active ? "SESSION ACTIVE" : session ? "LAST SESSION" : "IDLE";
+  badge.className = `sp-state ${active ? "active" : "idle"}`;
+  $("sp-combat-start").disabled = active;
+  $("sp-combat-end").disabled = !active;
+  const target = combat.target;
+  const unredeemed = session ? Math.max(0, (session.bounty_cr || 0) + (session.bond_cr || 0) - (session.redeemed_cr || 0)) : 0;
+  $("sp-combat-message").textContent = target?.ship
+    ? `Target observation: ${target.ship}${target.is_thargoid ? " · THARGOID" : ""}.`
+    : active ? `${fmtCr(unredeemed)} in session claims may still need redemption.`
+      : "A session also starts automatically on a kill, attack or damage event.";
+  setText("sp-combat-duration", fmtDuration(specialistDuration(session, active)));
+  setText("sp-combat-kills", session ? specialistNumber(session.kills || 0) : "—");
+  setText("sp-combat-ax-kills", session ? specialistNumber(session.ax_kills || 0) : "—");
+  setText("sp-combat-bounties", session ? fmtCr(session.bounty_cr || 0) : "—");
+  setText("sp-combat-bonds", session ? fmtCr(session.bond_cr || 0) : "—");
+  setText("sp-combat-damage", session ? specialistNumber(session.damage_events || 0) : "—");
+
+  const chips = (values, empty) => {
+    const rows = Object.entries(values || {});
+    return rows.length ? rows.map(([name, count]) => `<span>${esc(specialistHumanName(name))}<b>×${specialistNumber(count)}</b></span>`).join("")
+      : `<span class="dim">${esc(empty)}</span>`;
+  };
+  $("sp-combat-ax-types").innerHTML = chips(session?.ax_kills_by_type, "No AX kills in this session.");
+  $("sp-combat-synthesis").innerHTML = chips(session?.synthesis, "No combat synthesis in this session.");
+  renderSpecialistHistory("sp-combat-history", specialistHistory("combat"), (item) => ({
+    title: `${item.kills || 0} kills · ${item.ax_kills || 0} AX · ${fmtCr((item.bounty_cr || 0) + (item.bond_cr || 0))} claims`,
+    subtitle: `${item.damage_events || 0} damage events · ${Object.values(item.synthesis || {}).reduce((a, b) => a + b, 0)} synthesis · ${fmtDuration(item.duration_s)}`,
+  }));
+}
+
+function carrierAddRouteLeg(leg = {}) {
+  const row = document.createElement("div");
+  row.className = "sp-route-leg";
+  row.innerHTML =
+    `<label>System<input class="sp-leg-system" type="text" maxlength="160" value="${esc(leg.system || "")}" placeholder="Destination" required></label>` +
+    `<label>Distance (ly)<input class="sp-leg-distance" type="number" min="0.01" step="0.01" value="${leg.distance_ly ?? ""}" placeholder="Exact leg" required></label>` +
+    `<label>Tritium (t)<input class="sp-leg-tritium" type="number" min="0" step="0.1" value="${leg.tritium_t ?? ""}" placeholder="Optional"></label>` +
+    `<button class="copy sp-remove-leg" type="button" title="Remove this route leg" aria-label="Remove this route leg">×</button>`;
+  row.querySelector(".sp-remove-leg").addEventListener("click", () => {
+    row.remove();
+    if (!$("sp-carrier-legs").children.length) carrierAddRouteLeg();
+  });
+  $("sp-carrier-legs").appendChild(row);
+}
+
+function renderCarrierSpecialist() {
+  const carrier = specialistWorkflow("carrier");
+  const observed = carrier.carrier_id != null;
+  const location = carrier.location || {};
+  $("sp-carrier-identity").textContent = observed
+    ? `${carrier.name || "FLEET CARRIER"}${carrier.callsign ? ` · ${carrier.callsign}` : ""}`
+    : "NO OWNER SNAPSHOT";
+  $("sp-carrier-message").textContent = carrier.pending_decommission
+    ? "Decommissioning is marked pending in the latest owner snapshot."
+    : carrier.pending_jump?.system
+      ? `Jump scheduled: ${carrier.pending_jump.system}${carrier.pending_jump.body ? ` · ${carrier.pending_jump.body}` : ""}.`
+      : observed
+        ? `${location.system || "Location not observed"}${location.body ? ` · ${location.body}` : ""} · ${carrier.docking_access || "docking access unknown"}`
+        : "Open Carrier Management in game to supply an authoritative status snapshot.";
+
+  const finance = carrier.finance || {};
+  const upkeep = carrier.upkeep || {};
+  const space = carrier.space || {};
+  const orders = carrier.orders || {};
+  setText("sp-carrier-balance", finance.balance_cr == null ? "—" : fmtCr(finance.balance_cr));
+  setText("sp-carrier-reserve", finance.reserve_cr == null ? "—" : fmtCr(finance.reserve_cr));
+  setText("sp-carrier-runway", upkeep.reserve_weeks == null ? "—" : `${specialistNumber(upkeep.reserve_weeks)} wk`);
+  setText("sp-carrier-tank", carrier.fuel_t == null ? "—" : `${specialistNumber(carrier.fuel_t)} t`);
+  setText("sp-carrier-space", space.cargo_t == null ? "—" : `${specialistNumber(space.cargo_t)} / ${specialistNumber(space.capacity_t)} t`);
+  setText("sp-carrier-exposure", fmtCr(orders.buy_order_exposure_cr || 0));
+
+  if (!$("sp-carrier-config-form").dataset.seeded) {
+    if (upkeep.weekly_cr != null) $("sp-carrier-weekly").value = upkeep.weekly_cr;
+    if (upkeep.target_weeks != null) $("sp-carrier-target-weeks").value = upkeep.target_weeks;
+    $("sp-carrier-config-form").dataset.seeded = "1";
+  }
+  $("sp-carrier-upkeep-note").textContent = upkeep.weekly_cr == null
+    ? "Weekly upkeep is not journaled. Enter the value shown in Carrier Management; Frameshift will not guess it."
+    : `${fmtCr(upkeep.weekly_cr)} / week · source: ${upkeep.source || "commander input"}` +
+      (upkeep.target_shortfall_cr > 0 ? ` · ${fmtCr(upkeep.target_shortfall_cr)} short of the ${upkeep.target_weeks}-week target.` : ` · ${upkeep.target_weeks}-week target covered.`);
+
+  const inventory = Object.entries(carrier.inventory || {}).map(([symbol, row]) => ({ symbol, ...row }));
+  $("sp-carrier-inventory").innerHTML = inventory.length
+    ? inventory.map((row) => `<span>${esc(row.name || specialistHumanName(row.symbol))}<b>${specialistNumber(row.count || 0)} t</b></span>`).join("")
+    : '<span class="dim">No carrier inventory has been supplied.</span>';
+  $("sp-carrier-inventory-source").textContent = `Source: ${carrier.inventory_source || "not supplied"}. CargoTransfer deltas are accepted only while docked at your own carrier.`;
+  if (!$("sp-carrier-inventory-form").dataset.seeded) {
+    $("sp-carrier-inventory-input").value = inventory.map((row) => `${row.name || specialistHumanName(row.symbol)} | ${row.count || 0}`).join("\n");
+    $("sp-carrier-inventory-form").dataset.seeded = "1";
+  }
+
+  const route = carrier.route || {};
+  if (!$("sp-carrier-legs").dataset.seeded) {
+    $("sp-carrier-legs").replaceChildren();
+    (route.legs?.length ? route.legs : [{}]).forEach(carrierAddRouteLeg);
+    if (route.reserve_t != null) $("sp-carrier-route-reserve").value = route.reserve_t;
+    $("sp-carrier-legs").dataset.seeded = "1";
+  }
+  const issueText = (route.issues || []).map((issue) => `Leg ${issue.leg}: ${issue.reason}`).join(" · ");
+  const routeResult = $("sp-carrier-route-result");
+  routeResult.classList.remove("good", "warn");
+  if (!route.leg_count) {
+    routeResult.textContent = "Add systems and exact leg distances; Frameshift checks observed range and tritium coverage.";
+  } else {
+    const fuel = route.tritium_required_t == null ? "tritium unknown" : `${specialistNumber(route.tritium_required_t)} t required`;
+    const stock = route.available_t == null ? "available stock unknown" : `${specialistNumber(route.available_t)} t available`;
+    const deficit = route.deficit_t > 0 ? ` · ${specialistNumber(route.deficit_t)} t deficit` : "";
+    routeResult.textContent = `${route.leg_count} legs · ${specialistNumber(route.total_distance_ly)} ly · ${fuel} · ${stock}${deficit}` +
+      ` · source: ${route.tritium_source || "unknown"}${issueText ? ` · ${issueText}` : ""}`;
+    routeResult.classList.add(route.valid && !(route.deficit_t > 0) ? "good" : "warn");
+  }
+
+  const orderItems = orders.items || [];
+  $("sp-carrier-orders").innerHTML = orderItems.map((row) => {
+    const exposure = row.side === "buy" ? (row.quantity || 0) * (row.price_cr || 0) : row.quantity || 0;
+    return `<tr><td>${esc(row.name || row.symbol)}${row.black_market ? ' <span class="chip">BLACK MARKET</span>' : ""}</td>` +
+      `<td>${esc(String(row.side || "—").toUpperCase())}</td><td class="num">${specialistNumber(row.quantity || 0, " t")}</td>` +
+      `<td class="num">${fmtCr(row.price_cr || 0)}</td><td class="num">${row.side === "buy" ? fmtCr(exposure) : `${specialistNumber(exposure)} t stock`}</td></tr>`;
+  }).join("");
+  $("sp-carrier-orders-empty").classList.toggle("hidden", orderItems.length > 0);
+}
+
+async function runSpecialistMutation(url, body, button, successMessage) {
+  const original = button?.textContent;
+  if (button) {
+    button.disabled = true;
+    button.textContent = "WORKING…";
+  }
+  try {
+    await specialistJson(url, { method: "POST", body });
+    await loadSpecialists(true);
+    $("sp-global-status").textContent = successMessage;
+    $("sp-global-status").classList.remove("error");
+    return true;
+  } catch (error) {
+    $("sp-global-status").textContent = error.message;
+    $("sp-global-status").classList.add("error");
+    return false;
+  } finally {
+    if (button) {
+      button.textContent = original;
+      button.disabled = false;
+    }
+    if (specialistState) renderSpecialists();
+  }
+}
+
+function parseCarrierInventory() {
+  const rows = [];
+  for (const [index, raw] of $("sp-carrier-inventory-input").value.split(/\r?\n/).entries()) {
+    if (!raw.trim()) continue;
+    const fields = raw.split(/\s*[|,\t]\s*/);
+    if (fields.length < 2 || !fields[0].trim()) throw new Error(`Inventory line ${index + 1}: use Commodity | tonnes.`);
+    const count = Number(fields.at(-1));
+    if (!Number.isFinite(count) || count < 0) throw new Error(`Inventory line ${index + 1}: tonnes must be zero or greater.`);
+    const name = fields.slice(0, -1).join(" | ").trim();
+    const symbol = name.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_|_$/g, "");
+    rows.push({ symbol, name, count: Math.floor(count) });
+  }
+  return rows;
+}
+
+function niceSurfaceRange(metres) {
+  const choices = [50, 100, 250, 500, 1000, 2500, 5000, 10000, 25000, 50000, 100000];
+  return choices.find((value) => value >= metres) || Math.ceil(metres / 100000) * 100000;
+}
+
+function renderExobiologyMap(exobiology) {
+  const map = exobiology.current_map;
+  const position = exobiology.position;
+  const mapTarget = $("sp-exobio-map");
+  if (!map) {
+    mapTarget.innerHTML = '<div class="sp-map-empty"><b>NO BODY MAP YET</b><span>Land or record a surface sample to establish this local map.</span></div>';
+    $("sp-exobio-range").textContent = "";
+    return;
+  }
+  const pins = map.pins || [];
+  const finiteDistances = pins.map((pin) => Number(pin.distance_m)).filter(Number.isFinite);
+  const range = niceSurfaceRange(Math.max(100, ...(finiteDistances.map((value) => value * 1.2))));
+  const project = (value) => Math.max(-43, Math.min(43, (Number(value) || 0) / range * 43));
+  const pinColour = (pin) => pin.kind === "organic_sample" ? "#6fcf97"
+    : pin.source === "manual" ? "var(--orange-soft)" : "#76a9e8";
+  const pinShapes = pins.map((pin) => {
+    const x = project(pin.east_m), y = -project(pin.north_m);
+    return `<g class="sp-map-pin" transform="translate(${x} ${y})"><circle r="2" fill="${pinColour(pin)}">` +
+      `<title>${esc(pin.label || specialistHumanName(pin.kind))} · ${specialistNumber(pin.distance_m, " m")}</title></circle></g>`;
+  }).join("");
+  const liveOnBody = !!position && (!position.body || position.body === map.body);
+  const headingKnown = liveOnBody && position.heading != null && Number.isFinite(Number(position.heading));
+  const heading = headingKnown ? Number(position.heading) : 0;
+  const player = liveOnBody
+    ? `<g class="sp-map-player" transform="rotate(${heading})">${headingKnown ? '<polygon points="0,-6 3.4,4 0,2 -3.4,4" />' : ""}` +
+      `<circle r="${headingKnown ? 7 : 3}"><title>Commander${headingKnown ? ` · heading ${Math.round(heading)}°` : " · heading unavailable"}</title></circle></g>` : "";
+  mapTarget.innerHTML =
+    `<svg viewBox="-50 -50 100 100" aria-hidden="true" focusable="false">` +
+    `<circle class="sp-map-boundary" r="44"/><circle class="sp-map-grid" r="22"/>` +
+    `<path class="sp-map-axis" d="M-44 0H44M0-44V44"/><text class="sp-map-north" x="0" y="-46">N</text>` +
+    `${pinShapes}${player}</svg>`;
+  $("sp-exobio-range").textContent = `EDGE ${specialistNumber(range, " m")} · ${pins.length} pins`;
+}
+
+function renderExobiologySpecialist() {
+  const exobiology = specialistWorkflow("exobiology");
+  const map = exobiology.current_map;
+  const position = exobiology.position;
+  $("sp-exobio-body").textContent = map?.body || position?.body || "NO SURFACE POSITION";
+  $("sp-exobio-coords").textContent = position
+    ? `${Number(position.lat).toFixed(5)}°, ${Number(position.lon).toFixed(5)}°` +
+      (position.heading == null ? "" : ` · HDG ${Math.round(position.heading)}°`) +
+      (position.alt_m == null ? "" : ` · ALT ${specialistNumber(position.alt_m, " m")}`)
+    : "Latitude / longitude unavailable";
+  $("sp-exobio-export").disabled = !map;
+  $("sp-exobio-pin-add").disabled = !position;
+  renderExobiologyMap(exobiology);
+
+  const sampling = exobiology.sampling;
+  const clearance = sampling?.clearance;
+  $("sp-sampling-name").textContent = sampling
+    ? sampling.variant || sampling.species || sampling.genus || "Organism in progress"
+    : "No organism in progress";
+  $("sp-sampling-progress").textContent = sampling
+    ? `Sample ${sampling.progress || 0} / 3${sampling.colony_m ? ` · required spacing ${specialistNumber(sampling.colony_m, " m")}` : " · spacing unknown"}`
+    : "Start a sample in game to arm clearance guidance.";
+  const clearanceEl = $("sp-sampling-clearance");
+  clearanceEl.className = "sp-clearance unknown";
+  if (!sampling || !clearance) {
+    clearanceEl.textContent = sampling ? "WAITING FOR POSITION" : "CLEARANCE NOT ARMED";
+  } else if (clearance.clear === true) {
+    clearanceEl.className = "sp-clearance clear";
+    clearanceEl.textContent = `CLEAR TO SAMPLE · ${specialistNumber(clearance.min_dist_m, " m")}`;
+  } else if (clearance.clear === false) {
+    clearanceEl.className = "sp-clearance blocked";
+    const remaining = Math.max(0, Number(sampling.colony_m || 0) - Number(clearance.min_dist_m || 0));
+    clearanceEl.textContent = `MOVE ${specialistNumber(remaining, " m")} FARTHER · ${specialistNumber(clearance.min_dist_m, " m")} CLEAR`;
+  } else {
+    clearanceEl.textContent = `${specialistNumber(clearance.min_dist_m, " m")} FROM NEAREST SAMPLE · REQUIRED SPACING UNKNOWN`;
+  }
+
+  const pins = map?.pins || [];
+  $("sp-exobio-pin-count").textContent = `${pins.length} PIN${pins.length === 1 ? "" : "S"}`;
+  $("sp-exobio-pins").innerHTML = pins.length ? pins.slice().reverse().map((pin) => {
+    const bearing = pin.bearing_deg == null ? "bearing unknown" : `${Math.round(pin.bearing_deg)}° · ${specialistNumber(pin.distance_m, " m")}`;
+    const relative = pin.relative_bearing_deg == null ? "" : ` · ${pin.relative_bearing_deg < 0 ? "left" : "right"} ${Math.abs(Math.round(pin.relative_bearing_deg))}°`;
+    const remove = pin.source === "manual"
+      ? `<button type="button" class="copy sp-pin-delete" data-pin-id="${esc(pin.id)}">REMOVE</button>` : "";
+    return `<div class="sp-pin-row"><i class="${pin.kind === "organic_sample" ? "sample" : pin.source === "manual" ? "manual" : "journal"}"></i>` +
+      `<div><b>${esc(pin.label || specialistHumanName(pin.kind))}</b><span>${esc(bearing + relative)} · ${esc(pin.source || "journal")}</span></div>${remove}</div>`;
+  }).join("") : '<div class="dim empty">No pins on this body yet.</div>';
+  $("sp-exobio-pin-status").textContent = position
+    ? "Manual pins use the current Status.json latitude and longitude. Journal sample pins cannot be removed here."
+    : "Pins require a live latitude and longitude from Status.json.";
+}
+
+function renderSpecialists() {
+  renderMiningSpecialist();
+  renderCombatSpecialist();
+  renderCarrierSpecialist();
+  renderExobiologySpecialist();
+}
+
+async function exportExobiologyGeoJson() {
+  const button = $("sp-exobio-export");
+  button.disabled = true;
+  try {
+    const response = await fetch("/api/specialists/exobiology/geojson", { cache: "no-store" });
+    if (!response.ok) {
+      let message = "GeoJSON export failed.";
+      try { message = (await response.json()).error || message; } catch {}
+      throw new Error(message);
+    }
+    const blob = await response.blob();
+    const url = URL.createObjectURL(blob);
+    const body = specialistWorkflow("exobiology").current_map?.body || "surface-map";
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = `${body.replace(/[^a-z0-9_-]+/gi, "-")}.geojson`;
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    $("sp-global-status").textContent = "Surface pins exported as portable GeoJSON.";
+    $("sp-global-status").classList.remove("error");
+  } catch (error) {
+    $("sp-global-status").textContent = error.message;
+    $("sp-global-status").classList.add("error");
+  } finally {
+    button.disabled = !specialistWorkflow("exobiology").current_map;
+  }
+}
+
+async function removeExobiologyPin(pinId, button) {
+  button.disabled = true;
+  try {
+    await specialistJson(`/api/specialists/exobiology/pins/${encodeURIComponent(pinId)}`, { method: "DELETE" });
+    await loadSpecialists(true);
+    $("sp-global-status").textContent = "Manual surface pin removed.";
+    $("sp-global-status").classList.remove("error");
+  } catch (error) {
+    $("sp-global-status").textContent = error.message;
+    $("sp-global-status").classList.add("error");
+    button.disabled = false;
+  }
+}
+
+function initSpecialists() {
+  const switchButtons = [...document.querySelectorAll(".sp-switcher [data-specialist]")];
+  switchButtons.forEach((button, index) => {
+    button.addEventListener("click", () => setSpecialistWorkflow(button.dataset.specialist));
+    button.addEventListener("keydown", (event) => {
+      if (!['ArrowLeft', 'ArrowRight'].includes(event.key)) return;
+      event.preventDefault();
+      const next = (index + (event.key === 'ArrowRight' ? 1 : switchButtons.length - 1)) % switchButtons.length;
+      setSpecialistWorkflow(switchButtons[next].dataset.specialist);
+      switchButtons[next].focus();
+    });
+  });
+  setSpecialistWorkflow(localStorage.getItem("specialistWorkflow") || "mining");
+
+  $("sp-mining-start").addEventListener("click", (event) =>
+    runSpecialistMutation("/api/specialists/mining/start", {}, event.currentTarget, "Mining run started."));
+  $("sp-mining-end").addEventListener("click", (event) =>
+    runSpecialistMutation("/api/specialists/mining/end", { reason: "manual" }, event.currentTarget, "Mining run archived."));
+  $("sp-combat-start").addEventListener("click", (event) =>
+    runSpecialistMutation("/api/specialists/combat/start", {}, event.currentTarget, "Combat session started."));
+  $("sp-combat-end").addEventListener("click", (event) =>
+    runSpecialistMutation("/api/specialists/combat/end", { reason: "manual" }, event.currentTarget, "Combat session archived."));
+
+  $("sp-carrier-config-form").addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const weekly = Number($("sp-carrier-weekly").value);
+    const target = Number($("sp-carrier-target-weeks").value);
+    await runSpecialistMutation("/api/specialists/carrier/config", {
+      weekly_upkeep_cr: weekly, target_weeks: target,
+    }, event.submitter, "Carrier upkeep input saved locally.");
+  });
+  $("sp-carrier-inventory-form").addEventListener("submit", async (event) => {
+    event.preventDefault();
+    try {
+      const items = parseCarrierInventory();
+      await runSpecialistMutation("/api/specialists/carrier/inventory", {
+        items, source: "commander inventory input",
+      }, event.submitter, "Carrier inventory input saved locally.");
+    } catch (error) {
+      $("sp-global-status").textContent = error.message;
+      $("sp-global-status").classList.add("error");
+    }
+  });
+  $("sp-carrier-add-leg").addEventListener("click", () => carrierAddRouteLeg());
+  $("sp-carrier-route-form").addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const legs = [...document.querySelectorAll(".sp-route-leg")].map((row) => {
+      const tritium = row.querySelector(".sp-leg-tritium").value;
+      return {
+        system: row.querySelector(".sp-leg-system").value.trim(),
+        distance_ly: Number(row.querySelector(".sp-leg-distance").value),
+        ...(tritium === "" ? {} : { tritium_t: Number(tritium) }),
+      };
+    });
+    const perJump = $("sp-carrier-per-jump").value;
+    await runSpecialistMutation("/api/specialists/carrier/route", {
+      legs,
+      tritium_per_jump_t: perJump === "" ? null : Number(perJump),
+      reserve_t: Number($("sp-carrier-route-reserve").value) || 0,
+    }, event.submitter, "Carrier tritium route recalculated from explicit inputs.");
+  });
+
+  $("sp-exobio-pin-form").addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const added = await runSpecialistMutation("/api/specialists/exobiology/pins", {
+      label: $("sp-exobio-pin-label").value.trim(), kind: $("sp-exobio-pin-kind").value,
+    }, event.submitter, "Current surface position pinned locally.");
+    if (added) $("sp-exobio-pin-label").value = "";
+  });
+  $("sp-exobio-pins").addEventListener("click", (event) => {
+    const button = event.target.closest(".sp-pin-delete");
+    if (button) removeExobiologyPin(button.dataset.pinId, button);
+  });
+  $("sp-exobio-export").addEventListener("click", exportExobiologyGeoJson);
+
+  if (!$("sp-carrier-legs").children.length) carrierAddRouteLeg();
+  setInterval(() => {
+    if (!specialistVisible()) return;
+    if (specialistState) {
+      renderMiningSpecialist();
+      renderCombatSpecialist();
+    }
+    if (!specialistLoading && Date.now() - specialistLastFetch >= 4000) loadSpecialists(true);
+  }, 1000);
+}
+
 /* ---------- wiring ---------- */
 
 async function poll() {
@@ -4096,6 +6070,8 @@ function activateTab(name) {
     p.classList.toggle("hidden", p.id !== "tab-" + name));
   localStorage.setItem("activeTab", name);
   if (name === "analytics") loadAnalytics();
+  if (name === "ops") loadOpsWorkspace();
+  if (name === "specialists" && Date.now() - specialistLastFetch >= 1500) loadSpecialists();
   if (name === "database") nudgeDbStatus();
 }
 
@@ -4106,8 +6082,69 @@ function initTabs() {
   if (saved && document.getElementById("tab-" + saved)) activateTab(saved);
 }
 
-document.addEventListener("DOMContentLoaded", () => {
+document.addEventListener("DOMContentLoaded", async () => {
+  $("pairing-retry").addEventListener("click", () => window.location.reload());
+  if (!await bootstrapSecurity()) return;
+  initSpecialists();
   initTabs();
+
+  // OPS is entirely local: durable commander objectives, learned timings and
+  // file-exchanged operations boards. Delegation survives each list render.
+  $("ops-plan-form").addEventListener("submit", buildOpsPlan);
+  $("ops-plan-card").addEventListener("click", (event) => {
+    const button = event.target.closest("[data-ops-plot]");
+    if (!button) return;
+    const system = button.dataset.opsPlot;
+    if (system) plotSystem(system);
+  });
+  $("ops-objective-form").addEventListener("submit", saveOpsObjective);
+  $("ops-objective-cancel").addEventListener("click", resetOpsObjectiveForm);
+  $("ops-objective-filter").addEventListener("change", loadOpsObjectives);
+  $("ops-objective-list").addEventListener("change", (event) => {
+    const select = event.target.closest("[data-objective-status]");
+    if (select) patchOpsObjective(select.dataset.objectiveStatus, { status: select.value });
+  });
+  $("ops-objective-list").addEventListener("click", (event) => {
+    const edit = event.target.closest("[data-objective-edit]");
+    const remove = event.target.closest("[data-objective-delete]");
+    if (edit) editOpsObjective(edit.dataset.objectiveEdit);
+    if (remove) deleteOpsObjective(remove.dataset.objectiveDelete);
+  });
+  $("ops-board-select").addEventListener("change", (event) => {
+    opsState.activeBoardId = event.currentTarget.value;
+    if (opsState.activeBoardId) localStorage.setItem("opsBoardId", opsState.activeBoardId);
+    loadOperations();
+  });
+  $("ops-board-refresh").addEventListener("click", loadOperations);
+  $("ops-board-export").addEventListener("click", exportOperationsBoard);
+  $("ops-board-import-trigger").addEventListener("click", () => $("ops-board-import").click());
+  $("ops-board-import").addEventListener("change", importOperationsBoard);
+  $("ops-board-form").addEventListener("submit", createOperationsBoard);
+  $("ops-board-objective-form").addEventListener("submit", addOperationsObjective);
+  $("ops-assignment-form").addEventListener("submit", addOperationsAssignment);
+  $("ops-reservation-form").addEventListener("submit", addOperationsReservation);
+  $("ops-contribution-form").addEventListener("submit", addOperationsContribution);
+  $("ops-board-status").addEventListener("change", (event) => {
+    const boardId = opsState.snapshot?.board?.id;
+    if (boardId) patchOperation("boards", boardId, { status: event.currentTarget.value });
+  });
+  $("ops-board-delete").addEventListener("click", () => {
+    const boardId = opsState.snapshot?.board?.id;
+    if (boardId) deleteOperation("boards", boardId);
+  });
+  $("ops-board-workspace").addEventListener("change", (event) => {
+    const select = event.target.closest("[data-op-status]");
+    if (select) patchOperation(select.dataset.kind, select.dataset.id, { status: select.value });
+  });
+  $("ops-board-workspace").addEventListener("click", (event) => {
+    const remove = event.target.closest("[data-op-delete]");
+    if (remove) deleteOperation(remove.dataset.kind, remove.dataset.id);
+  });
+  if (state?.commander) {
+    $("ops-assignment-name").value = state.commander;
+    $("ops-contribution-name").value = state.commander;
+  }
+  $("galhistory-clear").addEventListener("click", clearGalaxyHistory);
   document.querySelector('[data-copy-target="system"]')
     .addEventListener("click", (ev) => state?.system && copyText(state.system, ev.currentTarget));
   $("station-copy")
@@ -4204,6 +6241,10 @@ document.addEventListener("DOMContentLoaded", () => {
   });
   $("market-filter").addEventListener("input", renderMarket);
   $("seed-btn").addEventListener("click", seedDb);
+  $("pairing-copy").addEventListener("click", (ev) => copyText($("pairing-link").value, ev.currentTarget));
+  $("pairing-refresh").addEventListener("click", () => refreshSecurityPanel(true));
+  $("diagnostics-bundle").addEventListener("click", downloadSupportBundle);
+  $("extensions-reload").addEventListener("click", reloadExtensions);
   $("cs-form").addEventListener("submit", searchCommodity);
   $("mining-form").addEventListener("submit", searchMining);
   $("os-form").addEventListener("submit", searchStations);
@@ -4224,8 +6265,18 @@ document.addEventListener("DOMContentLoaded", () => {
 
   $("engplan-form").addEventListener("submit", (ev) => {
     ev.preventDefault();
-    pinBlueprint($("ep-blueprint").value, Number($("ep-grade").value) || 5, "pin");
+    pinBlueprint({
+      id: $("ep-blueprint").value,
+      current_grade: Number($("ep-current").value) || 0,
+      target_grade: Number($("ep-target").value) || 0,
+      quantity: Number($("ep-quantity").value) || 1,
+    });
   });
+  $("ep-search").addEventListener("input", () => fillEngineeringCatalog());
+  $("ep-kind").addEventListener("change", () => fillEngineeringCatalog());
+  $("ep-blueprint").addEventListener("change", () => updateEngineeringGradeFields());
+  $("ep-target").addEventListener("change", () => updateEngineeringGradeFields(
+    Number($("ep-current").value), Number($("ep-target").value)));
   $("ep-traders").addEventListener("click", findTraders);
   loadEngineering();
   $("ss-form").addEventListener("submit", loadSystemStations);
@@ -4261,5 +6312,7 @@ document.addEventListener("DOMContentLoaded", () => {
   pollAlerts();
   pollUpdate();
   loadSettings();
+  refreshSecurityPanel();
+  loadLocalServices();
   loadCommodityList();
 });

@@ -16,12 +16,15 @@ Distribution is already GitHub-Releases based (see .github/workflows/release.yml
 so no extra infrastructure is needed."""
 
 import hashlib
+import logging
 import os
+import re
 import subprocess
 import sys
 import threading
 import time
 from pathlib import Path
+from urllib.parse import urlsplit
 
 import requests
 
@@ -37,6 +40,9 @@ ASSET_NAMES = ("Frameshift.exe", "EliteTrader.exe")
 HEADERS = {"Accept": "application/vnd.github+json", "User-Agent": "Frameshift-Updater"}
 CHECK_TIMEOUT = 15
 DOWNLOAD_TIMEOUT = 60
+MAX_DOWNLOAD_BYTES = 512 * 1024 * 1024
+_SHA256_RE = re.compile(r"^[0-9a-fA-F]{64}$")
+_logger = logging.getLogger(__name__)
 
 
 def is_supported():
@@ -52,10 +58,10 @@ def parse_version(text):
     pre-release like '1.3.0-beta' still compares sensibly on its numbers."""
     nums = []
     for part in str(text or "").strip().lstrip("vV").split("."):
-        digits = "".join(c for c in part if c.isdigit())
-        if not digits:
+        match = re.match(r"\d+", part)
+        if not match:
             break
-        nums.append(int(digits))
+        nums.append(int(match.group(0)))
     return tuple(nums) or (0,)
 
 
@@ -249,8 +255,8 @@ class Updater:
                 setattr(self, k, v)
 
     def _run(self, info):
+        new_path = _exe_dir() / f"{_exe_stem()}.new.exe"
         try:
-            new_path = _exe_dir() / f"{_exe_stem()}.new.exe"
             self._download(info["_download_url"], new_path)
             self._set(phase="verifying")
             self._verify(new_path, info)
@@ -258,20 +264,53 @@ class Updater:
             time.sleep(0.4)  # let the client see "restarting" / poll once more
             self._stage_and_restart(new_path)
         except Exception as exc:
+            for path in (new_path, new_path.with_suffix(new_path.suffix + ".part")):
+                try:
+                    path.unlink()
+                except OSError:
+                    pass
+            _logger.warning("Update failed during %s: %s", self.phase, type(exc).__name__)
             self._set(phase="error", error=str(exc))
 
     def _download(self, url, dest):
-        with requests.get(url, headers=HEADERS, stream=True, timeout=DOWNLOAD_TIMEOUT) as r:
-            r.raise_for_status()
-            total = int(r.headers.get("Content-Length") or 0)
-            if total:
-                self._set(total=total)
-            with open(dest, "wb") as f:
-                for chunk in r.iter_content(chunk_size=262144):
-                    if chunk:
+        parsed = urlsplit(str(url or ""))
+        if parsed.scheme != "https" or parsed.hostname not in {"github.com", "objects.githubusercontent.com"}:
+            raise RuntimeError("release download URL is not a trusted HTTPS GitHub address")
+        partial = dest.with_suffix(dest.suffix + ".part")
+        try:
+            partial.unlink()
+        except OSError:
+            pass
+        written = 0
+        try:
+            with requests.get(url, headers=HEADERS, stream=True, timeout=DOWNLOAD_TIMEOUT) as r:
+                r.raise_for_status()
+                total = int(r.headers.get("Content-Length") or 0)
+                if total < 0 or total > MAX_DOWNLOAD_BYTES:
+                    raise RuntimeError("release download is unexpectedly large")
+                if total:
+                    self._set(total=total)
+                with open(partial, "xb") as f:
+                    for chunk in r.iter_content(chunk_size=262144):
+                        if not chunk:
+                            continue
+                        written += len(chunk)
+                        if written > MAX_DOWNLOAD_BYTES:
+                            raise RuntimeError("release download exceeded the safety limit")
                         f.write(chunk)
                         with self._lock:
                             self.downloaded += len(chunk)
+                    f.flush()
+                    os.fsync(f.fileno())
+                if total and written != total:
+                    raise RuntimeError(f"release download was truncated ({written} != {total})")
+            os.replace(partial, dest)
+        except Exception:
+            try:
+                partial.unlink()
+            except OSError:
+                pass
+            raise
 
     def _verify(self, path, info):
         size = path.stat().st_size
@@ -280,29 +319,35 @@ class Updater:
         with open(path, "rb") as f:
             if f.read(2) != b"MZ":
                 raise RuntimeError("downloaded file is not a Windows executable")
-        # If the release publishes a checksum asset, verify it.
+        # Checksums are mandatory. A missing or unreachable digest is not an
+        # excuse to install unverifiable executable code.
         expected = self._expected_sha256(info)
-        if expected:
-            h = hashlib.sha256()
-            with open(path, "rb") as f:
-                for block in iter(lambda: f.read(1 << 20), b""):
-                    h.update(block)
-            if h.hexdigest().lower() != expected.lower():
-                raise RuntimeError("checksum mismatch — refusing to install")
+        h = hashlib.sha256()
+        with open(path, "rb") as f:
+            for block in iter(lambda: f.read(1 << 20), b""):
+                h.update(block)
+        if h.hexdigest().lower() != expected.lower():
+            raise RuntimeError("checksum mismatch — refusing to install")
 
     def _expected_sha256(self, info):
         want = (info.get("_asset_name") or ASSET_NAMES[0]) + ".sha256"
         asset = next((a for a in info.get("_assets") or []
                       if a.get("name") == want), None)
         if not asset:
-            return None
+            raise RuntimeError("release checksum is missing — refusing to install")
+        url = asset.get("browser_download_url")
+        parsed = urlsplit(str(url or ""))
+        if parsed.scheme != "https" or parsed.hostname != "github.com":
+            raise RuntimeError("release checksum URL is not trusted")
         try:
-            resp = requests.get(asset["browser_download_url"], headers=HEADERS, timeout=CHECK_TIMEOUT)
-            if resp.status_code == 200:
-                return resp.text.strip().split()[0]
-        except requests.RequestException:
-            pass
-        return None
+            resp = requests.get(url, headers=HEADERS, timeout=CHECK_TIMEOUT)
+            resp.raise_for_status()
+        except requests.RequestException as exc:
+            raise RuntimeError("release checksum could not be downloaded — refusing to install") from exc
+        token = (resp.text or "").strip().split()[0] if (resp.text or "").strip() else ""
+        if not _SHA256_RE.fullmatch(token):
+            raise RuntimeError("release checksum is malformed — refusing to install")
+        return token.lower()
 
     def _stage_and_restart(self, new_path):
         """Write a helper batch that swaps in the new exe and relaunches, then
@@ -312,12 +357,22 @@ class Updater:
         # recoverable: if the new exe fails to start, cleanup_leftovers never
         # runs, so the .old.exe survives for the user to rename back.
         # Reading a running exe is allowed on Windows.
-        try:
-            import shutil
+        import shutil
 
-            shutil.copy2(exe, _exe_dir() / f"{_exe_stem()}.old.exe")
-        except OSError:
-            pass
+        backup = _exe_dir() / f"{_exe_stem()}.old.exe"
+        backup_temp = backup.with_suffix(backup.suffix + ".tmp")
+        try:
+            shutil.copy2(exe, backup_temp)
+            with open(backup_temp, "rb") as stream:
+                if stream.read(2) != b"MZ":
+                    raise OSError("backup is not a Windows executable")
+            os.replace(backup_temp, backup)
+        except OSError as exc:
+            try:
+                backup_temp.unlink()
+            except OSError:
+                pass
+            raise RuntimeError("could not create a rollback copy — update cancelled") from exc
         bat = _exe_dir() / "_et_update.bat"
         bat.write_text(updater_script(exe, new_path), encoding="ascii")
         # CREATE_NO_WINDOW (not DETACHED_PROCESS) keeps a console so the batch's

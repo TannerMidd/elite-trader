@@ -4,6 +4,7 @@ fresh by the EDDN listener, queried by the local route planner.
 Keying: stations by in-game MarketID (the Spansh dump's station "id" is the
 MarketID), commodities by lowercase symbol (matches EDDN commodity names)."""
 
+import hashlib
 import os
 import re
 import sqlite3
@@ -12,6 +13,8 @@ import threading
 import time
 from datetime import datetime, timezone
 from pathlib import Path
+
+from . import commanderdb
 
 
 def _default_data_dir():
@@ -24,11 +27,14 @@ def _default_data_dir():
 
 DATA_DIR = Path(os.environ.get("ET_DATA_DIR") or _default_data_dir())
 DB_PATH = DATA_DIR / "market.db"
+USER_DB_PATH = DATA_DIR / "commander.db"
+BACKUP_DIR = DATA_DIR / "backups"
+USER_DB_ALIAS = commanderdb.ALIAS
 
 CARRIER_TYPES = {"Drake-Class Carrier", "Fleet Carrier"}
 CARRIER_NAME_RE = re.compile(r"^[A-Z0-9]{3}-[A-Z0-9]{3}$")
 
-SCHEMA = """
+CACHE_SCHEMA = """
 CREATE TABLE IF NOT EXISTS meta(key TEXT PRIMARY KEY, value TEXT);
 CREATE TABLE IF NOT EXISTS systems(
     id64 INTEGER PRIMARY KEY,
@@ -57,66 +63,61 @@ CREATE TABLE IF NOT EXISTS commodity_names(
     symbol TEXT PRIMARY KEY,
     name TEXT NOT NULL,
     category TEXT);
-CREATE TABLE IF NOT EXISTS trade_log(
-    ts INTEGER NOT NULL,
-    event TEXT NOT NULL,
-    symbol TEXT NOT NULL,
-    name TEXT,
-    count INTEGER NOT NULL DEFAULT 0,
-    price INTEGER NOT NULL DEFAULT 0,
-    total INTEGER NOT NULL DEFAULT 0,
-    profit INTEGER,
-    PRIMARY KEY(ts, event, symbol, total)) WITHOUT ROWID;
-CREATE TABLE IF NOT EXISTS balance_log(
-    ts INTEGER PRIMARY KEY,
-    balance INTEGER NOT NULL);
-CREATE TABLE IF NOT EXISTS income_log(
-    ts INTEGER NOT NULL,
-    category TEXT NOT NULL,
-    detail TEXT,
-    amount INTEGER NOT NULL DEFAULT 0,
-    PRIMARY KEY(ts, category, detail, amount)) WITHOUT ROWID;
-CREATE TABLE IF NOT EXISTS imported_journals(filename TEXT PRIMARY KEY);
-CREATE TABLE IF NOT EXISTS price_history(
-    market_id INTEGER NOT NULL,
-    symbol TEXT NOT NULL,
-    ts INTEGER NOT NULL,
-    buy_price INTEGER NOT NULL DEFAULT 0,
-    sell_price INTEGER NOT NULL DEFAULT 0,
-    supply INTEGER NOT NULL DEFAULT 0,
-    demand INTEGER NOT NULL DEFAULT 0,
-    PRIMARY KEY(market_id, symbol, ts)) WITHOUT ROWID;
-CREATE TABLE IF NOT EXISTS tracked_markets(
-    market_id INTEGER PRIMARY KEY,
-    added_ts INTEGER NOT NULL);
-CREATE TABLE IF NOT EXISTS watches(
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    created TEXT NOT NULL,
-    payload TEXT NOT NULL);
 """
 
+# Ownership is deliberately a whitelist: everything not listed here is
+# commander-owned and must survive a cache rebuild, including tables added by
+# future releases or extensions.
+CACHE_TABLES = frozenset({"meta", "systems", "stations", "commodities", "commodity_names"})
+CACHE_META_KEYS = frozenset(
+    {
+        "seeded_at",
+        "seed_source",
+        "seed_systems",
+        "seed_stations",
+        "seed_commodities",
+        "seed_include_carriers",
+        "eddn_replayed_at",
+        "eddn_replayed_markets",
+    }
+)
+USER_TABLES = commanderdb.KNOWN_USER_TABLES
+USER_SCHEMA = commanderdb.USER_SCHEMA
 
-def log_trade(ts, event, symbol, name, count, price, total, profit=None):
+# Backward-compatible name for the market schema.  Durable tables are
+# intentionally excluded; callers that need feature/user DDL use
+# ensure_user_schema().
+SCHEMA = CACHE_SCHEMA
+
+
+def log_trade(ts, event, symbol, name, count, price, total, profit=None, commander_id=None):
     if not ts or not symbol:
         return
+    commander_id = resolve_commander_id(commander_id)
     conn = connect()
     try:
         conn.execute(
-            "INSERT OR IGNORE INTO trade_log(ts, event, symbol, name, count, price, total, profit)"
-            " VALUES(?, ?, ?, ?, ?, ?, ?, ?)",
-            (ts, event, symbol, name, count or 0, price or 0, total or 0, profit),
+            "INSERT OR IGNORE INTO trade_log"
+            "(commander_id, ts, event, symbol, name, count, price, total, profit)"
+            " VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (commander_id, ts, event, symbol, name,
+             count or 0, price or 0, total or 0, profit),
         )
         conn.commit()
     finally:
         conn.close()
 
 
-def log_balance(ts, balance):
+def log_balance(ts, balance, commander_id=None):
     if not ts or balance is None:
         return
+    commander_id = resolve_commander_id(commander_id)
     conn = connect()
     try:
-        conn.execute("INSERT OR REPLACE INTO balance_log(ts, balance) VALUES(?, ?)", (ts, balance))
+        conn.execute(
+            "INSERT OR REPLACE INTO balance_log(commander_id, ts, balance) VALUES(?, ?, ?)",
+            (commander_id, ts, balance),
+        )
         conn.commit()
     finally:
         conn.close()
@@ -129,14 +130,16 @@ def log_balance(ts, balance):
 INCOME_CATEGORIES = ("mission", "exploration", "exobiology", "bounty", "other")
 
 
-def log_income(ts, category, amount, detail=None):
+def log_income(ts, category, amount, detail=None, commander_id=None):
     if not ts or not amount or not category:
         return
+    commander_id = resolve_commander_id(commander_id)
     conn = connect()
     try:
         conn.execute(
-            "INSERT OR IGNORE INTO income_log(ts, category, detail, amount) VALUES(?, ?, ?, ?)",
-            (ts, category, detail or "", int(amount)),
+            "INSERT OR IGNORE INTO income_log"
+            "(commander_id, ts, category, detail, amount) VALUES(?, ?, ?, ?, ?)",
+            (commander_id, ts, category, detail or "", int(amount)),
         )
         conn.commit()
     finally:
@@ -144,33 +147,225 @@ def log_income(ts, category, amount, detail=None):
 
 _init_lock = threading.Lock()
 _initialized = False
+_migration_report = None
 # Held for the whole file swap in swap_in(); connect() grabs it briefly so no
 # new connection can open (and recover a stale WAL) mid-swap.
 _swap_lock = threading.Lock()
 
 
+def _attach_commander(conn):
+    databases = {row[1] for row in conn.execute("PRAGMA database_list")}
+    if USER_DB_ALIAS not in databases:
+        conn.execute(
+            f"ATTACH DATABASE ? AS {commanderdb.quote_identifier(USER_DB_ALIAS)}",
+            (str(USER_DB_PATH),),
+        )
+    conn.execute(f"PRAGMA {commanderdb.quote_identifier(USER_DB_ALIAS)}.synchronous = FULL")
+
+
+def _initialize_storage(conn):
+    """Initialise cache storage and transparently split legacy user data."""
+    global _migration_report
+    conn.execute("PRAGMA journal_mode = WAL")
+    conn.executescript(CACHE_SCHEMA)
+    conn.commit()
+    _migration_report = commanderdb.migrate_from_market(
+        conn,
+        DB_PATH,
+        USER_DB_PATH,
+        cache_tables=CACHE_TABLES,
+        cache_meta_keys=CACHE_META_KEYS,
+        backup_dir=BACKUP_DIR,
+    )
+    # migrate_from_market may promote a DELETE-mode candidate.  Reopen it once
+    # directly to enable normal WAL operation before attaching it everywhere.
+    user_conn = commanderdb.connect(USER_DB_PATH)
+    user_conn.close()
+
+
 def connect(path=None):
     """New connection (SQLite connections are not shared across threads here).
     Pass `path` to open a standalone database file (the seeder builds the
-    re-seed into a sidecar this way); it gets the schema applied every time."""
+    re-seed into a sidecar this way); only the disposable cache schema is
+    applied there.  Normal connections attach durable commander.db as the
+    ``commander`` schema, preserving compatibility with existing unqualified
+    queries for trade_log, watches, and the other user tables."""
     global _initialized
     DATA_DIR.mkdir(parents=True, exist_ok=True)
-    with _swap_lock:
-        conn = sqlite3.connect(path or DB_PATH, timeout=30)
-    conn.execute("PRAGMA busy_timeout = 30000")
-    conn.execute("PRAGMA synchronous = NORMAL")
     if path is not None:
+        conn = sqlite3.connect(path, timeout=30)
+        conn.execute("PRAGMA busy_timeout = 30000")
+        conn.execute("PRAGMA synchronous = NORMAL")
         conn.execute("PRAGMA journal_mode = WAL")
-        conn.executescript(SCHEMA)
+        conn.executescript(CACHE_SCHEMA)
         conn.commit()
         return conn
-    with _init_lock:
-        if not _initialized:
-            conn.execute("PRAGMA journal_mode = WAL")
-            conn.executescript(SCHEMA)
-            conn.commit()
-            _initialized = True
-    return conn
+
+    # Hold the swap gate until the returned connection has both database files
+    # open.  A promotion can therefore never land between opening market.db and
+    # attaching commander.db.
+    with _swap_lock:
+        conn = sqlite3.connect(DB_PATH, timeout=30)
+        try:
+            conn.execute("PRAGMA busy_timeout = 30000")
+            conn.execute("PRAGMA synchronous = NORMAL")
+            with _init_lock:
+                if not _initialized:
+                    _initialize_storage(conn)
+                    _initialized = True
+            _attach_commander(conn)
+            return conn
+        except Exception:
+            conn.close()
+            raise
+
+
+def connect_user():
+    """Direct connection to durable commander.db for feature-owned data."""
+    return commanderdb.connect(USER_DB_PATH)
+
+
+def ensure_user_schema(sql):
+    """Apply idempotent DDL for a feature's commander-owned tables."""
+    return commanderdb.ensure_schema(USER_DB_PATH, sql)
+
+
+def backup_commander_data(reason="manual", retain=5):
+    """Create a compact, validated backup that excludes the galaxy cache."""
+    # Ensure migration has happened before taking a snapshot.
+    conn = connect()
+    conn.close()
+    return commanderdb.backup(USER_DB_PATH, BACKUP_DIR, reason=reason, retain=retain)
+
+
+def commander_profile_id(name, galaxy_mode=None):
+    """Stable local key; Legacy is isolated from the same name in Live."""
+    normalized = " ".join(str(name or "").strip().casefold().split())
+    if not normalized:
+        return "default"
+    if str(galaxy_mode or "live").casefold() == "legacy":
+        normalized += "|legacy"
+    return "cmdr-" + hashlib.sha256(normalized.encode("utf-8")).hexdigest()[:20]
+
+
+def _adopt_default_profile_rows(conn, commander_id):
+    """Move pre-profile data to the first real commander, exactly once.
+
+    Early releases necessarily wrote durable rows under ``default`` because
+    no commander identity existed in storage yet.  The first actual commander
+    loaded by the journal owns those rows.  The migration runs inside the same
+    immediate transaction as profile activation, so a crash can neither split
+    the data nor mark a partial adoption complete.
+
+    Compound-key tables are copied under the new discriminator before their
+    old rows are removed. ``INSERT OR REPLACE`` also makes an interrupted
+    pre-release migration idempotent. Watches have a globally unique integer
+    id, so changing their discriminator in place preserves that id.
+    """
+    if commander_id == "default":
+        return False
+    marker = conn.execute(
+        "SELECT value FROM user_meta WHERE key = 'default_profile_adopted_by'"
+    ).fetchone()
+    # A prior release may already have adopted the core tables before a newer
+    # feature registered its own commander-scoped tables.  Re-running for the
+    # *same* recorded owner is therefore intentional and idempotent; a later
+    # commander must never steal those rows.
+    if marker and marker[0] != commander_id:
+        return False
+
+    tables = {
+        row[0]
+        for row in conn.execute("SELECT name FROM sqlite_master WHERE type = 'table'")
+    }
+    for table in sorted(commanderdb.PROFILE_SCOPED_TABLES & tables):
+        quoted_table = commanderdb.quote_identifier(table)
+        info = conn.execute(f"PRAGMA table_info({quoted_table})").fetchall()
+        columns = [row[1] for row in info]
+        if "commander_id" not in columns:
+            continue
+        primary_key = {row[1] for row in info if row[5]}
+        if "commander_id" not in primary_key:
+            conn.execute(
+                f"UPDATE {quoted_table} SET commander_id = ? WHERE commander_id = 'default'",
+                (commander_id,),
+            )
+            continue
+
+        quoted_columns = ", ".join(commanderdb.quote_identifier(col) for col in columns)
+        selected = ", ".join(
+            "?" if col == "commander_id" else commanderdb.quote_identifier(col)
+            for col in columns
+        )
+        conn.execute(
+            f"INSERT OR REPLACE INTO {quoted_table} ({quoted_columns})"
+            f" SELECT {selected} FROM {quoted_table} WHERE commander_id = 'default'",
+            (commander_id,),
+        )
+        conn.execute(f"DELETE FROM {quoted_table} WHERE commander_id = 'default'")
+
+    conn.execute(
+        "INSERT OR REPLACE INTO user_meta(key, value)"
+        " VALUES('default_profile_adopted_by', ?)",
+        (commander_id,),
+    )
+    return True
+
+
+def ensure_commander_profile(name, commander_id=None, make_active=True, galaxy_mode="live"):
+    """Create/update a profile and optionally make it the active commander."""
+    galaxy_mode = "legacy" if str(galaxy_mode).casefold() == "legacy" else "live"
+    commander_id = commander_id or commander_profile_id(name, galaxy_mode)
+    now = utc_now_iso()
+    conn = connect_user()
+    try:
+        conn.execute("BEGIN IMMEDIATE")
+        if make_active:
+            conn.execute("UPDATE commander_profiles SET is_active = 0")
+        conn.execute(
+            "INSERT INTO commander_profiles"
+            "(id, name, galaxy_mode, created_at, last_seen_at, is_active)"
+            " VALUES(?, ?, ?, ?, ?, ?)"
+            " ON CONFLICT(id) DO UPDATE SET name = excluded.name,"
+            " galaxy_mode = excluded.galaxy_mode,"
+            " last_seen_at = excluded.last_seen_at,"
+            " is_active = CASE WHEN excluded.is_active = 1 THEN 1"
+            "                  ELSE commander_profiles.is_active END",
+            (commander_id, str(name or "Unknown"), galaxy_mode, now, now, int(bool(make_active))),
+        )
+        if make_active:
+            _adopt_default_profile_rows(conn, commander_id)
+        if make_active:
+            conn.execute(
+                "INSERT OR REPLACE INTO user_meta(key, value)"
+                " VALUES('active_commander_id', ?)",
+                (commander_id,),
+            )
+        conn.commit()
+        return commander_id
+    finally:
+        conn.close()
+
+
+def active_commander_id():
+    conn = connect_user()
+    try:
+        row = conn.execute(
+            "SELECT value FROM user_meta WHERE key = 'active_commander_id'"
+        ).fetchone()
+        return row[0] if row else "default"
+    finally:
+        conn.close()
+
+
+def resolve_commander_id(commander_id=None):
+    """Return an explicit profile id or the currently active local profile.
+
+    Empty/omitted values must never silently fall back to the shared legacy
+    bucket once a real commander is active.
+    """
+    value = str(commander_id or "").strip()
+    return value or active_commander_id()
 
 
 def build_path():
@@ -178,17 +373,228 @@ def build_path():
     return DB_PATH.parent / (DB_PATH.name + ".building")
 
 
-def swap_in(new_path, timeout_s=60):
+class CandidateValidationError(RuntimeError):
+    """A rebuilt market cache failed safety checks and was not promoted."""
+
+
+def _cache_counts(conn):
+    return {
+        table: conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
+        for table in ("systems", "stations", "commodities")
+    }
+
+
+def _merge_live_freshness(candidate_path, live_path=DB_PATH):
+    """Replay cache rows newer than the dump into a completed candidate.
+
+    EDDN continues updating the old cache during the lengthy dump import.  The
+    listener is paused immediately before this runs, so comparing station
+    timestamps captures those updates without an unbounded in-memory buffer.
+    """
+    candidate_path, live_path = Path(candidate_path), Path(live_path)
+    if not live_path.exists() or candidate_path.resolve() == live_path.resolve():
+        return 0
+    conn = sqlite3.connect(candidate_path, timeout=30)
+    replayed = 0
+    attached = False
+    try:
+        conn.execute("PRAGMA busy_timeout = 30000")
+        conn.execute("ATTACH DATABASE ? AS live", (str(live_path),))
+        attached = True
+        live_tables = {
+            row[0]
+            for row in conn.execute("SELECT name FROM live.sqlite_master WHERE type = 'table'")
+        }
+        if not {"systems", "stations", "commodities"}.issubset(live_tables):
+            return 0
+        # BEGIN IMMEDIATE reserves both attached databases, yielding a stable
+        # source snapshot and preventing a final EDDN write from racing copy.
+        conn.execute("BEGIN IMMEDIATE")
+        conn.execute(
+            "CREATE TEMP TABLE fresher_markets(market_id INTEGER PRIMARY KEY) WITHOUT ROWID"
+        )
+        conn.execute(
+            "INSERT INTO fresher_markets(market_id)"
+            " SELECT old.market_id FROM live.stations old"
+            " LEFT JOIN main.stations new ON new.market_id = old.market_id"
+            " WHERE new.market_id IS NULL"
+            "    OR COALESCE(old.updated_at, 0) > COALESCE(new.updated_at, 0)"
+        )
+        replayed = conn.execute("SELECT COUNT(*) FROM fresher_markets").fetchone()[0]
+        if replayed:
+            conn.execute(
+                "INSERT OR IGNORE INTO main.systems(id64, name, x, y, z)"
+                " SELECT sy.id64, sy.name, sy.x, sy.y, sy.z FROM live.systems sy"
+                " WHERE sy.id64 IN ("
+                "   SELECT st.system_id64 FROM live.stations st"
+                "   JOIN fresher_markets f ON f.market_id = st.market_id)"
+            )
+            conn.execute(
+                "INSERT OR REPLACE INTO main.stations"
+                "(market_id, system_id64, name, type, dist_ls, large_pad, updated_at)"
+                " SELECT st.market_id, st.system_id64, st.name, st.type, st.dist_ls,"
+                "        st.large_pad, st.updated_at"
+                " FROM live.stations st JOIN fresher_markets f ON f.market_id = st.market_id"
+            )
+            conn.execute(
+                "DELETE FROM main.commodities"
+                " WHERE market_id IN (SELECT market_id FROM fresher_markets)"
+            )
+            conn.execute(
+                "INSERT OR REPLACE INTO main.commodities"
+                "(market_id, symbol, buy_price, sell_price, supply, demand)"
+                " SELECT c.market_id, c.symbol, c.buy_price, c.sell_price, c.supply, c.demand"
+                " FROM live.commodities c"
+                " JOIN fresher_markets f ON f.market_id = c.market_id"
+            )
+            if "commodity_names" in live_tables:
+                conn.execute(
+                    "INSERT OR IGNORE INTO main.commodity_names(symbol, name, category)"
+                    " SELECT symbol, name, category FROM live.commodity_names"
+                )
+        conn.execute(
+            "INSERT OR REPLACE INTO main.meta(key, value) VALUES('eddn_replayed_at', ?)",
+            (utc_now_iso(),),
+        )
+        conn.execute(
+            "INSERT OR REPLACE INTO main.meta(key, value)"
+            " VALUES('eddn_replayed_markets', ?)",
+            (str(replayed),),
+        )
+        conn.commit()
+        conn.execute("DETACH DATABASE live")
+        attached = False
+        conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+        return replayed
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        if attached:
+            try:
+                conn.execute("DETACH DATABASE live")
+            except Exception:
+                pass
+        conn.close()
+
+
+def validate_candidate(candidate_path, baseline_path=DB_PATH, minimum_counts=None,
+                       baseline_ratio=0.5, check_integrity=True):
+    """Run structural, integrity, metadata, and count checks before promotion."""
+    candidate_path = Path(candidate_path)
+    if not candidate_path.exists():
+        raise CandidateValidationError(f"market candidate does not exist: {candidate_path}")
+    conn = sqlite3.connect(candidate_path, timeout=30)
+    try:
+        tables = {
+            row[0]
+            for row in conn.execute(
+                "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'"
+            )
+        }
+        missing = CACHE_TABLES - tables
+        if missing:
+            raise CandidateValidationError(
+                "market candidate is missing tables: " + ", ".join(sorted(missing))
+            )
+        unexpected = tables - CACHE_TABLES
+        if unexpected:
+            raise CandidateValidationError(
+                "market candidate contains commander-owned tables: "
+                + ", ".join(sorted(unexpected))
+            )
+        if check_integrity:
+            check = conn.execute("PRAGMA quick_check(1)").fetchone()
+            if not check or check[0] != "ok":
+                raise CandidateValidationError(f"market candidate integrity check failed: {check}")
+        counts = _cache_counts(conn)
+        for table, count in counts.items():
+            if count <= 0:
+                raise CandidateValidationError(f"market candidate has no {table} rows")
+        metadata = dict(
+            conn.execute(
+                "SELECT key, value FROM meta WHERE key IN ('seeded_at', 'seed_source')"
+            )
+        )
+        if not metadata.get("seeded_at") or not metadata.get("seed_source"):
+            raise CandidateValidationError("market candidate lacks seed provenance metadata")
+        for table, expected in (minimum_counts or {}).items():
+            if table in counts and counts[table] < int(expected):
+                raise CandidateValidationError(
+                    f"market candidate {table} count {counts[table]:,} is below"
+                    f" import minimum {int(expected):,}"
+                )
+    except sqlite3.DatabaseError as exc:
+        raise CandidateValidationError(f"market candidate is unreadable: {exc}") from exc
+    finally:
+        conn.close()
+
+    # A syntactically valid truncated download must not replace a healthy full
+    # cache.  Carrier-policy changes can alter counts, hence a conservative 50%
+    # threshold rather than equality.
+    baseline_path = Path(baseline_path) if baseline_path else None
+    baseline_counts = None
+    if baseline_path and baseline_path.exists() and baseline_path.resolve() != candidate_path.resolve():
+        baseline = sqlite3.connect(baseline_path, timeout=30)
+        try:
+            baseline_tables = {
+                row[0]
+                for row in baseline.execute("SELECT name FROM sqlite_master WHERE type = 'table'")
+            }
+            if {"systems", "stations", "commodities"}.issubset(baseline_tables):
+                baseline_counts = _cache_counts(baseline)
+        except sqlite3.DatabaseError:
+            baseline_counts = None  # a valid candidate is allowed to repair a corrupt old cache
+        finally:
+            baseline.close()
+    if baseline_counts:
+        for table, old_count in baseline_counts.items():
+            floor = int(old_count * baseline_ratio)
+            if old_count and counts[table] < max(1, floor):
+                raise CandidateValidationError(
+                    f"market candidate {table} count collapsed from {old_count:,}"
+                    f" to {counts[table]:,}"
+                )
+    return {"counts": counts, "baseline_counts": baseline_counts}
+
+
+def swap_in(new_path, timeout_s=60, minimum_counts=None):
     """Atomically promote a freshly built database file to be THE database.
 
     The old market.db stays fully usable until the single os.replace, so a
     crashed or cancelled rebuild can no longer leave the app with a gutted
-    database. Callers must get the EDDN listener's long-lived connection
-    closed first (LISTENER.pause_db); short-lived API connections are ridden
-    out by the retry loop. The old file's -wal/-shm sidecars are removed under
-    the same lock so no new connection can recover a stale WAL against the
-    new file."""
+    database. Commander data is stored separately and is never swapped.
+    Callers must get the EDDN listener's long-lived connection closed first;
+    its final updates are replayed by timestamp before validation/promotion."""
     new_path = Path(new_path)
+    # A rebuild can be started very early in process startup.  Force the
+    # one-time v2 legacy split before anything can replace market.db.
+    live = connect()
+    live.close()
+    # Reject an empty/truncated import *before* replay.  Otherwise every row in
+    # the old cache would look newer/absent and could disguise a bad download.
+    validate_candidate(
+        new_path,
+        minimum_counts=minimum_counts,
+        check_integrity=False,
+    )
+    replayed = _merge_live_freshness(new_path)
+    report = validate_candidate(
+        new_path,
+        baseline_path=None,
+        minimum_counts=minimum_counts,
+        check_integrity=True,
+    )
+    # All committed candidate content must be in the main file before it is
+    # renamed; its build-name WAL cannot follow it to market.db.
+    checkpoint = sqlite3.connect(new_path, timeout=30)
+    try:
+        checkpoint.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+    finally:
+        checkpoint.close()
+    for suffix in ("-wal", "-shm"):
+        Path(str(new_path) + suffix).unlink(missing_ok=True)
+
     deadline = time.time() + timeout_s
     last_exc = None
     while time.time() < deadline:
@@ -201,7 +607,8 @@ def swap_in(new_path, timeout_s=60):
                     except OSError:
                         pass
                 invalidate_status_cache()
-                return
+                report["eddn_replayed_markets"] = replayed
+                return report
             except OSError as exc:
                 last_exc = exc
         time.sleep(1)
@@ -239,12 +646,39 @@ def parse_update_time(value):
 
 
 def get_meta(conn, key, default=None):
+    # Cache provenance remains in market.db.  Commander/import bookkeeping was
+    # historically mixed into that table and now lives in user_meta.
     row = conn.execute("SELECT value FROM meta WHERE key = ?", (key,)).fetchone()
+    if row:
+        return row[0]
+    databases = {item[1] for item in conn.execute("PRAGMA database_list")}
+    if USER_DB_ALIAS in databases:
+        row = conn.execute(
+            f"SELECT value FROM {commanderdb.quote_identifier(USER_DB_ALIAS)}.user_meta"
+            " WHERE key = ?",
+            (key,),
+        ).fetchone()
+    else:
+        row = None  # standalone build connection has no commander attachment
     return row[0] if row else default
 
 
 def set_meta(conn, key, value):
-    conn.execute("INSERT OR REPLACE INTO meta(key, value) VALUES(?, ?)", (key, str(value)))
+    if key in CACHE_META_KEYS:
+        conn.execute("INSERT OR REPLACE INTO meta(key, value) VALUES(?, ?)", (key, str(value)))
+        return
+    databases = {item[1] for item in conn.execute("PRAGMA database_list")}
+    if USER_DB_ALIAS in databases:
+        conn.execute(
+            f"INSERT OR REPLACE INTO {commanderdb.quote_identifier(USER_DB_ALIAS)}.user_meta"
+            "(key, value) VALUES(?, ?)",
+            (key, str(value)),
+        )
+    else:
+        # A standalone cache-build connection intentionally has no user DB.
+        # Retain compatibility for callers constructing test/migration files;
+        # normal application connections always take the durable path above.
+        conn.execute("INSERT OR REPLACE INTO meta(key, value) VALUES(?, ?)", (key, str(value)))
 
 
 def keep_commodity(buy, sell, supply, demand):
@@ -318,47 +752,72 @@ def stations_near(conn, x, y, z, radius, min_updated=0, require_large_pad=False,
 
 HISTORY_KEEP_DAYS = 45
 TRACKED_CAP = 60           # most-recently docked markets kept in history
-_tracked_cache = None      # set of tracked market_ids (refreshed on change)
+_tracked_cache = {}        # commander_id -> set of tracked market_ids
 _tracked_lock = threading.Lock()
 _prune_counter = 0
 
 
-def tracked_ids():
+def tracked_ids(commander_id=None):
+    """Market ids tracked by one commander (the active commander by default)."""
     global _tracked_cache
+    commander_id = resolve_commander_id(commander_id)
     with _tracked_lock:
-        if _tracked_cache is None:
+        # Compatibility with development/test code that invalidated the old
+        # singleton cache by assigning None.
+        if not isinstance(_tracked_cache, dict):
+            _tracked_cache = {}
+        if commander_id not in _tracked_cache:
             conn = connect()
             try:
-                _tracked_cache = {r[0] for r in conn.execute("SELECT market_id FROM tracked_markets")}
+                _tracked_cache[commander_id] = {
+                    row[0]
+                    for row in conn.execute(
+                        "SELECT market_id FROM tracked_markets WHERE commander_id = ?",
+                        (commander_id,),
+                    )
+                }
             finally:
                 conn.close()
-        return set(_tracked_cache)
+        return set(_tracked_cache[commander_id])
 
 
-def track_market(market_id):
+def track_market(market_id, commander_id=None):
     """Mark a market as history-worthy (called when the player docks)."""
     global _tracked_cache
     if not market_id:
         return
+    commander_id = resolve_commander_id(commander_id)
     conn = connect()
     try:
         conn.execute(
-            "INSERT OR REPLACE INTO tracked_markets(market_id, added_ts) VALUES(?, ?)",
-            (market_id, now_epoch()),
+            "INSERT OR REPLACE INTO tracked_markets(commander_id, market_id, added_ts)"
+            " VALUES(?, ?, ?)",
+            (commander_id, market_id, now_epoch()),
         )
         # Cap to the most recent; drop history rows along with the tracking.
         stale = conn.execute(
-            "SELECT market_id FROM tracked_markets ORDER BY added_ts DESC LIMIT -1 OFFSET ?",
-            (TRACKED_CAP,),
+            "SELECT market_id FROM tracked_markets WHERE commander_id = ?"
+            " ORDER BY added_ts DESC LIMIT -1 OFFSET ?",
+            (commander_id, TRACKED_CAP),
         ).fetchall()
         for (mid,) in stale:
-            conn.execute("DELETE FROM tracked_markets WHERE market_id = ?", (mid,))
-            conn.execute("DELETE FROM price_history WHERE market_id = ?", (mid,))
+            conn.execute(
+                "DELETE FROM tracked_markets WHERE commander_id = ? AND market_id = ?",
+                (commander_id, mid),
+            )
+            still_tracked = conn.execute(
+                "SELECT 1 FROM tracked_markets WHERE market_id = ? LIMIT 1", (mid,)
+            ).fetchone()
+            if not still_tracked:
+                conn.execute("DELETE FROM price_history WHERE market_id = ?", (mid,))
         conn.commit()
     finally:
         conn.close()
     with _tracked_lock:
-        _tracked_cache = None
+        if isinstance(_tracked_cache, dict):
+            _tracked_cache.pop(commander_id, None)
+        else:
+            _tracked_cache = {}
 
 
 def record_price_history(conn, market_id, rows, ts=None):
