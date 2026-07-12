@@ -202,8 +202,11 @@ with tempfile.TemporaryDirectory() as td:
     assert normalized and reason is None
     assert _journal_path("relative/journals")[0] is None
     assert _journal_path(str(Path.home()))[0] is None
-    outside = Path(td) / "not-the-player-profile"
-    if not outside.is_relative_to(Path.home()):
+    home = Path.home().resolve(strict=False)
+    outside = (Path(home.anchor) / "frameshift-not-player-profile").resolve(strict=False)
+    # A root home has no outside path on that filesystem. Normal CI/player
+    # profiles do, including Windows runners whose TEMP uses an 8.3 alias.
+    if outside != home and not outside.is_relative_to(home):
         assert _journal_path(str(outside))[0] is None
 
     # The limiter returns a useful retry value and recovers when its window

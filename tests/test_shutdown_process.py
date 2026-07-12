@@ -46,14 +46,15 @@ with tempfile.TemporaryDirectory() as temp:
     executable = sys.executable
 
     # CI subprocesses often have no Windows console, so GenerateConsoleCtrlEvent
-    # cannot deliver Ctrl+C. Raise SIGINT from a timer once the real HTTP server
-    # starts; production signal handling and cleanup remain entirely unmodified.
+    # cannot deliver Ctrl+C. Schedule a main-thread interrupt from a timer once
+    # the real HTTP server starts; production signal handling and cleanup remain
+    # entirely unmodified.
     child_code = (
-        "import signal,sys,threading;import app;"
+        "import _thread,sys,threading;import app;"
         + "real_start=app.ServerThread.start;"
         + "exec(\"def signalling_start(server):\\n"
         + " result=real_start(server)\\n"
-        + " timer=threading.Timer(0.5,lambda:signal.raise_signal(signal.SIGINT))\\n"
+        + " timer=threading.Timer(0.5,_thread.interrupt_main)\\n"
         + " timer.daemon=True;timer.start()\\n return result\");"
         + "app.ServerThread.start=signalling_start;"
         + "sys.argv=['app.py','--headless','--port',sys.argv[1]];"
