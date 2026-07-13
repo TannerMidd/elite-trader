@@ -2,173 +2,152 @@
 
 <img src="assets/logo.png" alt="Frameshift" width="520">
 
-**The all-in-one Elite Dangerous companion.** *(formerly Elite Trader)*
-Live journal reading · a local 36-million-price market database · profit-per-hour
-trade routes · exploration, exobiology, combat, engineering & background-sim
-tools · local mission planning and specialist consoles · a paired tablet cockpit
-mode · route plotting inside the game itself.
+**A local, all-in-one Elite Dangerous companion for desktop and cockpit displays.**
 
+![Latest release](https://img.shields.io/github/v/release/TannerMidd/frameshift?color=orange)
 ![License: MIT](https://img.shields.io/badge/license-MIT-orange)
-![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue)
+![Python 3.12](https://img.shields.io/badge/python-3.12-blue)
 ![Platform: Windows | Linux](https://img.shields.io/badge/platform-Windows%20%7C%20Linux-lightgrey)
-![AI generated](https://img.shields.io/badge/code-AI%20generated%20with%20Claude%20Fable%205-8A2BE2)
+![AI: Fable 5 + GPT 5.6 SOL Ultra](https://img.shields.io/badge/AI-Fable%205%20%2B%20GPT%205.6%20SOL%20Ultra-8A2BE2)
 
-> **Disclaimer:** this codebase was **AI-generated with Claude (Fable 5)**,
+> **Disclaimer:** this codebase was **AI-generated with Claude (Fable 5) and GPT 5.6 SOL Ultra**,
 > directed and play-tested by me against my own live game. It's a personal
 > project built for my own use — shared as-is, and anyone is welcome to use it.
 
-[**Download**](../../releases) · [**Demo video**](https://tannermidd.github.io/frameshift/) · [**Wiki**](../../wiki) · [**Getting Started**](../../wiki/Getting-Started) · [**Troubleshooting**](../../wiki/Troubleshooting-and-FAQ)
+[**Download**](https://github.com/TannerMidd/frameshift/releases/latest) ·
+[**Demo**](https://tannermidd.github.io/frameshift/) ·
+[**Documentation**](../../wiki)
 
-<img src="docs/screenshots/trade-routes.png" alt="Trade route loops ranked by profit per hour" width="900">
+<img src="docs/screenshots/flight-panel.png" alt="Frameshift flight panel on a tablet" width="850">
 
 </div>
 
-> Runs on your machine, serves every screen to any device on your home network.
-> No account, sign-in or API key is required. It also plays nicely alongside
-> EDMC — keep that running if you use it to sync Inara/EDSM. o7
+Frameshift reads Elite Dangerous journals in real time and combines them with
+a local galaxy-market database. The same app serves its desktop interface and
+any paired browser on your home network, including a mounted tablet or laptop.
 
-## ❤️ Built on the community
-
-This app is a consumer of Elite Dangerous' open-data ecosystem. Not one route,
-price or bio signal in it would be possible without these projects — and the
-thousands of commanders feeding them:
-
-- **[EDDN](https://github.com/EDCD/EDDN)** · *Elite Dangerous Data Network* —
-  the community's live data relay. Every fresh price here exists because
-  another commander docked somewhere and their tool reported it. Frameshift
-  **contributes markets back anonymously by default**. A separate, default-off
-  informed opt-in can also publish outfitting, shipyards, navigation,
-  exploration, Codex and biological-signal observations using EDDN's public
-  schemas. Reports use reviewed field allowlists and are stamped with your game
-  version so consumers can keep Live and Legacy data separate.
-- **[Spansh](https://spansh.co.uk)** — the backbone of the app's data. The
-  daily galaxy dump seeds the 36-million-price local database; the route APIs
-  power the neutron plotter, Road to Riches and the exobiology route; the
-  per-system dumps provide station facts, services and the community-mapped
-  bio signals you see before you honk; the station search finds material
-  traders, modules and ships.
-- **[Inara](https://inara.cz)** — the encyclopedia of the galaxy. Pre-filled
-  search links throughout the app, and the engineering and shipyard references
-  the guides point to.
-- **[EDSM](https://www.edsm.net)** — system data and mapping links wherever a
-  system name appears.
-- **[EDCD](https://edcd.github.io/)** — the community developer collective
-  whose schemas, journal documentation and conventions make it possible for
-  tools like this one to interoperate at all.
-
-If you find these sites useful, support them — most run on donations.
-Not affiliated with Frontier Developments. Elite Dangerous is a trademark of
-Frontier Developments plc.
-
-## What it does
-
-### 💹 Trade — [wiki](../../wiki/Trade-Routes-and-Market-Tools)
-
-- **Trade loops & multi-hop chains** ranked by **profit/hour**, computed locally against live prices — stock/demand shown, thin stock flagged.
-- **Market confidence** — price age, available stock/demand and bulk-sale risk are combined into an honest confidence band and conservative profit range; positioning time is included in the first-trip rate.
-- **WATCH alerts** — every EDDN update is checked against your active loop; price drops or drained demand alert you *before* a wasted trip. Watches survive restarts.
-- **Cargo recovery** — if a watched market falls through, re-plan the hold against nearby alternatives without including the failed station.
-- **Commodity search** (best buy/sell near you), **WHERE TO SELL?** for your current hold, **mining advisor** with nearest ring hotspots, **outfitting/shipyard search**.
-- **System stations viewer** — every station in any system: pads, economy, faction, services, and its full EDDN-fresh market table.
-- **Price history sparklines** for stations you visit or watch.
-
-### 🧬 Explore & exobiology — [wiki](../../wiki/Exploration-and-Exobiology)
-
-- **Bio signals** for the current system — with genuses **other commanders already mapped** (via Spansh) shown before you even honk, and predictions where nobody has.
-- **Sampling navigator** — a live on-surface distance readout against the genus's colony range, with a spoken "clear to sample" when you've walked far enough from every previous sample.
-- **Surface navigator** — a north-up, body-local map of your position and heading, journal samples and persistent manual pins, exportable as GeoJSON.
-- **Exobiology route** ("Billionaire's Boulevard") from your position, **filterable by genus**; sampling progress + unsold-samples vault with Vista Genomics values, including **★ likely first-log detection** (the 5× bonus, predicted from body discovery state + community data).
-- **Where to sell your data** — the deep-space "get me home": nearest ports with Universal Cartographics & Vista Genomics (fleet carriers flagged), with jump estimates at your range. A **data-at-risk guard** warns (and speaks) when your unsold pile is worth many rebuys.
-- **Road to Riches**, **neutron plotter**, unsold cartographic value tracker, and **◈ TRACK** progress banners that auto-advance as you jump.
-
-### ⚔️ Combat & missions
-
-- **Massacre stack tracker** — per-target-faction progress with the correct math (kills count for every giver at once), payouts, and a callout when the stack completes.
-- **Combat / AX console** — session kills, bounties, bonds, damage and synthesis usage, plus a journal-backed AX loadout/readiness checklist with clearly labelled last-observed ammunition.
-- Session kills, bounty & bond claims; **mission board** with expiry countdowns, cargo-match warnings and live **delivery progress** (wing missions included); **colonization depot** needs and sourcing.
-- **Interstellar Factors finder** — the nearest stations that clear your bounties and fines, one tap from plotting.
-- **Rebuy safety net** — amber below 2× rebuy, red when you can't cover one, spoken warning as you cross each line.
-
-### 🔧 Engineering — a dedicated page
-
-- **Engineer tracker** — everyone you've unlocked (grade pips), been invited by, or heard of; specialties, home systems, one-tap plotting.
-- **Complete offline workshop** — the bundled catalog covers ship engineering, experimentals, synthesis, engineer and technology unlocks, and Odyssey upgrades/modifications; it needs no runtime download or account.
-- **Shared wishlist** — plan multiple upgrades against one inventory, with exact grade/application costs, source guidance, deficits, **material-trader conversion math**, nearest traders, and a callout when the list completes.
-- **Odyssey locker** — on-foot goods/assets/data for bartenders and suit engineering (auto-hidden on Horizons).
-- **Your current ship in a builder** — open the live loadout in EDSY or copy SLEF for Coriolis/Inara; **jumponium readiness** (FSD-injection counts), echoed in fuel-strand warnings.
-
-### ⚑ Galaxy — Powerplay, factions & community goals
-
-- **Powerplay 2.0 tracker** — your pledge, rating and merits (with a live session tally), plus every system's power status as you jump: controlling power, control progress, reinforcement vs undermining.
-- **System factions (BGS)** — influence bars, active/pending/recovering states, controlling faction and **your reputation** with each, refreshed on every jump.
-- **Conflicts** — wars and elections in the system: who's fighting, what's staked, days won.
-- **Community goals** — the ones you've signed up for: your contribution, reward tier, percentile band and expiry countdown.
-- New-player friendly: every card explains its corner of the background sim when it's empty.
-
-### ◎ OPS — local mission control
-
-- **Session planner** — give Frameshift a time budget and it ranks personal objectives and known work by urgency, value, risk and dependencies using timings learned from your own journal.
-- **Durable objectives** — keep commander-specific goals, estimates, deadlines and locations alongside automatically derived work.
-- **Operations boards** — coordinate objectives, assignments, resource reservations and contributions by exporting and importing a deterministic JSON file. Merges retain visible conflicts; there is no hosted service or account.
-
-### ▦ Specialist workflows
-
-- **Mining runs** — journal-counted refinery yield, prospector quality, limpets, conservative sale attribution, yield rate and per-commander history.
-- **Combat / AX sessions** — readiness, claims, kills by type, damage, synthesis and durable session history.
-- **Fleet-carrier planning** — upkeep runway, tritium coverage by explicit route leg, cargo, owner-observed market orders and buy-order exposure without inventing values the journal does not provide.
-- **Exobiology fieldwork** — body-local surface pins, sample-clearance guidance, heading and GeoJSON export.
-
-### 🖥️ Cockpit — [wiki](../../wiki/Flight-Panel-Mode)
-
-- **Flight panel**: the default view — a touch-first cockpit display for a mounted tablet, with a nav rail, a persistent status strip, swipe navigation, one-tap best-loop and optional fullscreen. (✕ EXIT switches to the classic desktop layout.)
-- **Voice callouts** for what actually matters: *fuel-scoop warnings along your plotted route* (never strand in a dry stretch again), interdictions, hull damage, first discoveries, rebuy coverage, data-at-risk, waypoints. A human-sounding **neural voice** (Piper TTS, synthesized locally) is the default once its one-time download is done — six voices to pick from, volume and sizing dials in Settings.
-- **Game launch control** — when Elite isn't running, the panel says so and a ▲ LAUNCH button starts it on your PC (works from the tablet).
-- **Make it yours** — drag cards to reorder any page, **hide the ones you don't use**, and pick a **color theme** (six presets or any custom accent) to match your in-game HUD; all saved per device, so the tablet stays lean while the desktop shows everything.
-- **Fleet at a glance** — stored ships (location, value, transfer cost) and a **fleet-carrier panel** (tritium, balance, scheduled jump) that only appears if you own one.
-- **Autoplot (Windows)** — ◎ plots the route in the game itself using your own keybinds, verified against `NavRoute.json`. [wiki](../../wiki/Autoplot)
-
-### 📈 Analytics
-
-- Live session (credits/hr, jumps, distance, tons), **earnings by source** (trade, missions, bounties, exploration, exobiology), balance-over-time and daily-profit charts, top commodities.
-- A compressed local event ledger preserves commander history for lifetime queries, learned timings and future rebuilds of derived features without sending journals anywhere.
-
-<div align="center"><img src="docs/screenshots/flight-panel.png" alt="Flight panel mode on a tablet" width="700"></div>
+No Frameshift account, third-party sign-in, or API key is required. Community
+market and route features use public EDDN and Spansh data; commander history,
+planning, settings, and extensions remain on your machine.
 
 ## Quick start
 
-**Windows (no Python):** grab [`Frameshift.exe`](../../releases) and run it.
-It keeps data in `data\` next to itself and **auto-updates** (release notes
-readable in-app before applying).
+### Windows
 
-**From source (Windows):**
-```
-git clone https://github.com/TannerMidd/frameshift
+1. [Download the latest release](https://github.com/TannerMidd/frameshift/releases/latest)
+   and run `Frameshift.exe`.
+2. Play Elite Dangerous. Frameshift detects the journal folder and active
+   commander automatically, including relocated Windows Saved Games folders.
+3. Open **Settings → Build Database** once to enable galaxy-wide market and
+   station searches. Build time varies; progress is shown in the app and EDDN
+   keeps the finished database fresh.
+
+The packaged Windows app stores its data beside the executable and can update
+itself after showing the new release notes.
+
+### From source
+
+Python 3.12 is the tested development version.
+
+```powershell
+git clone https://github.com/TannerMidd/frameshift.git
 cd frameshift
-run.bat
+.\run.bat
 ```
 
-**Linux / Steam Deck:** `./run.sh --headless`, then open the printed URL in a
-browser. Proton journals are auto-detected. [Details →](../../wiki/Getting-Started)
+On Linux or Steam Deck, run `./run.sh --headless` and open the printed URL in a
+browser. Proton journal locations are detected automatically. See the
+[Getting Started guide](../../wiki/Getting-Started) for platform details.
 
-Then:
-1. **Play** — journal detection is automatic (relocated Saved Games included);
-   if anything's off, **Settings → Journal folder** validates as you type.
-2. **⚙ Settings → Build Database** (once, ~15 min) — every station market in
-   the galaxy, then kept fresh in real time by EDDN; a first-run banner
-   points you there. [How it works →](../../wiki/Market-Database)
-3. **Pair a tablet** — open **⚙ Settings → Paired Devices** on the gaming PC
-   and scan the one-time QR code (or open its LAN link). No password or account
-   is needed; that device reconnects automatically afterwards and starts in the
-   flight panel. Tap **⛶ FULL** for fullscreen.
+### Pair a tablet or another computer
 
-## Good to know
+On the gaming PC, open **Settings → Paired Devices** and scan the one-time QR
+code or copy its LAN link. The device reconnects automatically after pairing
+and opens in the touch-friendly Panel view by default. No password or account
+is involved.
 
-- **Configuration** lives in the app (Settings card); env vars for the rest — [reference](../../wiki/Settings-and-Configuration).
-- **Autoplot** needs keyboard binds for the galaxy map / UI navigation — [requirements](../../wiki/Autoplot).
-- **Security**: localhost access on the gaming PC is automatic. Every LAN device must use a short-lived, single-use pairing link and receives a revocable **read**, **control** or **admin** capability. Requests are also protected against cross-site, DNS-rebinding and oversized-input attacks. Keep Frameshift on a trusted LAN and do not port-forward it.
-- **Commander data** lives in the separate `data/commander.db`; the disposable market cache can be rebuilt without replacing history, watches, objectives or specialist records. Frameshift switches profiles automatically and isolates the same commander name in Live and Legacy.
-- **Live / Legacy**: anonymous community route and market tools are Live-galaxy data and fail closed while Legacy is running, rather than showing plausible but wrong advice. Local journal history and specialist tools remain available in the isolated Legacy profile.
-- **Online services**: community data uses public, anonymous EDDN and Spansh endpoints. No integration asks for a login or API key; the engineering catalog, journal history, planning and specialist tools are local.
-- **Diagnostics & extensions**: Settings can create a bounded, privacy-safe local support bundle that excludes journals, commander names, pairing secrets and databases. Permissioned declarative extension packs can add journal-driven alerts or objective suggestions; see [Extension API v1](docs/EXTENSIONS.md).
-- **Releases** (maintainer): push a `v*` tag; GitHub Actions tests on Windows and Linux, builds and smoke-tests the packaged app, publishes SHA-256 sidecars and releases the exe under both `Frameshift.exe` and the legacy `EliteTrader.exe` name. The updater uses that same-release checksum to detect corruption or truncation (it is not an independent publisher signature) and retains the rollback through a sustained healthy launch and a later successful startup.
-- Something broken? [Troubleshooting & FAQ](../../wiki/Troubleshooting-and-FAQ).
+After an upgrade, Frameshift may reconstruct local commander history. The app
+shows the current phase and journal count, then publishes the completed cockpit
+state once the reconstruction is coherent.
+
+## Highlights
+
+- **Live cockpit** — current system, ship, fuel, cargo, missions, rebuy cover,
+  exploration data, fleet and carrier status, with focused voice callouts.
+- **Trading and markets** — loops and multi-hop routes ranked by profit per
+  hour, market confidence and age, cargo recovery, commodity search, mining
+  buyers, price history, and persistent market watches.
+- **Exploration and exobiology** — Road to Riches, neutron and bio routing,
+  body-local surface navigation, colony-range guidance, sample tracking,
+  first-log estimates, values, and GeoJSON export.
+- **Combat and engineering** — massacre-stack progress, combat and AX sessions,
+  mission delivery tracking, rebuy warnings, a complete offline engineering
+  catalog, shared wishlists, material deficits, and trader guidance.
+- **Galaxy and mission control** — Powerplay, BGS factions and conflicts,
+  community goals, commander objectives, learned timings, session planning,
+  portable operations boards, and dedicated specialist workspaces.
+- **Panel mode and autoplot** — a touch-first layout with per-device pages,
+  themes and card arrangement. On Windows, Frameshift can plot routes in Elite
+  using your own keybinds and verify them against `NavRoute.json`.
+- **Local analytics** — session rates, earnings by source, daily profit,
+  balance history, jumps, distance, and a compact commander-scoped event ledger.
+
+Detailed guides live in the wiki:
+[Trading](../../wiki/Trade-Routes-and-Market-Tools) ·
+[Exploration](../../wiki/Exploration-and-Exobiology) ·
+[Panel mode](../../wiki/Flight-Panel-Mode) ·
+[Autoplot](../../wiki/Autoplot).
+
+## Local-first data and security
+
+- Commander history, objectives, watches, and specialist records stay local
+  and are kept separate from the rebuildable market cache.
+- Live and Legacy profiles are isolated. Community market and route advice
+  fails closed in Legacy rather than presenting Live-galaxy data as valid.
+- Localhost access on the gaming PC is automatic. LAN devices use short-lived,
+  single-use pairing links and revocable **read**, **control**, or **admin**
+  permissions. Keep Frameshift on a trusted LAN and do not port-forward it.
+- Anonymous market contribution to EDDN is enabled by default. Broader
+  outfitting, navigation, exploration, Codex, and biological reporting is a
+  separate opt-in in Settings.
+- Windows updates require a matching same-release SHA-256 checksum. This
+  detects damaged or truncated downloads but is not publisher code-signing.
+
+Frameshift works alongside EDMC, so you can keep EDMC running if you use it to
+sync services such as Inara or EDSM.
+
+## Extensions
+
+Extensions are optional local add-on folders that react to journal events.
+Declarative packs can add alerts or suggest objectives without executing code.
+Advanced process adapters require explicit approval, and any content change
+returns them to pending review. Extensions need no hosted service, login, or
+API key. See [Extension API v1](docs/EXTENSIONS.md).
+
+## Community ecosystem
+
+Frameshift depends on the Elite Dangerous community's open-data work:
+
+- [EDDN](https://github.com/EDCD/EDDN) supplies live community observations.
+- [Spansh](https://spansh.co.uk) provides galaxy data, routing, station search,
+  and community-mapped biological signals.
+- [Inara](https://inara.cz) and [EDSM](https://www.edsm.net) provide reference
+  and mapping destinations linked throughout the app.
+- [EDCD](https://edcd.github.io/) maintains schemas, journal documentation, and
+  conventions used across the companion-app ecosystem.
+
+If these services help you, please consider supporting them.
+
+## Support
+
+- [Getting Started](../../wiki/Getting-Started)
+- [Settings and configuration](../../wiki/Settings-and-Configuration)
+- [Troubleshooting and FAQ](../../wiki/Troubleshooting-and-FAQ)
+- [Report an issue](../../issues)
+
+Settings → Diagnostics can create a bounded support bundle that excludes
+journals, commander names, pairing secrets, and databases.
+
+Frameshift is available under the [MIT License](LICENSE). It is not affiliated
+with Frontier Developments. Elite Dangerous is a trademark of Frontier
+Developments plc.
