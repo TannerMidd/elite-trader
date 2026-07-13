@@ -1968,24 +1968,28 @@ class JournalWatcher:
         selected_total = len(selected)
         newest_offset = 0
         self._set_rebuild_progress("bootstrap", 0, selected_total)
-        for file_index, path in enumerate(selected, 1):
-            if self._stop_event.is_set():
-                # Never stage or publish a cockpit assembled from only part of
-                # the selected chronology during application shutdown.
-                raise InterruptedError("journal bootstrap was cancelled")
-            self._set_rebuild_progress(
-                "bootstrap", file_index - 1, selected_total, path.name)
-            try:
-                if path == files[-1]:
-                    text, newest_offset = self._read_complete_journal_snapshot(path)
-                else:
-                    text = path.read_text(encoding="utf-8", errors="replace")
-                last_line = self._process_lines(text, source_file=path.name)
-                if path == files[-1]:
-                    self._line_number = last_line
-            except OSError:
-                raise
-            self._set_rebuild_progress("bootstrap", file_index, selected_total)
+        # One commander.db connection for the whole replay: the per-event
+        # reducers borrow it via connect_user() instead of opening (and
+        # re-validating) thousands of short-lived connections.
+        with marketdb.commander_session():
+            for file_index, path in enumerate(selected, 1):
+                if self._stop_event.is_set():
+                    # Never stage or publish a cockpit assembled from only part
+                    # of the selected chronology during application shutdown.
+                    raise InterruptedError("journal bootstrap was cancelled")
+                self._set_rebuild_progress(
+                    "bootstrap", file_index - 1, selected_total, path.name)
+                try:
+                    if path == files[-1]:
+                        text, newest_offset = self._read_complete_journal_snapshot(path)
+                    else:
+                        text = path.read_text(encoding="utf-8", errors="replace")
+                    last_line = self._process_lines(text, source_file=path.name)
+                    if path == files[-1]:
+                        self._line_number = last_line
+                except OSError:
+                    raise
+                self._set_rebuild_progress("bootstrap", file_index, selected_total)
 
         # Tail from the end of the newest file.
         self._current_file = files[-1]
@@ -2727,6 +2731,11 @@ class JournalWatcher:
             self._begin_rebuild()
         self._status_mtimes = {}
         reconstruction_ready = False
+        # One commander.db connection for the entire reconstruction: the
+        # sweep, the bootstrap replay and finalization all borrow it through
+        # connect_user() instead of opening one per reduced event.
+        replay_session = marketdb.commander_session()
+        replay_session.__enter__()
         try:
             history_ready = False
             try:
@@ -2754,6 +2763,7 @@ class JournalWatcher:
                     )
                     raise
         finally:
+            replay_session.__exit__(None, None, None)
             # Do not tail/publish a new folder on top of a partial repair. The
             # outer poll loop retries _ensure_journal_dir on its next pass.
             self._live = reconstruction_ready
@@ -2800,8 +2810,9 @@ class JournalWatcher:
         # after its recent closing event and leave the durable reducer active.
         while not self._stop_event.is_set():
             try:
-                if self.import_trade_history():
-                    break
+                with marketdb.commander_session():
+                    if self.import_trade_history():
+                        break
             except Exception as exc:
                 self._log_background_failure("journal history import", exc)
             if not self._stop_event.is_set():

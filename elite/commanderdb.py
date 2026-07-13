@@ -15,6 +15,7 @@ from __future__ import annotations
 import os
 import re
 import sqlite3
+import threading
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -242,7 +243,13 @@ def quote_identifier(value):
 
 def _configure(conn, *, wal=True):
     conn.execute("PRAGMA busy_timeout = 30000")
-    conn.execute("PRAGMA synchronous = FULL")
+    # WAL + NORMAL is the standard durable pairing: commits cannot corrupt the
+    # database and only an OS-level crash can lose the very newest ones.
+    # Everything in commander.db is either user-authored (recreatable) or
+    # rebuilt from journals, and per-event reducers commit thousands of times
+    # during a replay — FULL turns each commit into a disk flush and a journal
+    # bootstrap into minutes on a hard disk.
+    conn.execute("PRAGMA synchronous = NORMAL")
     if wal:
         conn.execute("PRAGMA journal_mode = WAL")
     conn.execute("PRAGMA foreign_keys = ON")
@@ -362,25 +369,44 @@ def _ensure_default_profile(conn):
     )
 
 
+# Serializes the one-time upgrade transaction when several threads open the
+# same fresh/outdated database at startup.
+_upgrade_lock = threading.Lock()
+
+
 def connect(path):
-    """Open and initialise a standalone commander database connection."""
+    """Open (and, when needed, initialise) a commander database connection.
+
+    The hot path is deliberately write-free: reducers open thousands of
+    short-lived connections while replaying journals, and a marker commit per
+    open turns a bootstrap into minutes on a hard disk.  The schema DDL is
+    all IF NOT EXISTS (pure reads once the tables exist), and the
+    upgrade/marker transaction only runs while ``storage_schema_version``
+    disagrees with this build — i.e. once per database, not once per open.
+    """
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(path, timeout=30)
     try:
         _configure(conn)
         conn.executescript(USER_SCHEMA)
-        # SQLite cannot retrofit compound keys with ALTER TABLE.  Keep the
-        # create/copy/drop/rename repair and its schema marker in one explicit
-        # transaction so a power loss cannot strand a half-rebuilt user DB.
-        conn.execute("BEGIN IMMEDIATE")
-        _ensure_profile_columns(conn)
-        _ensure_default_profile(conn)
-        conn.execute(
-            "INSERT OR REPLACE INTO user_meta(key, value) VALUES(?, ?)",
-            ("storage_schema_version", str(SCHEMA_VERSION)),
-        )
-        conn.commit()
+        row = conn.execute(
+            "SELECT value FROM user_meta WHERE key = 'storage_schema_version'"
+        ).fetchone()
+        if not row or row[0] != str(SCHEMA_VERSION):
+            # SQLite cannot retrofit compound keys with ALTER TABLE.  Keep the
+            # create/copy/drop/rename repair and its schema marker in one
+            # explicit transaction so a power loss cannot strand a
+            # half-rebuilt user DB.
+            with _upgrade_lock:
+                conn.execute("BEGIN IMMEDIATE")
+                _ensure_profile_columns(conn)
+                _ensure_default_profile(conn)
+                conn.execute(
+                    "INSERT OR REPLACE INTO user_meta(key, value) VALUES(?, ?)",
+                    ("storage_schema_version", str(SCHEMA_VERSION)),
+                )
+                conn.commit()
         return conn
     except Exception:
         conn.rollback()

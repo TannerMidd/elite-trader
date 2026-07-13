@@ -161,7 +161,8 @@ def _attach_commander(conn):
             f"ATTACH DATABASE ? AS {commanderdb.quote_identifier(USER_DB_ALIAS)}",
             (str(USER_DB_PATH),),
         )
-    conn.execute(f"PRAGMA {commanderdb.quote_identifier(USER_DB_ALIAS)}.synchronous = FULL")
+    # WAL + NORMAL, matching commanderdb._configure (see rationale there).
+    conn.execute(f"PRAGMA {commanderdb.quote_identifier(USER_DB_ALIAS)}.synchronous = NORMAL")
 
 
 def _initialize_storage(conn):
@@ -221,9 +222,64 @@ def connect(path=None):
             raise
 
 
+_commander_session = threading.local()
+
+
+class _BorrowedConnection:
+    """A commander connection on loan from an enclosing commander_session().
+
+    Call sites treat it exactly like the private connection they used to open
+    (execute/commit/rollback/close); only close() is a no-op, because the
+    owning session outlives each borrower.
+    """
+
+    __slots__ = ("_conn",)
+
+    def __init__(self, conn):
+        self._conn = conn
+
+    def close(self):
+        pass
+
+    def __getattr__(self, name):
+        return getattr(self._conn, name)
+
+
 def connect_user():
-    """Direct connection to durable commander.db for feature-owned data."""
+    """Connection to durable commander.db for feature-owned data.
+
+    Inside a commander_session() this borrows the session's single
+    connection: journal replay drives per-event reducers that would otherwise
+    open (and re-validate) thousands of short-lived connections.
+    """
+    shared = getattr(_commander_session, "conn", None)
+    if shared is not None:
+        return _BorrowedConnection(shared)
     return commanderdb.connect(USER_DB_PATH)
+
+
+class commander_session:
+    """Reuse one commander.db connection across every connect_user() call
+    made by this thread while the context is active. Nesting reuses the
+    outermost session. Individual operations keep their own transaction
+    boundaries — this shares the connection, not a transaction."""
+
+    def __enter__(self):
+        self._owned = getattr(_commander_session, "conn", None) is None
+        if self._owned:
+            _commander_session.conn = commanderdb.connect(USER_DB_PATH)
+        return _commander_session.conn
+
+    def __exit__(self, exc_type, exc, tb):
+        if self._owned:
+            conn = _commander_session.conn
+            _commander_session.conn = None
+            try:
+                if conn.in_transaction:
+                    conn.rollback()
+            finally:
+                conn.close()
+        return False
 
 
 def ensure_user_schema(sql):
