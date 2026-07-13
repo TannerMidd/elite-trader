@@ -11,6 +11,24 @@
 <meta property="og:url" content="https://tannermidd.github.io/frameshift/">
 <meta property="og:type" content="website">
 <link rel="icon" type="image/svg+xml" href="assets/icon.svg">
+<meta name="theme-color" content="#0b0c0e">
+<meta property="og:image:width" content="1280">
+<meta property="og:image:height" content="800">
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "SoftwareApplication",
+  "name": "Frameshift",
+  "operatingSystem": "Windows, Linux",
+  "applicationCategory": "UtilitiesApplication",
+  "description": "A local-first Elite Dangerous companion: live cockpit, trading, exploration, engineering and mission planning served from your PC to any paired tablet.",
+  "url": "https://tannermidd.github.io/frameshift/",
+  "image": "https://tannermidd.github.io/frameshift/assets/shot-panel.png",
+  "downloadUrl": "https://github.com/TannerMidd/frameshift/releases/latest",
+  "license": "https://github.com/TannerMidd/frameshift/blob/main/LICENSE",
+  "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
+}
+</script>
 <style>
   @font-face { font-family: "Chakra Petch"; font-weight: 600; font-display: swap;
     src: url("assets/fonts/chakra-petch-600.woff2") format("woff2"); }
@@ -36,6 +54,10 @@
   }
   a { color: var(--orange-soft); text-decoration: none; }
   a:hover { text-decoration: underline; }
+  a:focus-visible, .btn:focus-visible { outline: 2px solid var(--orange-soft); outline-offset: 3px; }
+  @media (prefers-reduced-motion: no-preference) { html { scroll-behavior: smooth; } }
+  section[id] { scroll-margin-top: 70px; }
+  .frame > a { display: block; }
   img { max-width: 100%; display: block; }
   .wrap { max-width: 1120px; margin: 0 auto; padding: 0 22px; }
 
@@ -190,10 +212,9 @@
       <a class="btn primary" href="https://github.com/TannerMidd/frameshift/releases/latest">Download for Windows</a>
       <a class="btn" href="https://github.com/TannerMidd/frameshift">View source</a>
     </div>
-    <span class="hero-note">Free &amp; open source (MIT) · Windows exe or run from Python on Linux/Steam Deck ·
-      <a href="demo.html">watch the original 99-second tour</a></span>
+    <span class="hero-note">Free &amp; open source (MIT) · Windows exe, or run from source on Linux &amp; Steam Deck</span>
     <div class="hero-shot frame">
-      <img src="assets/shot-panel.png" width="1280" height="800" alt="Frameshift panel mode: live cockpit with fuel, cargo, credits, rebuy and session stats" fetchpriority="high">
+      <a href="assets/shot-panel.png" target="_blank" rel="noopener" title="Open full size"><img src="assets/shot-panel.png" width="1280" height="800" alt="Frameshift panel mode: live cockpit with fuel, cargo, credits, rebuy and session stats" fetchpriority="high"></a>
     </div>
   </div>
 </div>
@@ -240,7 +261,7 @@
     <div class="sec-label">Flight deck tour</div>
 
     <div class="row">
-      <div class="frame"><img src="assets/shot-trade.png" alt="Trade routes tab: locally computed loops with confidence scores and profit per hour" loading="lazy"></div>
+      <div class="frame"><a href="assets/shot-trade.png" target="_blank" rel="noopener" title="Open full size"><img src="assets/shot-trade.png" alt="Trade routes tab: locally computed loops with confidence scores and profit per hour" loading="lazy"></a></div>
       <div class="row-copy">
         <h3>Routes you can trust, computed on your machine</h3>
         <p>No waiting on a website: the whole galaxy's markets live in a local database kept fresh by EDDN.</p>
@@ -254,7 +275,7 @@
     </div>
 
     <div class="row flip">
-      <div class="frame"><img src="assets/shot-galaxy.png" alt="Galaxy tab: Powerplay primer, system factions with influence and reputation" loading="lazy"></div>
+      <div class="frame"><a href="assets/shot-galaxy.png" target="_blank" rel="noopener" title="Open full size"><img src="assets/shot-galaxy.png" alt="Galaxy tab: Powerplay primer, system factions with influence and reputation" loading="lazy"></a></div>
       <div class="row-copy">
         <h3>Know every system you drop into</h3>
         <p>Factions, influence, states, conflicts and your reputation — captured from your own journal on arrival.</p>
@@ -268,7 +289,7 @@
     </div>
 
     <div class="row">
-      <div class="frame"><img src="assets/shot-ops.png" alt="Ops tab: local mission control with time-budgeted session planner and personal objectives" loading="lazy"></div>
+      <div class="frame"><a href="assets/shot-ops.png" target="_blank" rel="noopener" title="Open full size"><img src="assets/shot-ops.png" alt="Ops tab: local mission control with time-budgeted session planner and personal objectives" loading="lazy"></a></div>
       <div class="row-copy">
         <h3>“I have 90 minutes — what's worth starting?”</h3>
         <p>Local Mission Control ranks your known work by urgency, value, risk and the time you actually have.</p>
@@ -282,7 +303,7 @@
     </div>
 
     <div class="row flip">
-      <div class="frame"><img src="assets/shot-explore.png" alt="Explore tab: exobiology routing, bio prediction and exploration tools" loading="lazy"></div>
+      <div class="frame"><a href="assets/shot-explore.png" target="_blank" rel="noopener" title="Open full size"><img src="assets/shot-explore.png" alt="Explore tab: exobiology routing, bio prediction and exploration tools" loading="lazy"></a></div>
       <div class="row-copy">
         <h3>Exploration that pays, exobiology that lands</h3>
         <p>From Road to Riches to Vista Genomics: plan the route, find the bios, protect the payout.</p>
@@ -291,6 +312,20 @@
           <li><b>First-log ×5</b> likelihood and value-at-risk vs your rebuy</li>
           <li>Surface navigator with live sample-clearance distances</li>
           <li>Neutron pre-flight fuel checks and jumponium readiness</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="row">
+      <div class="frame"><a href="assets/shot-engineering.png" target="_blank" rel="noopener" title="Open full size"><img src="assets/shot-engineering.png" alt="Engineering tab: engineer unlock progress with grade pips and specialties" loading="lazy"></a></div>
+      <div class="row-copy">
+        <h3>Engineering without the wiki spelunking</h3>
+        <p>Every engineer, every recipe, every material — offline, on your machine, aware of your progress.</p>
+        <ul class="ticks">
+          <li><b>1,100+ recipes</b>: blueprints, experimentals, unlocks and Odyssey upgrades</li>
+          <li>Engineer progress with grade pips, specialties and one-tap plotting</li>
+          <li>Wishlists roll up <b>material deficits</b> with trader conversion math</li>
+          <li>Pinned plans become steps in your session plan automatically</li>
         </ul>
       </div>
     </div>
@@ -346,8 +381,8 @@
     <div class="cols">
       <a href="https://github.com/TannerMidd/frameshift/releases/latest">Download</a>
       <a href="https://github.com/TannerMidd/frameshift/wiki">Documentation</a>
+      <a href="https://github.com/TannerMidd/frameshift/releases">Changelog</a>
       <a href="https://github.com/TannerMidd/frameshift/issues">Report an issue</a>
-      <a href="demo.html">v1 demo video</a>
       <a href="https://github.com/TannerMidd/frameshift/blob/main/THIRD_PARTY_NOTICES.md">Third-party notices</a>
     </div>
     <p>Frameshift is a personal project by CMDR FINGERTHIEFF, AI-built with Claude (Fable 5) and GPT 5.6 SOL Ultra,
