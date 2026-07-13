@@ -10,6 +10,7 @@ import uuid
 from datetime import datetime, timezone
 
 from . import marketdb
+from .errors import NotFoundError, ValidationError
 
 
 FORMAT = "frameshift.operations"
@@ -268,7 +269,7 @@ class OperationsBoard:
     def create_board(self, title: str, description="") -> dict:
         title = _text(title, 240)
         if not title:
-            raise ValueError("board title is required")
+            raise ValidationError("board title is required")
         now = _now()
         return self._insert("boards", {
             "id": _new_id("board"), "owner_commander_id": self.commander_id,
@@ -283,7 +284,7 @@ class OperationsBoard:
         self._require_board(board_id)
         title = _text(title, 240)
         if not title:
-            raise ValueError("objective title is required")
+            raise ValidationError("objective title is required")
         now = _now()
         return self._insert("objectives", {
             "id": _new_id("opobj"), "board_id": board_id, "title": title,
@@ -302,7 +303,7 @@ class OperationsBoard:
         self._require_objective(board_id, objective_id)
         assignee = _text(assignee, 160)
         if not assignee:
-            raise ValueError("assignee is required")
+            raise ValidationError("assignee is required")
         now = _now()
         return self._insert("assignments", {
             "id": _new_id("assign"), "board_id": board_id, "objective_id": objective_id,
@@ -319,9 +320,9 @@ class OperationsBoard:
         self._require_objective(board_id, objective_id)
         amount = float(amount)
         if amount <= 0:
-            raise ValueError("reservation amount must be positive")
+            raise ValidationError("reservation amount must be positive")
         if not _text(resource_type, 80) or not _text(resource_key, 200):
-            raise ValueError("resource type and key are required")
+            raise ValidationError("resource type and key are required")
         now = _now()
         return self._insert("reservations", {
             "id": _new_id("reserve"), "board_id": board_id, "objective_id": objective_id,
@@ -340,9 +341,9 @@ class OperationsBoard:
         contributor, kind = _text(contributor, 160), _text(kind, 100)
         amount = float(amount)
         if not contributor or not kind:
-            raise ValueError("contributor and contribution kind are required")
+            raise ValidationError("contributor and contribution kind are required")
         if amount <= 0:
-            raise ValueError("contribution amount must be positive")
+            raise ValidationError("contribution amount must be positive")
         now = _now()
         return self._insert("contributions", {
             "id": _new_id("contrib"), "board_id": board_id, "objective_id": objective_id,
@@ -354,13 +355,13 @@ class OperationsBoard:
 
     def _require_board(self, board_id):
         if not board_id:
-            raise ValueError("board id is required")
+            raise ValidationError("board id is required")
         conn = _connect()
         try:
             if not conn.execute(
                 "SELECT 1 FROM operation_boards WHERE id=? AND deleted_at IS NULL", (board_id,)
             ).fetchone():
-                raise KeyError("unknown operations board")
+                raise NotFoundError("unknown operations board")
         finally:
             conn.close()
 
@@ -373,13 +374,13 @@ class OperationsBoard:
                 "SELECT 1 FROM operation_objectives WHERE id=? AND board_id=? AND deleted_at IS NULL",
                 (objective_id, board_id),
             ).fetchone():
-                raise KeyError("unknown objective for operations board")
+                raise NotFoundError("unknown objective for operations board")
         finally:
             conn.close()
 
     def update(self, kind: str, record_id: str, **changes) -> dict:
         if kind not in _TABLES:
-            raise ValueError("unsupported operations record kind")
+            raise ValidationError("unsupported operations record kind")
         spec = _TABLES[kind]
         immutable = {
             "id", "board_id", "owner_commander_id", "objective_id", "created_at",
@@ -396,7 +397,7 @@ class OperationsBoard:
         if "amount" in changes:
             changes["amount"] = float(changes["amount"])
             if changes["amount"] <= 0:
-                raise ValueError("amount must be positive")
+                raise ValidationError("amount must be positive")
         if "payload" in changes:
             changes["payload"] = _json(changes["payload"])
         conn = _connect()
@@ -409,7 +410,7 @@ class OperationsBoard:
             conn.execute("BEGIN IMMEDIATE")
             row = conn.execute(f"SELECT * FROM {spec['table']} WHERE id=?", (record_id,)).fetchone()
             if not row:
-                raise KeyError("unknown operations record")
+                raise NotFoundError("unknown operations record")
             record = dict(row)
             record.update(changes)
             record["revision"] = int(record["revision"]) + 1
@@ -452,7 +453,7 @@ class OperationsBoard:
         try:
             board_row = conn.execute("SELECT * FROM operation_boards WHERE id=?", (board_id,)).fetchone()
             if not board_row or (board_row["deleted_at"] and not include_deleted):
-                raise KeyError("unknown operations board")
+                raise NotFoundError("unknown operations board")
             result = {"board": _decode_record(board_row)}
             for kind, spec in _TABLES.items():
                 if kind == "boards":
@@ -474,7 +475,7 @@ class OperationsBoard:
             if board_id:
                 boards = conn.execute("SELECT * FROM operation_boards WHERE id=?", (board_id,)).fetchall()
                 if not boards:
-                    raise KeyError("unknown operations board")
+                    raise NotFoundError("unknown operations board")
             else:
                 boards = conn.execute("SELECT * FROM operation_boards ORDER BY id").fetchall()
             board_ids = [row["id"] for row in boards]
@@ -505,12 +506,12 @@ class OperationsBoard:
     def _normalise_import(kind: str, raw: dict) -> dict:
         spec = _TABLES[kind]
         if not isinstance(raw, dict):
-            raise ValueError(f"{kind} record must be an object")
+            raise ValidationError(f"{kind} record must be an object")
         record = {field: raw.get(field) for field in spec["fields"]}
         if not _ID_RE.fullmatch(str(record.get("id") or "")):
-            raise ValueError(f"invalid {kind} record id")
+            raise ValidationError(f"invalid {kind} record id")
         if kind != "boards" and not _ID_RE.fullmatch(str(record.get("board_id") or "")):
-            raise ValueError(f"invalid board id on {kind} record")
+            raise ValidationError(f"invalid board id on {kind} record")
         record["revision"] = max(1, int(record.get("revision") or 1))
         record["updated_at"] = _text(record.get("updated_at"), 80) or _now()
         record["created_at"] = _text(record.get("created_at"), 80) or record["updated_at"]
@@ -573,21 +574,21 @@ class OperationsBoard:
     def import_json(self, value) -> dict:
         if isinstance(value, str):
             if len(value.encode("utf-8")) > 20 * 1024 * 1024:
-                raise ValueError("operations import is too large")
+                raise ValidationError("operations import is too large")
             try:
                 value = json.loads(value)
             except ValueError as exc:
-                raise ValueError("invalid operations JSON") from exc
+                raise ValidationError("invalid operations JSON") from exc
         if not isinstance(value, dict) or value.get("format") != FORMAT:
-            raise ValueError("not a Frameshift operations export")
+            raise ValidationError("not a Frameshift operations export")
         if int(value.get("version") or 0) != FORMAT_VERSION:
-            raise ValueError("unsupported operations export version")
+            raise ValidationError("unsupported operations export version")
         records = value.get("records")
         if not isinstance(records, dict):
-            raise ValueError("operations export has no records")
+            raise ValidationError("operations export has no records")
         total = sum(len(records.get(kind) or []) for kind in _TABLES)
         if total > 50_000:
-            raise ValueError("operations export has too many records")
+            raise ValidationError("operations export has too many records")
         report = {"inserted": 0, "updated": 0, "unchanged": 0, "kept_local": 0, "conflicts": 0}
         conn = _connect()
         try:
@@ -595,7 +596,7 @@ class OperationsBoard:
             for kind in ("boards", "objectives", "assignments", "reservations", "contributions"):
                 rows = records.get(kind) or []
                 if not isinstance(rows, list):
-                    raise ValueError(f"operations {kind} must be a list")
+                    raise ValidationError(f"operations {kind} must be a list")
                 for raw in rows:
                     incoming = self._normalise_import(kind, raw)
                     result, conflict = self._merge_record(conn, kind, incoming)

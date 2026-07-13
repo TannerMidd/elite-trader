@@ -282,6 +282,103 @@ async function renderPairedDevices(admin) {
   }
 }
 
+async function loadProfiles() {
+  const card = $("profiles-card");
+  const admin = securityStatus?.scopes?.includes("admin");
+  card.classList.toggle("hidden", !admin);
+  if (!admin) return;
+  const list = $("profiles-list");
+  const bucket = $("profiles-unattributed");
+  try {
+    const response = await fetch("/api/profiles", { cache: "no-store" });
+    if (!response.ok) throw new Error("Commander profiles are unavailable.");
+    const data = await response.json();
+    const profiles = data.profiles || [];
+    const named = profiles.filter((p) => p.id !== "default");
+
+    bucket.classList.toggle("hidden", !(data.unattributed?.rows > 0));
+    bucket.innerHTML = "";
+    if (data.unattributed?.rows > 0 && named.length) {
+      const info = document.createElement("div");
+      info.className = "device-main";
+      info.innerHTML =
+        `<div class="device-name">UNASSIGNED HISTORY · ${Number(data.unattributed.rows).toLocaleString()} records</div>` +
+        `<div class="dim">Trades, earnings and watches saved before this machine knew your commander name. ` +
+        `If all of it is yours, assign it — it merges safely (duplicates are skipped).</div>`;
+      const pick = document.createElement("select");
+      for (const profile of named) {
+        const option = document.createElement("option");
+        option.value = profile.id;
+        option.textContent = profile.name;
+        option.selected = profile.active;
+        pick.appendChild(option);
+      }
+      const assign = document.createElement("button");
+      assign.className = "primary small";
+      assign.textContent = "ASSIGN";
+      assign.addEventListener("click", async () => {
+        const target = named.find((p) => p.id === pick.value);
+        if (!confirm(`Give all unassigned history to ${target?.name || "this commander"}? ` +
+            "Only do this if no other person's account has used this machine.")) return;
+        const result = await fetch("/api/profiles/assign-unattributed", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ commander_id: pick.value }),
+        });
+        if (!result.ok) alert((await result.json()).error || "Could not assign the history.");
+        loadProfiles();
+      });
+      bucket.append(info, pick, assign);
+    }
+
+    list.classList.remove("dim");
+    list.innerHTML = "";
+    if (!named.length) {
+      list.classList.add("dim");
+      list.textContent = "No commander seen yet — profiles appear after your first login with the game running.";
+      return;
+    }
+    for (const profile of named) {
+      const row = document.createElement("div");
+      row.className = "paired-device";
+      const main = document.createElement("div");
+      main.className = "device-main";
+      const mode = profile.galaxy_mode === "legacy" ? " · LEGACY galaxy" : "";
+      main.innerHTML =
+        `<div class="device-name">${esc(profile.name)}${profile.active ? ' <span class="chip">ACTIVE</span>' : ""}</div>` +
+        `<div class="dim">${Number(profile.rows || 0).toLocaleString()} local records${mode}` +
+        ` · last seen ${esc((profile.last_seen_at || "never").slice(0, 16).replace("T", " "))}</div>`;
+      row.appendChild(main);
+      if (!profile.active) {
+        const activate = document.createElement("button");
+        activate.className = "copy";
+        activate.textContent = "ACTIVATE";
+        activate.title = "Show this commander's data now. The journal switches it back automatically at your next login.";
+        activate.addEventListener("click", async () => {
+          await fetch(`/api/profiles/${encodeURIComponent(profile.id)}/activate`, { method: "POST" });
+          loadProfiles();
+        });
+        const remove = document.createElement("button");
+        remove.className = "copy";
+        remove.textContent = "DELETE";
+        remove.title = "Remove this profile and every local record it owns. In-game progress is never affected.";
+        remove.addEventListener("click", async () => {
+          if (!confirm(`Delete ${profile.name} and its ${Number(profile.rows || 0).toLocaleString()} local records? ` +
+              "This cannot be undone (a backup is kept in data/backups).")) return;
+          const result = await fetch(`/api/profiles/${encodeURIComponent(profile.id)}`, { method: "DELETE" });
+          if (!result.ok) alert((await result.json()).error || "Could not delete the profile.");
+          loadProfiles();
+        });
+        row.append(activate, remove);
+      }
+      list.appendChild(row);
+    }
+  } catch (error) {
+    list.classList.add("dim");
+    list.textContent = String(error.message || error);
+  }
+}
+
 async function loadLocalServices() {
   const card = $("local-services-card");
   const admin = securityStatus?.scopes?.includes("admin");
@@ -6833,5 +6930,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   loadSettings();
   refreshSecurityPanel();
   loadLocalServices();
+  loadProfiles();
+  $("profiles-refresh").addEventListener("click", () => loadProfiles());
   loadCommodityList();
 });

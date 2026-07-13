@@ -15,6 +15,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from . import commanderdb
+from .errors import ValidationError
 
 
 def _default_data_dir():
@@ -248,6 +249,61 @@ def commander_profile_id(name, galaxy_mode=None):
     return "cmdr-" + hashlib.sha256(normalized.encode("utf-8")).hexdigest()[:20]
 
 
+def _move_commander_rows(conn, from_id, to_id, tables):
+    """Re-own every row in ``tables`` from one profile id to another.
+
+    Compound-key tables are copied under the new discriminator before their
+    old rows are removed. ``INSERT OR REPLACE`` makes an interrupted move
+    idempotent. Row-id tables (globally unique integer keys, e.g. watches)
+    are updated in place so their ids survive; a collision with an existing
+    row of the target owner keeps the target's authoritative copy.
+
+    Returns {table: rows_moved}. Caller owns the transaction.
+    """
+    moved = {}
+    existing = {
+        row[0]
+        for row in conn.execute("SELECT name FROM sqlite_master WHERE type = 'table'")
+    }
+    for table in sorted(set(tables) & existing):
+        quoted_table = commanderdb.quote_identifier(table)
+        info = conn.execute(f"PRAGMA table_info({quoted_table})").fetchall()
+        columns = [row[1] for row in info]
+        if "commander_id" not in columns:
+            continue
+        count = conn.execute(
+            f"SELECT COUNT(*) FROM {quoted_table} WHERE commander_id = ?", (from_id,)
+        ).fetchone()[0]
+        if not count:
+            continue
+        primary_key = {row[1] for row in info if row[5]}
+        if "commander_id" not in primary_key:
+            conn.execute(
+                f"UPDATE OR IGNORE {quoted_table} SET commander_id = ?"
+                " WHERE commander_id = ?",
+                (to_id, from_id),
+            )
+            conn.execute(
+                f"DELETE FROM {quoted_table} WHERE commander_id = ?", (from_id,)
+            )
+        else:
+            quoted_columns = ", ".join(commanderdb.quote_identifier(col) for col in columns)
+            selected = ", ".join(
+                "?" if col == "commander_id" else commanderdb.quote_identifier(col)
+                for col in columns
+            )
+            conn.execute(
+                f"INSERT OR REPLACE INTO {quoted_table} ({quoted_columns})"
+                f" SELECT {selected} FROM {quoted_table} WHERE commander_id = ?",
+                (to_id, from_id),
+            )
+            conn.execute(
+                f"DELETE FROM {quoted_table} WHERE commander_id = ?", (from_id,)
+            )
+        moved[table] = count
+    return moved
+
+
 def _adopt_default_profile_rows(conn, commander_id):
     """Move pre-profile user preferences to the first real commander once.
 
@@ -256,11 +312,6 @@ def _adopt_default_profile_rows(conn, commander_id):
     belong to the first commander loaded by the journal. Analytics do not:
     multi-account v2.0 installations mixed several pilots in that bucket, so
     those rows remain quarantined and are rebuilt from each journal's owner.
-
-    Compound-key tables are copied under the new discriminator before their
-    old rows are removed. ``INSERT OR REPLACE`` also makes an interrupted
-    pre-release migration idempotent. Watches have a globally unique integer
-    id, so changing their discriminator in place preserves that id.
     """
     if commander_id == "default":
         return False
@@ -274,10 +325,6 @@ def _adopt_default_profile_rows(conn, commander_id):
     if marker and marker[0] != commander_id:
         return False
 
-    tables = {
-        row[0]
-        for row in conn.execute("SELECT name FROM sqlite_master WHERE type = 'table'")
-    }
     migrated_legacy = conn.execute(
         "SELECT 1 FROM user_meta WHERE key = 'migrated_from_market_db'"
     ).fetchone()
@@ -289,40 +336,7 @@ def _adopt_default_profile_rows(conn, commander_id):
         commanderdb.DEFAULT_PROFILE_ADOPTABLE_TABLES
         if migrated_legacy else commanderdb.PROFILE_SCOPED_TABLES
     )
-    for table in sorted(adoptable & tables):
-        quoted_table = commanderdb.quote_identifier(table)
-        info = conn.execute(f"PRAGMA table_info({quoted_table})").fetchall()
-        columns = [row[1] for row in info]
-        if "commander_id" not in columns:
-            continue
-        primary_key = {row[1] for row in info if row[5]}
-        if "commander_id" not in primary_key:
-            # Row-id tables (ledger events, timing observations, objectives,
-            # specialist history) enforce commander-aware UNIQUE keys rather
-            # than a compound PRIMARY KEY. A retry can find the same logical
-            # row already rebuilt under the real commander. Keep that
-            # authoritative copy, adopt every non-conflicting default row, and
-            # remove only the now-redundant defaults.
-            conn.execute(
-                f"UPDATE OR IGNORE {quoted_table} SET commander_id = ?"
-                " WHERE commander_id = 'default'",
-                (commander_id,),
-            )
-            conn.execute(f"DELETE FROM {quoted_table} WHERE commander_id = 'default'")
-            continue
-
-        quoted_columns = ", ".join(commanderdb.quote_identifier(col) for col in columns)
-        selected = ", ".join(
-            "?" if col == "commander_id" else commanderdb.quote_identifier(col)
-            for col in columns
-        )
-        conn.execute(
-            f"INSERT OR REPLACE INTO {quoted_table} ({quoted_columns})"
-            f" SELECT {selected} FROM {quoted_table} WHERE commander_id = 'default'",
-            (commander_id,),
-        )
-        conn.execute(f"DELETE FROM {quoted_table} WHERE commander_id = 'default'")
-
+    _move_commander_rows(conn, "default", commander_id, adoptable)
     conn.execute(
         "INSERT OR REPLACE INTO user_meta(key, value)"
         " VALUES('default_profile_adopted_by', ?)",
@@ -385,6 +399,188 @@ def resolve_commander_id(commander_id=None):
     """
     value = str(commander_id or "").strip()
     return value or active_commander_id()
+
+
+def profile_overview():
+    """Profiles, per-profile data footprints, and the unattributed bucket.
+
+    Powers the Settings repair card: lets a commander see which local profile
+    owns what (including pre-v2.1 history stranded under ``default``) before
+    assigning, activating, or deleting anything.
+    """
+    conn = connect_user()
+    try:
+        active = conn.execute(
+            "SELECT value FROM user_meta WHERE key = 'active_commander_id'"
+        ).fetchone()
+        active_id = active[0] if active else "default"
+        adopted = conn.execute(
+            "SELECT value FROM user_meta WHERE key = 'default_profile_adopted_by'"
+        ).fetchone()
+        existing = {
+            row[0]
+            for row in conn.execute("SELECT name FROM sqlite_master WHERE type = 'table'")
+        }
+        counts = {}
+        for table in sorted(set(commanderdb.PROFILE_SCOPED_TABLES) & existing):
+            quoted = commanderdb.quote_identifier(table)
+            info = conn.execute(f"PRAGMA table_info({quoted})").fetchall()
+            if "commander_id" not in {row[1] for row in info}:
+                continue
+            for owner, n in conn.execute(
+                f"SELECT commander_id, COUNT(*) FROM {quoted} GROUP BY commander_id"
+            ):
+                counts.setdefault(owner, {})[table] = n
+        profiles = []
+        for pid, name, galaxy_mode, created_at, last_seen_at, is_active in conn.execute(
+            "SELECT id, name, galaxy_mode, created_at, last_seen_at, is_active"
+            " FROM commander_profiles ORDER BY is_active DESC, last_seen_at DESC"
+        ):
+            owned = counts.get(pid, {})
+            profiles.append({
+                "id": pid,
+                "name": name,
+                "galaxy_mode": galaxy_mode,
+                "created_at": created_at,
+                "last_seen_at": last_seen_at,
+                "active": bool(is_active),
+                "tables": owned,
+                "rows": sum(owned.values()),
+            })
+        unattributed = counts.get("default", {})
+        return {
+            "profiles": profiles,
+            "active_commander_id": active_id,
+            "adopted_by": adopted[0] if adopted else None,
+            "unattributed": {
+                "tables": unattributed,
+                "rows": sum(unattributed.values()),
+            },
+        }
+    finally:
+        conn.close()
+
+
+def _require_profile(conn, commander_id):
+    row = conn.execute(
+        "SELECT id, name, is_active FROM commander_profiles WHERE id = ?",
+        (commander_id,),
+    ).fetchone()
+    if not row:
+        raise ValidationError("That commander profile does not exist.")
+    return row
+
+
+def assign_unattributed_history(commander_id):
+    """Explicitly hand the quarantined ``default`` bucket to one commander.
+
+    The automatic path never does this for journal-derived analytics because a
+    migrated v2.0 database may mix several pilots. This deliberate action is
+    the single-commander answer: idempotent, collision-tolerant, and it seals
+    the adoption marker so later commanders cannot re-claim the bucket.
+    """
+    commander_id = str(commander_id or "").strip()
+    if not commander_id or commander_id == "default":
+        raise ValidationError("Choose the commander that should own this history.")
+    conn = connect_user()
+    try:
+        conn.execute("BEGIN IMMEDIATE")
+        _require_profile(conn, commander_id)
+        moved = _move_commander_rows(
+            conn, "default", commander_id, commanderdb.PROFILE_SCOPED_TABLES)
+        conn.execute(
+            "INSERT OR REPLACE INTO user_meta(key, value)"
+            " VALUES('default_profile_adopted_by', ?)",
+            (commander_id,),
+        )
+        conn.commit()
+        return {"moved": moved, "rows": sum(moved.values())}
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+
+def delete_commander_profile(commander_id):
+    """Remove a profile and every row it owns (test/stale identities).
+
+    The active profile and the ``default`` bucket are protected; deleting a
+    profile recorded as the adoption owner clears that marker so a legitimate
+    commander can adopt the bucket later.
+    """
+    commander_id = str(commander_id or "").strip()
+    if not commander_id or commander_id == "default":
+        raise ValidationError("The unattributed bucket cannot be deleted.")
+    conn = connect_user()
+    try:
+        conn.execute("BEGIN IMMEDIATE")
+        row = _require_profile(conn, commander_id)
+        if row[2]:
+            raise ValidationError(
+                "That profile is active. Activate another profile first.")
+        existing = {
+            r[0]
+            for r in conn.execute("SELECT name FROM sqlite_master WHERE type = 'table'")
+        }
+        removed = {}
+        for table in sorted(set(commanderdb.PROFILE_SCOPED_TABLES) & existing):
+            quoted = commanderdb.quote_identifier(table)
+            info = conn.execute(f"PRAGMA table_info({quoted})").fetchall()
+            if "commander_id" not in {r[1] for r in info}:
+                continue
+            n = conn.execute(
+                f"SELECT COUNT(*) FROM {quoted} WHERE commander_id = ?",
+                (commander_id,),
+            ).fetchone()[0]
+            if n:
+                conn.execute(
+                    f"DELETE FROM {quoted} WHERE commander_id = ?", (commander_id,))
+                removed[table] = n
+        conn.execute("DELETE FROM commander_profiles WHERE id = ?", (commander_id,))
+        adopted = conn.execute(
+            "SELECT value FROM user_meta WHERE key = 'default_profile_adopted_by'"
+        ).fetchone()
+        if adopted and adopted[0] == commander_id:
+            conn.execute(
+                "DELETE FROM user_meta WHERE key = 'default_profile_adopted_by'")
+        conn.commit()
+        return {"removed": removed, "rows": sum(removed.values())}
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+
+def activate_commander_profile(commander_id):
+    """Make a profile the stored active commander (the journal can override
+    it again at the next Commander event — that is the desired behavior)."""
+    commander_id = str(commander_id or "").strip()
+    if not commander_id:
+        raise ValidationError("Choose a commander profile to activate.")
+    conn = connect_user()
+    try:
+        conn.execute("BEGIN IMMEDIATE")
+        _require_profile(conn, commander_id)
+        conn.execute("UPDATE commander_profiles SET is_active = 0")
+        conn.execute(
+            "UPDATE commander_profiles SET is_active = 1, last_seen_at = ?"
+            " WHERE id = ?",
+            (utc_now_iso(), commander_id),
+        )
+        conn.execute(
+            "INSERT OR REPLACE INTO user_meta(key, value)"
+            " VALUES('active_commander_id', ?)",
+            (commander_id,),
+        )
+        conn.commit()
+        return True
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
 
 
 def build_path():

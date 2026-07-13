@@ -119,7 +119,9 @@ def _required_scope():
     if path == "/api/security/session":
         return "read"  # every device may revoke its own credential
     if (path.startswith("/api/security/devices/")
-            or path.startswith("/api/extensions/") or path in _ADMIN_ENDPOINTS):
+            or path.startswith("/api/extensions/")
+            or path == "/api/profiles" or path.startswith("/api/profiles/")
+            or path in _ADMIN_ENDPOINTS):
         return "admin"
     if path in _CONTROL_ENDPOINTS:
         return "control"
@@ -160,13 +162,9 @@ def _journal_path(raw):
         return "", None
     if "\x00" in text or len(text) > 4096:
         return None, "That journal folder path is not valid."
-    candidate = Path(text).expanduser()
-    if not candidate.is_absolute():
+    expanded = os.path.expanduser(text)
+    if not os.path.isabs(expanded):
         return None, "Choose an absolute journal folder path."
-    try:
-        candidate = candidate.resolve(strict=False)
-    except (OSError, RuntimeError):
-        return None, "That journal folder path could not be resolved safely."
 
     roots = [(Path.home(), False)]
     known = journal._windows_saved_games()
@@ -175,21 +173,53 @@ def _journal_path(raw):
     override = os.environ.get("ED_JOURNAL_DIR")
     if override:
         roots.append((Path(override).expanduser(), True))
-    allowed = False
+    normalized_roots = []
     for root, allow_exact in roots:
         try:
-            resolved_root = root.resolve(strict=False)
-            if ((allow_exact and candidate == resolved_root)
-                    or (candidate != resolved_root and candidate.is_relative_to(resolved_root))):
-                allowed = True
-                break
+            root_norm = os.path.normpath(os.path.abspath(str(root.resolve(strict=False))))
         except (OSError, RuntimeError, ValueError):
             continue
-    if not allowed:
-        return None, "Journal folders must be inside your user profile or Saved Games folder."
-    if candidate.exists() and not candidate.is_dir():
-        return None, "The journal path points to a file, not a folder."
-    return str(candidate), None
+        normalized_roots.append(
+            (root_norm.casefold() if os.name == "nt" else root_norm, allow_exact))
+    prefix_roots = tuple(root + os.sep for root, _ in normalized_roots)
+
+    def exact_root(value):
+        # Exact matches are canonicalized to the root's own string (derived
+        # from home/env, never from the request), like tts._canonical_voice.
+        for root, allow_exact in normalized_roots:
+            if allow_exact and value == root:
+                return root
+        return None
+
+    # Containment is checked twice with the inline normpath+startswith
+    # barrier (every filesystem access sits inside the positive branch): once
+    # before the filesystem is touched at all, and again after symlinks and
+    # junctions are resolved so a link planted below an allowed root cannot
+    # escape it. The path is casefolded on Windows (the filesystem is
+    # case-insensitive) so the guarded variable is the one used at each sink.
+    # An exact root match short-circuits with the root's own canonical string.
+    norm = os.path.normpath(os.path.abspath(expanded))
+    if os.name == "nt":
+        norm = norm.casefold()
+    matched = exact_root(norm)
+    if matched is not None:
+        return matched, None
+    if norm.startswith(prefix_roots):
+        try:
+            resolved = Path(norm).resolve(strict=False)
+        except (OSError, RuntimeError):
+            return None, "That journal folder path could not be resolved safely."
+        norm = os.path.normpath(os.path.abspath(str(resolved)))
+        if os.name == "nt":
+            norm = norm.casefold()
+        matched = exact_root(norm)
+        if matched is not None:
+            return matched, None
+        if norm.startswith(prefix_roots):
+            if os.path.exists(norm) and not os.path.isdir(norm):
+                return None, "The journal path points to a file, not a folder."
+            return norm, None
+    return None, "Journal folders must be inside your user profile or Saved Games folder."
 
 
 def error_response(exc, status, **extra):
@@ -469,7 +499,7 @@ def create_app(state, security_manager=None):
             ttl = int(body.get("ttl_seconds") or 900)
             grant = security.rotate_pairing(scopes, ttl)
         except (TypeError, ValueError) as exc:
-            return jsonify({"error": str(exc)}), 400
+            return error_response(exc, 400)
         pairing = {
             "path": "/?pair=" + grant["code"],
             "expires_at": grant["expires_at"],
@@ -499,7 +529,7 @@ def create_app(state, security_manager=None):
                 scopes=body.get("scopes") if "scopes" in body else None,
             )
         except ValueError as exc:
-            return jsonify({"error": str(exc)}), 400
+            return error_response(exc, 400)
         except SecurityStoreError as exc:
             return error_response(exc, 500)
         if not device:
@@ -529,6 +559,47 @@ def create_app(state, security_manager=None):
         response = jsonify({"ok": True})
         response.delete_cookie(COOKIE_NAME, path="/")
         return response
+
+    # ---- commander profile repair (admin) -------------------------------
+    # Test sessions, borrowed accounts, or a mis-adopted pre-v2.1 bucket can
+    # leave local data owned by the wrong profile. These endpoints are the
+    # deliberate, audited repair path.
+
+    @app.get("/api/profiles")
+    def api_profiles():
+        return jsonify(marketdb.profile_overview())
+
+    @app.post("/api/profiles/assign-unattributed")
+    def api_profiles_assign_unattributed():
+        body = request.get_json(silent=True) or {}
+        try:
+            result = marketdb.assign_unattributed_history(body.get("commander_id"))
+        except UserFacingError as exc:
+            return error_response(exc, 400)
+        return jsonify({"ok": True, **result})
+
+    @app.post("/api/profiles/<profile_id>/activate")
+    def api_profiles_activate(profile_id):
+        try:
+            marketdb.activate_commander_profile(profile_id)
+        except UserFacingError as exc:
+            return error_response(exc, 400)
+        return jsonify({"ok": True})
+
+    @app.delete("/api/profiles/<profile_id>")
+    def api_profiles_delete(profile_id):
+        live = str(g.frameshift_commander_id or "").strip()
+        if live and live == profile_id:
+            return jsonify({
+                "error": "That profile belongs to the commander currently in game.",
+            }), 409
+        try:
+            # The confirmation dialog promises a safety net; keep it honest.
+            marketdb.backup_commander_data(reason="profile-delete")
+            result = marketdb.delete_commander_profile(profile_id)
+        except UserFacingError as exc:
+            return error_response(exc, 400)
+        return jsonify({"ok": True, **result})
 
     @app.get("/")
     def index():
@@ -822,7 +893,7 @@ def create_app(state, security_manager=None):
             objective = ObjectiveStore(commander_id()).create(
                 body.get("title"), source="user", source_ref=body.get("source_ref"), **allowed)
         except (TypeError, ValueError) as exc:
-            return jsonify({"error": str(exc)}), 400
+            return error_response(exc, 400)
         return jsonify({"objective": objective}), 201
 
     @app.patch("/api/objectives/<objective_id>")
@@ -833,7 +904,7 @@ def create_app(state, security_manager=None):
             objective = ObjectiveStore(commander_id()).update(
                 objective_id, **(request.get_json(silent=True) or {}))
         except (TypeError, ValueError) as exc:
-            return jsonify({"error": str(exc)}), 400
+            return error_response(exc, 400)
         if not objective:
             return jsonify({"error": "Objective not found."}), 404
         return jsonify({"objective": objective})
@@ -967,7 +1038,7 @@ def create_app(state, security_manager=None):
             else:
                 return jsonify({"error": "Unsupported operations action."}), 400
         except (KeyError, TypeError, ValueError) as exc:
-            return jsonify({"error": str(exc)}), 400
+            return error_response(exc, 400)
         return jsonify({"record": result}), 201
 
     @app.patch("/api/operations/<kind>/<record_id>")
@@ -980,7 +1051,7 @@ def create_app(state, security_manager=None):
         except KeyError:
             return jsonify({"error": "Operations record not found."}), 404
         except (TypeError, ValueError) as exc:
-            return jsonify({"error": str(exc)}), 400
+            return error_response(exc, 400)
         return jsonify({"record": result})
 
     @app.delete("/api/operations/<kind>/<record_id>")
@@ -992,7 +1063,7 @@ def create_app(state, security_manager=None):
         except KeyError:
             return jsonify({"error": "Operations record not found."}), 404
         except ValueError as exc:
-            return jsonify({"error": str(exc)}), 400
+            return error_response(exc, 400)
         return jsonify({"record": result})
 
     @app.get("/api/operations/export")
@@ -1017,7 +1088,7 @@ def create_app(state, security_manager=None):
         try:
             report = OperationsBoard(commander_id()).import_json(document)
         except (KeyError, TypeError, ValueError) as exc:
-            return jsonify({"error": str(exc)}), 400
+            return error_response(exc, 400)
         return jsonify(report)
 
     @app.post("/api/cargo-recovery")
@@ -1035,7 +1106,7 @@ def create_app(state, security_manager=None):
         except routes.RouteError as exc:
             return error_response(exc, 400)
         except (TypeError, ValueError) as exc:
-            return jsonify({"error": str(exc)}), 400
+            return error_response(exc, 400)
         return jsonify(result)
 
     def _specialist_facade():
@@ -1102,7 +1173,7 @@ def create_app(state, security_manager=None):
                 source="commander input",
             )
         except (TypeError, ValueError) as exc:
-            return jsonify({"error": str(exc)}), 400
+            return error_response(exc, 400)
         return jsonify(_specialist_response(workflows))
 
     @app.post("/api/specialists/carrier/route")
@@ -1115,7 +1186,7 @@ def create_app(state, security_manager=None):
                 reserve_t=body.get("reserve_t"),
             )
         except (TypeError, ValueError) as exc:
-            return jsonify({"error": str(exc)}), 400
+            return error_response(exc, 400)
         return jsonify(_specialist_response(workflows))
 
     @app.post("/api/specialists/carrier/inventory")
@@ -1125,7 +1196,7 @@ def create_app(state, security_manager=None):
         try:
             workflows.carrier.set_inventory(body.get("items") or {}, source="commander input")
         except (TypeError, ValueError) as exc:
-            return jsonify({"error": str(exc)}), 400
+            return error_response(exc, 400)
         return jsonify(_specialist_response(workflows))
 
     @app.post("/api/specialists/exobiology/pins")
@@ -1138,7 +1209,7 @@ def create_app(state, security_manager=None):
                 position=body.get("position"), metadata=body.get("metadata"),
             )
         except (TypeError, ValueError) as exc:
-            return jsonify({"error": str(exc)}), 400
+            return error_response(exc, 400)
         return jsonify(_specialist_response(workflows)), 201
 
     @app.delete("/api/specialists/exobiology/pins/<pin_id>")
@@ -1613,7 +1684,7 @@ def create_app(state, security_manager=None):
         try:
             return jsonify(EXTENSIONS.approve_process(extension_id))
         except ExtensionError as exc:
-            return jsonify({"error": str(exc)}), 400
+            return error_response(exc, 400)
 
     @app.post("/api/extensions/<extension_id>/revoke")
     def api_extension_revoke(extension_id):
@@ -1622,7 +1693,7 @@ def create_app(state, security_manager=None):
         try:
             return jsonify(EXTENSIONS.revoke_process(extension_id))
         except ExtensionError as exc:
-            return jsonify({"error": str(exc)}), 400
+            return error_response(exc, 400)
 
     @app.get("/api/settings")
     def api_settings_get():

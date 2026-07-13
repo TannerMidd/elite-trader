@@ -26,6 +26,7 @@ import uuid
 from collections import defaultdict, deque
 from datetime import datetime, timezone
 from pathlib import Path
+from .errors import ValidationError
 
 
 COOKIE_NAME = "frameshift_session"
@@ -65,9 +66,9 @@ def normalize_scopes(scopes):
     try:
         requested = {str(s).lower() for s in (scopes or ())}
     except TypeError as exc:
-        raise ValueError("Permissions must include read, control, or admin.") from exc
+        raise ValidationError("Permissions must include read, control, or admin.") from exc
     if not requested or not requested.issubset(_SCOPE_LEVEL):
-        raise ValueError("Permissions must include read, control, or admin.")
+        raise ValidationError("Permissions must include read, control, or admin.")
     highest = max(_SCOPE_LEVEL[s] for s in requested)
     return list(ALL_SCOPES[: highest + 1])
 

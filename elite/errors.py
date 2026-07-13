@@ -10,3 +10,12 @@ class UserFacingError(Exception):
     def __init__(self, message="Something went wrong; check the app log."):
         super().__init__(message)
         self.user_message = str(message)
+
+
+class ValidationError(UserFacingError, ValueError):
+    """Rejected commander input, phrased for the player. Subclasses ValueError
+    so callers that pre-date the split keep catching it as one."""
+
+
+class NotFoundError(UserFacingError, KeyError):
+    """A player-referenced record that does not exist (KeyError-compatible)."""

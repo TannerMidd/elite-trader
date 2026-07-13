@@ -10,6 +10,7 @@ from datetime import datetime, timezone
 from typing import Callable
 
 from . import marketdb
+from .errors import ValidationError
 from .timings import TimingModel
 
 
@@ -127,7 +128,7 @@ class ObjectiveStore:
     ) -> dict:
         title = _clean_text(title, 240)
         if not title:
-            raise ValueError("objective title is required")
+            raise ValidationError("objective title is required")
         source = _clean_text(source, 80) or "user"
         if source_ref is not None:
             source_ref = _clean_text(source_ref, 240)
@@ -171,11 +172,11 @@ class ObjectiveStore:
         }
         values = {key: value for key, value in changes.items() if key in allowed}
         if "status" in values and values["status"] not in _VALID_STATUS:
-            raise ValueError("invalid objective status")
+            raise ValidationError("invalid objective status")
         if "title" in values:
             values["title"] = _clean_text(values["title"], 240)
             if not values["title"]:
-                raise ValueError("objective title is required")
+                raise ValidationError("objective title is required")
         for key in ("category", "system", "station", "body", "risk"):
             if key in values:
                 values[key] = _clean_text(values[key], 240) or None
@@ -642,13 +643,13 @@ class ExtensionActionSink:
 
     def accept(self, action: dict) -> dict:
         if not isinstance(action, dict):
-            raise ValueError("extension action must be an object")
+            raise ValidationError("extension action must be an object")
         action_type = action.get("type")
         source = "extension:" + (_clean_text(action.get("extension_id"), 64) or "unknown")
         if action_type == "objective":
             title = _clean_text(action.get("title"), 240)
             if not title:
-                raise ValueError("extension objective needs a title")
+                raise ValidationError("extension objective needs a title")
             stable = action.get("source_ref") or hashlib.sha256(_json(action).encode("utf-8")).hexdigest()
             objective = self.objectives.create(
                 title, category=action.get("category") or "extension", source=source,
@@ -662,7 +663,7 @@ class ExtensionActionSink:
         if action_type == "alert":
             text = _clean_text(action.get("text"), 1000)
             if not text:
-                raise ValueError("extension alert needs text")
+                raise ValidationError("extension alert needs text")
             alert = {
                 "id": "alert-" + uuid.uuid4().hex,
                 "commander_id": self.commander_id,
@@ -690,7 +691,7 @@ class ExtensionActionSink:
             if self.alert_callback:
                 self.alert_callback(dict(alert))
             return {"type": "alert", "alert": alert}
-        raise ValueError("unsupported extension action type")
+        raise ValidationError("unsupported extension action type")
 
 
 def accept_extension_action(action: dict, *, commander_id=None, alert_callback=None) -> dict:

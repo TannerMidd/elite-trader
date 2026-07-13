@@ -2681,3 +2681,16 @@ body.panel-mode #fp-boot.hidden { display: none; }
 }
 .paired-device .device-main { flex: 1; min-width: 0; }
 .paired-device .device-name { font-weight: 600; }
+.profiles-primer { margin-top: 8px; font-size: .85rem; line-height: 1.45; }
+.profiles-list { margin-top: 12px; display: grid; gap: 6px; }
+.profiles-unattributed {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 12px;
+  padding: 9px 10px;
+  border: 1px solid rgba(var(--accent-rgb), .55);
+  background: rgba(var(--accent-rgb), .08);
+}
+.profiles-unattributed .device-main { flex: 1; min-width: 0; }
+.profiles-unattributed select, .profiles-list select { max-width: 180px; }

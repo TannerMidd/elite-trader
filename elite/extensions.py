@@ -28,6 +28,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 from . import marketdb
+from .errors import UserFacingError
 
 API_VERSION = 1
 EXTENSIONS_DIR = marketdb.DATA_DIR / "extensions"
@@ -70,7 +71,7 @@ class ExtensionStatus:
     errors: list[dict[str, str]] = field(default_factory=list)
 
 
-class ExtensionError(ValueError):
+class ExtensionError(UserFacingError, ValueError):
     pass
 
 

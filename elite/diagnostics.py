@@ -84,6 +84,9 @@ def health_snapshot() -> dict[str, Any]:
         "data_dir_writable": os.access(marketdb.DATA_DIR, os.W_OK),
         "log_path": str(LOG_PATH),
     }
+    # The snapshot is served straight to clients: expose only the exception
+    # class and keep the full text (which may carry paths) in the local log.
+    logger = logging.getLogger(__name__)
     try:
         conn = marketdb.connect()
         try:
@@ -92,17 +95,20 @@ def health_snapshot() -> dict[str, Any]:
         finally:
             conn.close()
     except (OSError, sqlite3.Error) as exc:
-        result["market_database_error"] = f"{type(exc).__name__}: {str(exc)[:200]}"
+        log_exception(logger, "health: market database", exc)
+        result["market_database_error"] = type(exc).__name__
     try:
         from .eddn import LISTENER
         result["eddn"] = LISTENER.stats()
     except Exception as exc:
-        result["eddn_error"] = f"{type(exc).__name__}: {str(exc)[:200]}"
+        log_exception(logger, "health: eddn listener", exc)
+        result["eddn_error"] = type(exc).__name__
     try:
         from .extensions import EXTENSIONS
         result["extensions"] = EXTENSIONS.snapshot()
     except Exception as exc:
-        result["extensions_error"] = f"{type(exc).__name__}: {str(exc)[:200]}"
+        log_exception(logger, "health: extensions", exc)
+        result["extensions_error"] = type(exc).__name__
     return result
 
 

@@ -7,6 +7,7 @@ import uuid
 
 from . import biovalues, flight
 from .workflowdb import WorkflowStore, event_epoch_ms
+from .errors import ValidationError
 
 
 WORKFLOW = "exobiology_map"
@@ -466,7 +467,7 @@ class ExobiologyMapper:
     ) -> dict:
         point = normalise_position(position) if position is not None else self._position
         if not point:
-            raise ValueError("a valid surface position is required")
+            raise ValidationError("a valid surface position is required")
         ts = event_epoch_ms(timestamp)
 
         def change(state):

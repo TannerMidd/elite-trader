@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from .workflowdb import WorkflowStore, event_epoch_ms
+from .errors import ValidationError
 
 
 WORKFLOW = "carrier_ops"
@@ -397,9 +398,9 @@ class CarrierPlanner:
 
     def configure_upkeep(self, weekly_cr: int | None, target_weeks=8, source="commander input") -> dict:
         if weekly_cr is not None and _integer(weekly_cr) < 0:
-            raise ValueError("weekly upkeep cannot be negative")
+            raise ValidationError("weekly upkeep cannot be negative")
         if _integer(target_weeks) < 0:
-            raise ValueError("target weeks cannot be negative")
+            raise ValidationError("target weeks cannot be negative")
 
         def change(state):
             state["plan"]["weekly_upkeep_cr"] = None if weekly_cr is None else _integer(weekly_cr)
@@ -414,11 +415,11 @@ class CarrierPlanner:
         self, legs: list[dict], *, tritium_per_jump_t=None, reserve_t=None
     ) -> dict:
         if not isinstance(legs, list) or any(not isinstance(leg, dict) for leg in legs):
-            raise ValueError("legs must be a list of objects")
+            raise ValidationError("legs must be a list of objects")
         if tritium_per_jump_t is not None and _number(tritium_per_jump_t, -1) < 0:
-            raise ValueError("tritium per jump cannot be negative")
+            raise ValidationError("tritium per jump cannot be negative")
         if reserve_t is not None and _number(reserve_t, -1) < 0:
-            raise ValueError("tritium reserve cannot be negative")
+            raise ValidationError("tritium reserve cannot be negative")
 
         def change(state):
             state["plan"]["route"] = [dict(leg) for leg in legs]

@@ -11,6 +11,7 @@ Thumbs.db
 
 # Local runtime leftovers
 *.log
+*.pid
 
 # Local market database + Spansh dump (multi-GB, machine-local)
 data/
