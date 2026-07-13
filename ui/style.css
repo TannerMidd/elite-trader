@@ -69,6 +69,17 @@ body {
   -webkit-tap-highlight-color: transparent;
 }
 
+/* panel-bootstrap.js sets this on <html> before the stylesheet loads. Keep
+   desktop chrome out of the first paint until app.js has selected the saved
+   panel page; the pairing gate remains available if authentication is needed. */
+html.panel-mode-prepaint,
+html.panel-mode-prepaint body {
+  background: radial-gradient(1200px 700px at 70% -10%, #0c0e12, #060708) fixed #060708;
+}
+html.panel-mode-prepaint body > :not(#pairing-gate):not(script) {
+  visibility: hidden;
+}
+
 ::selection { background: rgba(var(--accent-rgb), .32); }
 
 /* themed scrollbars */
@@ -123,6 +134,50 @@ input[type="checkbox"]:focus-visible {
   font-weight: 700;
 }
 .banner.banner-warn { background: #4a2c00; color: var(--orange-soft); }
+.banner.banner-rebuild {
+  display: grid;
+  grid-template-columns: minmax(220px, auto) minmax(160px, 1fr);
+  align-items: center;
+  gap: 6px 18px;
+  background: #172b33;
+  color: #bcecf5;
+  border-bottom-color: #3b9db0;
+}
+.journal-rebuild-title { font-weight: 700; letter-spacing: .02em; }
+.journal-rebuild-note { color: #8fc2cc; font-size: 12px; }
+.journal-rebuild-bar {
+  grid-column: 2;
+  grid-row: 1 / span 2;
+  height: 7px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, .3);
+}
+.journal-rebuild-fill {
+  height: 100%;
+  width: 0;
+  background: linear-gradient(90deg, #3b9db0, #9be8f3);
+  transition: width .2s ease;
+}
+.journal-rebuild-bar.indeterminate .journal-rebuild-fill {
+  width: 36%;
+  animation: rebuild-sweep 1.3s ease-in-out infinite;
+}
+@keyframes rebuild-sweep {
+  from { transform: translateX(-110%); }
+  to { transform: translateX(285%); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .journal-rebuild-fill { transition: none; }
+  .journal-rebuild-bar.indeterminate .journal-rebuild-fill {
+    animation: none;
+    transform: translateX(90%);
+  }
+}
+@media (max-width: 700px) {
+  .banner.banner-rebuild { grid-template-columns: 1fr; }
+  .journal-rebuild-bar { grid-column: 1; grid-row: auto; }
+}
 
 .galaxy-mode-banner {
   background: #351b08;

@@ -128,6 +128,18 @@ class AppState:
 
         self.last_journal_event = None  # timestamp string of most recent event seen
         self.journal_dir_found = True
+        # Public, privacy-safe progress for the startup journal reconstruction.
+        # The watcher replaces this as one atomic dict so API snapshots cannot
+        # observe a phase paired with counts from a different update.
+        self.journal_rebuild = {
+            "active": False,
+            "phase": "idle",
+            "completed": 0,
+            "total": 0,
+            "current": None,
+            "attempt": 0,
+            "retrying": False,
+        }
 
     def update(self, **kwargs):
         with self._lock:
@@ -142,6 +154,43 @@ class AppState:
             for key, value in kwargs.items():
                 setattr(self, key, value)
             return True
+
+    def set_journal_rebuild(self, **fields):
+        """Atomically merge bounded startup/reconstruction progress."""
+        with self._lock:
+            progress = dict(self.journal_rebuild)
+            progress.update(fields)
+            progress["completed"] = max(0, int(progress.get("completed") or 0))
+            progress["total"] = max(0, int(progress.get("total") or 0))
+            if progress["total"]:
+                progress["completed"] = min(progress["completed"], progress["total"])
+            progress["attempt"] = max(0, int(progress.get("attempt") or 0))
+            progress["active"] = bool(progress.get("active"))
+            progress["retrying"] = bool(progress.get("retrying"))
+            current = progress.get("current")
+            progress["current"] = str(current)[:255] if current else None
+            self.journal_rebuild = progress
+            return dict(progress)
+
+    def replace_from(self, other, *, preserve=()):
+        """Publish a privately rebuilt AppState in one visible transaction."""
+        if other is self:
+            return
+        with other._lock:
+            incoming = {
+                key: copy.deepcopy(value)
+                for key, value in other.__dict__.items()
+                if key != "_lock"
+            }
+        with self._lock:
+            kept = {
+                key: copy.deepcopy(getattr(self, key))
+                for key in preserve if hasattr(self, key)
+            }
+            for key, value in incoming.items():
+                setattr(self, key, value)
+            for key, value in kept.items():
+                setattr(self, key, value)
 
     def reset_commander_context(self, *, commander=None, commander_id=None):
         """Atomically discard state owned by the previous commander.
@@ -164,6 +213,7 @@ class AppState:
                 "game_running": self.game_running,
                 "last_journal_event": self.last_journal_event,
                 "journal_dir_found": self.journal_dir_found,
+                "journal_rebuild": dict(self.journal_rebuild),
             }
             for key, value in fresh.__dict__.items():
                 if key != "_lock":
@@ -194,6 +244,7 @@ class AppState:
                 "game_running": self.game_running,
                 "last_journal_event": self.last_journal_event,
                 "journal_dir_found": self.journal_dir_found,
+                "journal_rebuild": dict(self.journal_rebuild),
             }
             for key, value in (captured or {}).items():
                 if key != "_lock":
@@ -508,6 +559,7 @@ class AppState:
                 "alerts": list(self.alerts),
                 "last_journal_event": self.last_journal_event,
                 "journal_dir_found": self.journal_dir_found,
+                "journal_rebuild": dict(self.journal_rebuild),
                 "game_running": self.game_running,
                 "galaxy_mode": self.galaxy_mode,
             }

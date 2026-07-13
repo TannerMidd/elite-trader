@@ -145,3 +145,16 @@ migrate automatically.
   on Windows and Linux, checks browser JavaScript, and the Windows release job
   smoke-tests the packaged executable before publishing both product names and
   their checksums.
+## Unreleased — migration and refresh polish
+
+- The 2.1 commander-history rebuild now shows its current phase, journal count
+  and automatic retries instead of leaving the cockpit looking unresponsive.
+- Reconstructed cockpit data is published once, only after the full local
+  journal and database pass succeeds. Historical systems and balances no
+  longer cycle through the UI while startup work is still in progress.
+- Panel remains the first painted layout on refresh, eliminating the brief
+  Desktop-view flash on Panel devices.
+- Journal files appended during reconstruction, complete final records without
+  a trailing newline, duplicate profile rows, temporarily unavailable local
+  files, and journal folders repaired after startup now recover safely without
+  skipping data or requiring a restart.

@@ -60,6 +60,16 @@ assert EventLedger(legacy_id).lifetime_summary()["events"] >= 1
 assert TimingModel(legacy_id).snapshot()["activities"]["docking"]["sample_count"] == 1
 assert SpecialistWorkflows(legacy_id).mining.snapshot()["session"] is not None
 
+# A retry can find the same journal event already rebuilt for the real pilot
+# while a pre-profile/default copy was recreated by an interrupted launch.
+# Adoption deduplicates that collision instead of blocking Commander forever.
+duplicate = {"timestamp": "2026-07-12T10:00:00Z", "event": "Docked"}
+EventLedger("default").record(duplicate)
+marketdb.ensure_commander_profile("Beta", galaxy_mode="legacy")
+default_ledger = EventLedger("default").query(event_types=["Docked"], limit=10)
+beta_ledger = EventLedger(legacy_id).query(event_types=["Docked"], limit=10)
+assert default_ledger == [] and len(beta_ledger) == 1
+
 # Re-running adoption for the recorded owner picks up a table introduced after
 # the original marker, without allowing a later profile to steal it.
 late = ObjectiveStore("default").create("Late optional-schema row")

@@ -556,8 +556,12 @@ const PANEL_PAGES = ["status", "trade", "commodities", "bio", "guides", "analyti
    values written by the UI as preferences; initialization itself must not
    manufacture or replace one. */
 function panelModeOnLaunch(storage = localStorage) {
-  const saved = storage.getItem("panelMode");
-  return saved == null ? true : saved === "1";
+  try {
+    const saved = storage.getItem("panelMode");
+    return saved == null ? true : saved === "1";
+  } catch (_error) {
+    return true;
+  }
 }
 
 function setPanelMode(on, persist = true) {
@@ -574,6 +578,7 @@ function setPanelMode(on, persist = true) {
   } else {
     $("flight-panel").classList.add("hidden");
   }
+  document.documentElement.classList.remove("panel-mode-prepaint");
 }
 
 function toggleFullscreen() {
@@ -2665,6 +2670,10 @@ let alertsInit = false;   // baseline set on first state so old alerts don't rep
 function renderBanner() {
   const banner = $("banner");
   const advisory = state.nav && state.nav.advisory;
+  const rebuildVisible = !!(
+    state.journal_rebuild?.active || state.journal_rebuild?.phase === "error"
+  );
+  if (!rebuildVisible) delete banner.dataset.rebuildSignature;
 
   // Speak the fuel advisory once whenever the situation (code + system) changes.
   const sig = advisory ? advisory.code + "|" + (state.nav.system || "") : null;
@@ -2673,8 +2682,11 @@ function renderBanner() {
     lastFuelSig = sig;
   }
 
-  banner.classList.remove("banner-critical", "banner-warn");
+  banner.classList.remove("banner-critical", "banner-warn", "banner-rebuild");
   if (state.journal_dir_found === false) {
+    // The folder notice replaces the rebuild subtree. Force reconstruction to
+    // recreate its DOM if the folder reappears with the same progress values.
+    delete banner.dataset.rebuildSignature;
     if (!banner.querySelector(".banner-settings-btn")) {
       banner.textContent = "Elite Dangerous journal folder not found — if the game is installed, point Frameshift at it: ";
       const btn = document.createElement("button");
@@ -2689,6 +2701,8 @@ function renderBanner() {
       banner.appendChild(btn);
     }
     banner.classList.remove("hidden");
+  } else if (rebuildVisible) {
+    renderJournalRebuild(banner, state.journal_rebuild);
   } else if (!state.system) {
     banner.textContent = "Waiting for journal data - start Elite Dangerous (or play a bit) and this will fill in.";
     banner.classList.remove("hidden");
@@ -2699,6 +2713,71 @@ function renderBanner() {
   } else {
     banner.classList.add("hidden");
   }
+}
+
+function renderJournalRebuild(banner, rebuild) {
+  const phase = String(rebuild.phase || "preparing");
+  const completed = Math.max(0, Number(rebuild.completed) || 0);
+  const total = Math.max(0, Number(rebuild.total) || 0);
+  const shownCompleted = total ? Math.min(completed, total) : completed;
+  let title;
+  if (phase === "error") {
+    title = "Commander history could not be reconstructed safely";
+  } else if (rebuild.retrying) {
+    title = `A local journal or database file was temporarily unavailable — retrying automatically` +
+      (rebuild.attempt ? ` (attempt ${rebuild.attempt})` : "");
+  } else if (phase === "history") {
+    title = total
+      ? `Rebuilding commander history — ${shownCompleted} of ${total} journals`
+      : "Rebuilding commander history…";
+  } else if (phase === "bootstrap") {
+    title = total
+      ? `Restoring the current cockpit — ${shownCompleted} of ${total} recent journals`
+      : "Restoring the current cockpit…";
+  } else if (phase === "finalizing") {
+    title = "Finalizing preserved commander data…";
+  } else {
+    title = "Preparing your local commander history…";
+  }
+
+  const signature = JSON.stringify([
+    phase, shownCompleted, total, Number(rebuild.attempt) || 0, !!rebuild.retrying,
+  ]);
+  if (banner.dataset.rebuildSignature === signature) {
+    banner.classList.add("banner-rebuild");
+    banner.classList.remove("hidden");
+    return;
+  }
+  banner.dataset.rebuildSignature = signature;
+  banner.replaceChildren();
+  banner.classList.add("banner-rebuild");
+  const heading = document.createElement("div");
+  heading.className = "journal-rebuild-title";
+  heading.textContent = title;
+  const note = document.createElement("div");
+  note.className = "journal-rebuild-note";
+  note.textContent = phase === "error"
+    ? "Restart Frameshift once. If this returns, create a support bundle from Settings → Diagnostics; your journals and databases have not been deleted."
+    : "Frameshift is still working normally. Your data stays local; the cockpit appears once this phase is coherent.";
+  const bar = document.createElement("div");
+  bar.className = "journal-rebuild-bar";
+  bar.setAttribute("role", "progressbar");
+  bar.setAttribute("aria-valuemin", "0");
+  const fill = document.createElement("div");
+  fill.className = "journal-rebuild-fill";
+  if (total) {
+    fill.style.width = `${Math.round(100 * shownCompleted / total)}%`;
+    bar.setAttribute("aria-valuemax", String(total));
+    bar.setAttribute("aria-valuenow", String(shownCompleted));
+    bar.setAttribute("aria-valuetext", `${shownCompleted} of ${total} journals complete`);
+    bar.setAttribute("aria-label", `${shownCompleted} of ${total} journals complete`);
+  } else {
+    bar.classList.add("indeterminate");
+    bar.setAttribute("aria-label", "Journal reconstruction in progress");
+  }
+  bar.appendChild(fill);
+  banner.append(heading, note, bar);
+  banner.classList.remove("hidden");
 }
 
 // One-shot voice alerts (interdiction, hull damage, first discovery). Each is
@@ -6512,10 +6591,20 @@ function initTabs() {
 }
 
 document.addEventListener("DOMContentLoaded", async () => {
-  $("pairing-retry").addEventListener("click", () => window.location.reload());
-  if (!await bootstrapSecurity()) return;
-  initSpecialists();
-  initTabs();
+  try {
+    $("pairing-retry").addEventListener("click", () => window.location.reload());
+    if (!await bootstrapSecurity()) return;
+    initSpecialists();
+    initTabs();
+    // Resolve the pre-paint guard as soon as local authentication is ready.
+    // Waiting until the rest of the page's handlers are wired lets the desktop
+    // layout flash briefly on every Panel refresh.
+    setPanelMode(panelModeOnLaunch(), false);
+  } finally {
+    // Storage/browser policy or an initialization exception may prevent the
+    // normal setPanelMode path. Never leave an authenticated page invisible.
+    document.documentElement.classList.remove("panel-mode-prepaint");
+  }
 
   // OPS is entirely local: durable commander objectives, learned timings and
   // file-exchanged operations boards. Delegation survives each list render.
@@ -6647,11 +6736,6 @@ document.addEventListener("DOMContentLoaded", async () => {
     btn.setAttribute("aria-pressed", String(on));
     btn.title = on ? "Leave fullscreen" : "Expand to fullscreen";
   });
-  // The flight panel is the default view. Initialization is deliberately
-  // non-persistent so a fresh device remains "no preference" until the user
-  // enters or exits Panel; an existing explicit choice is never overwritten.
-  setPanelMode(panelModeOnLaunch(), false);
-
   // "open in app" toggle: only meaningful inside the desktop (pywebview) window.
   const toggle = $("inapp-toggle");
   toggle.checked = localStorage.getItem("inappLinks") === "1";

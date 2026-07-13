@@ -6,6 +6,7 @@ import hashlib
 import logging
 import os
 import re
+import sqlite3
 import sys
 import threading
 import time
@@ -153,6 +154,7 @@ def probe_roots():
 
 class JournalWatcher:
     def __init__(self, state, journal_dir=None):
+        self._public_state = state
         self.state = state
         self._fixed_dir = journal_dir is not None  # explicit dir: never re-detect
         self.journal_dir = Path(journal_dir) if journal_dir else find_journal_dir()
@@ -190,6 +192,9 @@ class JournalWatcher:
         self._eddn_journal_body_id = None
         self._last_background_error = None
         self._last_background_error_at = 0.0
+        self._track_rebuild = False
+        self._rebuild_attempt = 0
+        self._staged_bootstrap_state = None
         self._reconstruction_pending = False
         self._profile_handoff_pending = False
         self._handoff_commander_id = None
@@ -197,6 +202,50 @@ class JournalWatcher:
         self._stop_event = threading.Event()
         self._thread = None
         self._thread_lock = threading.Lock()
+
+    def _begin_rebuild(self):
+        self._track_rebuild = True
+        self._rebuild_attempt = 0
+        self._public_state.set_journal_rebuild(
+            active=True, phase="preparing", completed=0, total=0,
+            current=None, attempt=0, retrying=False,
+        )
+
+    def _set_rebuild_progress(self, phase, completed=0, total=0, current=None):
+        if not self._track_rebuild:
+            return
+        self._public_state.set_journal_rebuild(
+            active=True, phase=phase, completed=completed, total=total,
+            current=Path(current).name if current else None,
+            attempt=self._rebuild_attempt, retrying=False,
+        )
+
+    def _mark_rebuild_retry(self):
+        if not self._track_rebuild:
+            return
+        self._rebuild_attempt += 1
+        self._public_state.set_journal_rebuild(
+            active=True, attempt=self._rebuild_attempt, retrying=True,
+        )
+
+    def _finish_rebuild(self):
+        if self._track_rebuild:
+            self._public_state.set_journal_rebuild(
+                active=False, phase="complete",
+                current=None, retrying=False,
+            )
+        self._track_rebuild = False
+
+    def _publish_staged_bootstrap(self):
+        staged = self._staged_bootstrap_state
+        if staged is None:
+            return False
+        self._public_state.replace_from(
+            staged,
+            preserve=("game_running", "journal_dir_found", "journal_rebuild"),
+        )
+        self._staged_bootstrap_state = None
+        return True
 
     # ---------- event handling ----------
 
@@ -1764,12 +1813,92 @@ class JournalWatcher:
 
     def bootstrap(self):
         if not self.journal_dir.is_dir():
-            self.state.update(journal_dir_found=False)
-            return
-        self.state.update(journal_dir_found=True)
+            self._public_state.update(journal_dir_found=False)
+            return False
+        self._public_state.update(journal_dir_found=True)
         files = journal_files(self.journal_dir)
-        if not files:
-            return
+
+        # Replaying recent files directly into the shared AppState makes API
+        # polls briefly expose each old system, balance and cargo snapshot in
+        # turn. Build privately, then publish one coherent final cockpit.
+        staged_state = type(self._public_state)()
+        staged_state.update(
+            game_running=self._public_state.game_running,
+            journal_dir_found=True,
+        )
+        previous_state = self.state
+        self.state = staged_state
+        try:
+            if files:
+                self._bootstrap_files(files)
+            else:
+                # An empty but valid journal directory is a coherent fresh
+                # state, not a reconstruction failure. Clear any prior-folder
+                # watcher context and wait for the game's first journal.
+                if self._extension_unsubscribe:
+                    self._extension_unsubscribe()
+                    self._extension_unsubscribe = None
+                self._reset_profile_context()
+                self._pending_local_events = []
+                self._finish_profile_handoff()
+                self._current_file = None
+                self._offset = 0
+                self._partial = ""
+                self._line_number = 0
+        finally:
+            self.state = previous_state
+        if self._track_rebuild:
+            # Derived preservation/finalization is part of the same logical
+            # reconstruction. Keep the cockpit private until that DB commit
+            # succeeds as well.
+            self._staged_bootstrap_state = staged_state
+        else:
+            self._staged_bootstrap_state = staged_state
+            self._publish_staged_bootstrap()
+        return True
+
+    @staticmethod
+    def _read_complete_journal_snapshot(path):
+        """Read only newline-complete records and retain the exact tail cookie.
+
+        The game may append while bootstrap handlers are still running. The
+        returned text-mode cookie points immediately after the last complete
+        line in this snapshot, so the live tail cannot skip those new bytes or
+        discard a JSON record that was partial at snapshot time.
+        """
+        lines = []
+        offset = 0
+        with open(path, "r", encoding="utf-8", errors="replace") as handle:
+            while True:
+                line_start = handle.tell()
+                line = handle.readline()
+                if not line:
+                    offset = handle.tell()
+                    break
+                if not line.endswith("\n"):
+                    # Closed journals and synthetic imports do not always end
+                    # in a newline. A parseable JSON object is complete and its
+                    # EOF is a safe tail boundary; malformed JSON must remain
+                    # unread so the next append can finish the record.
+                    try:
+                        json.loads(line.strip())
+                    except (json.JSONDecodeError, ValueError):
+                        offset = line_start
+                    else:
+                        lines.append(line)
+                        offset = handle.tell()
+                    break
+                lines.append(line)
+                offset = handle.tell()
+        return "".join(lines), offset
+
+    def _bootstrap_files(self, files):
+        if self._extension_unsubscribe:
+            self._extension_unsubscribe()
+            self._extension_unsubscribe = None
+        self._reset_profile_context()
+        self._pending_local_events = []
+        self._finish_profile_handoff()
 
         def profile_in(text):
             name = None
@@ -1793,7 +1922,10 @@ class JournalWatcher:
         try:
             newest_text = files[-1].read_text(encoding="utf-8", errors="replace")
         except OSError:
-            newest_text = ""
+            # The newest journal establishes the active profile. Publishing a
+            # fallback built without it would expose an older commander's
+            # cockpit, so let the outer reconstruction loop retry.
+            raise
         current_profile = profile_in(newest_text)
 
         # Walk backwards through this commander's files until the essentials
@@ -1816,7 +1948,7 @@ class JournalWatcher:
             try:
                 text = path.read_text(encoding="utf-8", errors="replace")
             except OSError:
-                continue
+                raise
             file_profile = profile_in(text)
             if (current_profile[0] and file_profile[0]
                     and file_profile != current_profile):
@@ -1833,25 +1965,35 @@ class JournalWatcher:
             if all(needed.values()) and len(selected) >= BOOTSTRAP_MIN_FILES:
                 break
 
-        for path in selected:
+        selected_total = len(selected)
+        newest_offset = 0
+        self._set_rebuild_progress("bootstrap", 0, selected_total)
+        for file_index, path in enumerate(selected, 1):
             if self._stop_event.is_set():
-                break
+                # Never stage or publish a cockpit assembled from only part of
+                # the selected chronology during application shutdown.
+                raise InterruptedError("journal bootstrap was cancelled")
+            self._set_rebuild_progress(
+                "bootstrap", file_index - 1, selected_total, path.name)
             try:
-                text = path.read_text(encoding="utf-8", errors="replace")
+                if path == files[-1]:
+                    text, newest_offset = self._read_complete_journal_snapshot(path)
+                else:
+                    text = path.read_text(encoding="utf-8", errors="replace")
                 last_line = self._process_lines(text, source_file=path.name)
                 if path == files[-1]:
                     self._line_number = last_line
             except OSError:
-                continue
+                raise
+            self._set_rebuild_progress("bootstrap", file_index, selected_total)
 
         # Tail from the end of the newest file.
         self._current_file = files[-1]
-        try:
-            self._offset = self._current_file.stat().st_size
-        except OSError:
-            self._offset = 0
+        self._offset = newest_offset
+        self._partial = ""
 
         self._refresh_status_files(force=True)
+        self._set_rebuild_progress("bootstrap", selected_total, selected_total)
 
     def _poll_journal(self):
         files = journal_files(self.journal_dir)
@@ -1997,11 +2139,17 @@ class JournalWatcher:
         finally:
             conn.close()
         files = journal_files(self.journal_dir)
+        completed_files = files[:-1]
+        total_files = len(completed_files)
+        self._set_rebuild_progress("history", 0, total_files)
         sweep_complete = True
-        for path in files[:-1]:  # the newest file is still being written; tail covers it
+        for file_index, path in enumerate(completed_files, 1):
+            # The newest file is still being written; the live tail covers it.
             if self._stop_event.is_set():
                 sweep_complete = False
                 break
+            self._set_rebuild_progress(
+                "history", file_index - 1, total_files, path.name)
             try:
                 parsed = []
                 commander_name = None
@@ -2028,6 +2176,7 @@ class JournalWatcher:
                 sweep_complete = False
                 break
             if not parsed:
+                self._set_rebuild_progress("history", file_index, total_files)
                 continue
             # A damaged/header-only file has no trustworthy owner.  Never infer
             # it from whichever unrelated account happens to be on screen.
@@ -2059,6 +2208,7 @@ class JournalWatcher:
                             path.name, type(exc).__name__, exc_info=True)
 
             if (commander_id, path.name) in done:
+                self._set_rebuild_progress("history", file_index, total_files)
                 continue
             derived_ok = True
             try:
@@ -2118,9 +2268,11 @@ class JournalWatcher:
                 conn.commit()
             finally:
                 conn.close()
+            self._set_rebuild_progress("history", file_index, total_files)
 
         if not sweep_complete:
             return False
+        self._set_rebuild_progress("history", total_files, total_files)
         if replay_phase:
             conn = marketdb.connect_user()
             try:
@@ -2550,21 +2702,29 @@ class JournalWatcher:
         """Recover from a missing or changed journal folder without a restart:
         re-resolve (the in-app setting may have changed, or the game's first
         launch may have just created the folder) and re-bootstrap on a switch."""
-        if self._fixed_dir:
-            return
-        desired = find_journal_dir()
+        # Explicit constructor paths never switch elsewhere, but still share
+        # the same disappearance/reappearance recovery state machine.
+        desired = self.journal_dir if self._fixed_dir else find_journal_dir()
         changed = desired != self.journal_dir
         appeared = not self.state.journal_dir_found and self.journal_dir.is_dir()
+        if not desired.is_dir():
+            self._public_state.update(journal_dir_found=False)
+            self.journal_dir = desired
+            self._live = False
+            self._reconstruction_pending = True
+            return
         if not changed and not appeared and not self._reconstruction_pending:
             return
         if changed:
-            if not desired.is_dir():
-                self.state.update(journal_dir_found=False)
-                self.journal_dir = desired  # keep watching; recovers if created
-                return
             self.journal_dir = desired
+        # Directory presence is safe to publish before commander data. This
+        # lets the rebuild banner replace the stale folder warning while the
+        # potentially lengthy chronological import is running.
+        self._public_state.update(journal_dir_found=True)
         self._live = False
         self._reconstruction_pending = True
+        if not self._track_rebuild:
+            self._begin_rebuild()
         self._status_mtimes = {}
         reconstruction_ready = False
         try:
@@ -2576,14 +2736,19 @@ class JournalWatcher:
                     "journal history import after directory change", exc
                 )
             if not history_ready:
+                self._mark_rebuild_retry()
                 raise RuntimeError("chronological journal replay is not complete")
             if history_ready and not self._stop_event.is_set():
                 try:
                     self.bootstrap()
+                    self._set_rebuild_progress("finalizing")
                     if not self._finalize_derived_history_replay():
                         raise RuntimeError("journal replay is awaiting its historical sweep")
+                    if not self._publish_staged_bootstrap():
+                        raise RuntimeError("journal replay has no coherent cockpit snapshot")
                     reconstruction_ready = True
                 except Exception as exc:
+                    self._mark_rebuild_retry()
                     self._log_background_failure(
                         "journal bootstrap after directory change", exc
                     )
@@ -2593,6 +2758,8 @@ class JournalWatcher:
             # outer poll loop retries _ensure_journal_dir on its next pass.
             self._live = reconstruction_ready
             self._reconstruction_pending = not reconstruction_ready
+        if reconstruction_ready:
+            self._finish_rebuild()
         self._fetch_community_bio(self.state.system_address, self.state.system)
 
     def _probe_game(self):
@@ -2627,6 +2794,7 @@ class JournalWatcher:
             self._probe_game()
         except Exception as exc:
             self._log_background_failure("initial game process probe", exc)
+        self._begin_rebuild()
         # Replay every completed file before rebuilding the live snapshot.
         # Otherwise a session start older than BOOTSTRAP_MAX_FILES can arrive
         # after its recent closing event and leave the durable reducer active.
@@ -2636,6 +2804,8 @@ class JournalWatcher:
                     break
             except Exception as exc:
                 self._log_background_failure("journal history import", exc)
+            if not self._stop_event.is_set():
+                self._mark_rebuild_retry()
             # A transient reducer/database error is an ordering barrier. Retry
             # it before bootstrap instead of mixing recent events into a
             # partially reconstructed older state.
@@ -2643,21 +2813,48 @@ class JournalWatcher:
                 return
         if self._stop_event.is_set():
             return
+        bootstrap_ready = False
+        waiting_for_journal = False
         while not self._stop_event.is_set():
             try:
-                self.bootstrap()
+                if not self.bootstrap() and not self.journal_dir.is_dir():
+                    # Missing is a normal recoverable state: keep the watcher
+                    # alive so a Settings change or newly-created directory is
+                    # observed without restarting Frameshift.
+                    waiting_for_journal = True
+                    break
+                self._set_rebuild_progress("finalizing")
                 if not self._finalize_derived_history_replay():
                     raise RuntimeError("journal replay is awaiting its historical sweep")
+                if not self._publish_staged_bootstrap():
+                    raise RuntimeError("journal replay has no coherent cockpit snapshot")
+                bootstrap_ready = True
                 break
             except Exception as exc:
+                self._mark_rebuild_retry()
                 self._log_background_failure("journal bootstrap", exc)
-                if not self._derived_history_replay_pending():
+                retryable = isinstance(exc, (OSError, sqlite3.Error))
+                if not retryable and not self._derived_history_replay_pending():
                     break
             # Preservation stays staged until a complete bootstrap and final
             # merge commit. Retrying is safe because journal event IDs dedupe.
             if self._stop_event.wait(POLL_SECONDS):
                 return
         if self._stop_event.is_set():
+            return
+        if bootstrap_ready:
+            self._finish_rebuild()
+        elif waiting_for_journal:
+            self._staged_bootstrap_state = None
+            self._finish_rebuild()
+        else:
+            self._staged_bootstrap_state = None
+            self._public_state.set_journal_rebuild(
+                active=False, phase="error", current=None, retrying=False,
+            )
+            self._track_rebuild = False
+            # A failed bootstrap has no safe tail boundary. Do not let normal
+            # polling replay historical files directly into public AppState.
             return
         # Probe again after reconstruction in case the game started while the
         # local history was being rebuilt.
@@ -2675,8 +2872,12 @@ class JournalWatcher:
         while not self._stop_event.is_set():
             try:
                 self._ensure_journal_dir()
-                self._poll_journal()
-                self._refresh_status_files()
+                # A folder can appear immediately after the recovery check.
+                # Keep public tailing gated until the next pass reconstructs
+                # that folder privately and publishes it atomically.
+                if self._live and self._public_state.journal_dir_found:
+                    self._poll_journal()
+                    self._refresh_status_files()
                 if time.monotonic() - last_probe >= GAME_PROBE_SECONDS:
                     last_probe = time.monotonic()
                     self._probe_game()

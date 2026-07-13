@@ -297,10 +297,18 @@ def _adopt_default_profile_rows(conn, commander_id):
             continue
         primary_key = {row[1] for row in info if row[5]}
         if "commander_id" not in primary_key:
+            # Row-id tables (ledger events, timing observations, objectives,
+            # specialist history) enforce commander-aware UNIQUE keys rather
+            # than a compound PRIMARY KEY. A retry can find the same logical
+            # row already rebuilt under the real commander. Keep that
+            # authoritative copy, adopt every non-conflicting default row, and
+            # remove only the now-redundant defaults.
             conn.execute(
-                f"UPDATE {quoted_table} SET commander_id = ? WHERE commander_id = 'default'",
+                f"UPDATE OR IGNORE {quoted_table} SET commander_id = ?"
+                " WHERE commander_id = 'default'",
                 (commander_id,),
             )
+            conn.execute(f"DELETE FROM {quoted_table} WHERE commander_id = 'default'")
             continue
 
         quoted_columns = ", ".join(commanderdb.quote_identifier(col) for col in columns)

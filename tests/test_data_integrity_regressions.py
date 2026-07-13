@@ -204,7 +204,9 @@ assert conn.execute(
 ).fetchone()[0] == 4
 conn.close()
 
-watcher = JournalWatcher(AppState(), journal_dir=root)
+replay_state = AppState()
+replay_state.update(system="Previously published")
+watcher = JournalWatcher(replay_state, journal_dir=root)
 assert watcher.import_trade_history(), "resumed chronological sweep did not finish"
 
 # Reproduce a bad v4 row that has the same logical session key as the rebuilt
@@ -236,6 +238,9 @@ finalize_calls = {"count": 0}
 
 def flaky_finalize():
     finalize_calls["count"] += 1
+    assert replay_state.snapshot()["system"] == "Previously published", (
+        "staged cockpit leaked before the final preservation commit"
+    )
     if finalize_calls["count"] == 1:
         raise sqlite3.OperationalError("simulated final merge failure")
     return finalize()
@@ -245,6 +250,8 @@ watcher._finalize_derived_history_replay = flaky_finalize
 watcher._probe_game = lambda: None
 watcher._fetch_community_bio = lambda *_args: watcher._stop_event.set()
 watcher.run_forever()
+assert finalize_calls["count"] == 2
+assert replay_state.snapshot()["system"] != "Previously published"
 
 chronology = MiningTracker(chronology_id)
 mining_snapshot = chronology.snapshot()
@@ -314,6 +321,7 @@ def switch_import():
 switch.import_trade_history = switch_import
 switch.bootstrap = lambda: attempts.__setitem__("bootstrap", attempts["bootstrap"] + 1)
 switch._finalize_derived_history_replay = lambda: True
+switch._publish_staged_bootstrap = lambda: True
 switch._fetch_community_bio = lambda *_args: None
 original_find_journal_dir = journal_module.find_journal_dir
 journal_module.find_journal_dir = lambda: root
