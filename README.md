@@ -138,6 +138,17 @@ Frameshift depends on the Elite Dangerous community's open-data work:
 
 If these services help you, please consider supporting them.
 
+Frameshift also bundles open-source work from:
+
+- [EDEngineer](https://github.com/msarilar/EDEngineer) by msarilar — reference
+  data behind the offline engineering catalog (MIT).
+- [QR Code generator library](https://www.nayuki.io/page/qr-code-generator-library)
+  by Project Nayuki — renders device-pairing QR codes locally (MIT).
+- [Piper TTS](https://github.com/rhasspy/piper) and its community voices power
+  the optional neural voice callouts (downloaded on demand, checksum-pinned).
+
+Full license texts: [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+
 ## Support
 
 - [Getting Started](../../wiki/Getting-Started)
