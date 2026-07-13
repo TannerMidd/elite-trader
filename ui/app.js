@@ -2812,34 +2812,27 @@ function renderBanner() {
   }
 }
 
+/* Startup initiation sequence: the reconstruction banner styled as a cockpit
+   power-on checklist. Fixed child order (tests index into it):
+   [0] .bs-head (dot + title/sub) · [1] .bs-steps (3 stages) ·
+   [2] .bs-meter (bar[progressbar] + mono readout; absent on fault). */
+const REBUILD_STAGES = [
+  { label: "FLIGHT RECORDER", done: "SYNCED" },
+  { label: "COCKPIT RESTORE", done: "RESTORED" },
+  { label: "SYSTEMS CHECK", done: "PASS" },
+];
+
 function renderJournalRebuild(banner, rebuild) {
   const phase = String(rebuild.phase || "preparing");
   const completed = Math.max(0, Number(rebuild.completed) || 0);
   const total = Math.max(0, Number(rebuild.total) || 0);
   const shownCompleted = total ? Math.min(completed, total) : completed;
-  let title;
-  if (phase === "error") {
-    title = "Commander history could not be reconstructed safely";
-  } else if (rebuild.retrying) {
-    title = `A local journal or database file was temporarily unavailable — retrying automatically` +
-      (rebuild.attempt ? ` (attempt ${rebuild.attempt})` : "");
-  } else if (phase === "history") {
-    title = total
-      ? `Rebuilding commander history — ${shownCompleted} of ${total} journals`
-      : "Rebuilding commander history…";
-  } else if (phase === "bootstrap") {
-    title = total
-      ? `Restoring the current cockpit — ${shownCompleted} of ${total} recent journals`
-      : "Restoring the current cockpit…";
-  } else if (phase === "finalizing") {
-    title = "Finalizing preserved commander data…";
-  } else {
-    title = "Preparing your local commander history…";
-  }
+  const retrying = !!rebuild.retrying;
+  const attempt = Number(rebuild.attempt) || 0;
+  const current = String(rebuild.current || "");
+  const fault = phase === "error";
 
-  const signature = JSON.stringify([
-    phase, shownCompleted, total, Number(rebuild.attempt) || 0, !!rebuild.retrying,
-  ]);
+  const signature = JSON.stringify([phase, shownCompleted, total, attempt, retrying, current]);
   if (banner.dataset.rebuildSignature === signature) {
     banner.classList.add("banner-rebuild");
     banner.classList.remove("hidden");
@@ -2848,32 +2841,99 @@ function renderJournalRebuild(banner, rebuild) {
   banner.dataset.rebuildSignature = signature;
   banner.replaceChildren();
   banner.classList.add("banner-rebuild");
-  const heading = document.createElement("div");
-  heading.className = "journal-rebuild-title";
-  heading.textContent = title;
-  const note = document.createElement("div");
-  note.className = "journal-rebuild-note";
-  note.textContent = phase === "error"
-    ? "Restart Frameshift once. If this returns, create a support bundle from Settings → Diagnostics; your journals and databases have not been deleted."
-    : "Frameshift is still working normally. Your data stays local; the cockpit appears once this phase is coherent.";
-  const bar = document.createElement("div");
-  bar.className = "journal-rebuild-bar";
-  bar.setAttribute("role", "progressbar");
-  bar.setAttribute("aria-valuemin", "0");
-  const fill = document.createElement("div");
-  fill.className = "journal-rebuild-fill";
-  if (total) {
-    fill.style.width = `${Math.round(100 * shownCompleted / total)}%`;
-    bar.setAttribute("aria-valuemax", String(total));
-    bar.setAttribute("aria-valuenow", String(shownCompleted));
-    bar.setAttribute("aria-valuetext", `${shownCompleted} of ${total} journals complete`);
-    bar.setAttribute("aria-label", `${shownCompleted} of ${total} journals complete`);
-  } else {
-    bar.classList.add("indeterminate");
-    bar.setAttribute("aria-label", "Journal reconstruction in progress");
+  banner.classList.toggle("bs-fault", fault);
+  banner.classList.toggle("bs-hold", retrying && !fault);
+
+  // Which stage of the fixed pre-flight order is live right now.
+  const stageIndex = phase === "bootstrap" ? 1 : phase === "finalizing" ? 2 : 0;
+  const count = total
+    ? `${String(shownCompleted).padStart(2, "0")}/${String(total).padStart(2, "0")}`
+    : "--/--";
+
+  const head = document.createElement("div");
+  head.className = "bs-head";
+  const dot = document.createElement("span");
+  dot.className = "bs-dot";
+  const lines = document.createElement("div");
+  lines.className = "bs-lines";
+  const title = document.createElement("div");
+  title.className = "bs-title";
+  title.textContent = fault ? "STARTUP FAULT"
+    : retrying ? "STARTUP SEQUENCE — HOLDING" : "STARTUP SEQUENCE";
+  const sub = document.createElement("div");
+  sub.className = "bs-sub";
+  sub.textContent = fault
+    ? "Commander history could not be reconstructed safely — restart Frameshift once. "
+      + "If this returns, create a support bundle from Settings → Diagnostics; "
+      + "your journals and databases have not been deleted."
+    : retrying
+      ? "A local journal or database file was temporarily unavailable — retrying automatically"
+        + (attempt ? ` (attempt ${attempt})` : "") + "."
+      : "Journals are the source of truth: the live cockpit is rebuilt from your "
+        + "latest flight logs at every launch.";
+  lines.append(title, sub);
+  head.append(dot, lines);
+
+  const steps = document.createElement("div");
+  steps.className = "bs-steps";
+  REBUILD_STAGES.forEach((stage, index) => {
+    const step = document.createElement("div");
+    step.className = "bs-step";
+    const glyph = document.createElement("span");
+    glyph.className = "bs-glyph";
+    const label = document.createElement("span");
+    label.textContent = stage.label;
+    const state = document.createElement("span");
+    state.className = "bs-step-state";
+    if (index < stageIndex) {
+      step.classList.add("done");
+      glyph.textContent = "✓";
+      state.textContent = stage.done;
+    } else if (index === stageIndex) {
+      step.classList.add(fault ? "fault" : "active");
+      glyph.textContent = fault ? "✕" : "▸";
+      state.textContent = fault ? "FAULT"
+        : retrying ? `RETRY${attempt ? " " + attempt : ""}`
+        : index === 2 || !total ? "RUNNING" : count;
+    } else {
+      glyph.textContent = "○";
+      state.textContent = "HOLD";
+    }
+    step.append(glyph, label, state);
+    steps.appendChild(step);
+  });
+
+  banner.append(head, steps);
+
+  if (!fault) {
+    const meter = document.createElement("div");
+    meter.className = "bs-meter";
+    const bar = document.createElement("div");
+    bar.className = "bs-bar";
+    bar.setAttribute("role", "progressbar");
+    bar.setAttribute("aria-valuemin", "0");
+    const fill = document.createElement("div");
+    fill.className = "bs-fill";
+    if (total) {
+      fill.style.width = `${Math.round(100 * shownCompleted / total)}%`;
+      bar.setAttribute("aria-valuemax", String(total));
+      bar.setAttribute("aria-valuenow", String(shownCompleted));
+      bar.setAttribute("aria-valuetext", `${shownCompleted} of ${total} journals complete`);
+      bar.setAttribute("aria-label", `${shownCompleted} of ${total} journals complete`);
+    } else {
+      bar.classList.add("indeterminate");
+      bar.setAttribute("aria-label", "Journal reconstruction in progress");
+    }
+    bar.appendChild(fill);
+    const readout = document.createElement("div");
+    readout.className = "bs-readout";
+    // Journal filenames carry a timestamp: show it like a log tape readout.
+    const tape = current.replace(/^Journal\./, "").replace(/\.\d+\.log$/i, "");
+    readout.textContent = phase === "finalizing" ? "CROSS-CHECK · PRESERVED DATA"
+      : (total ? `LOG ${count}` : "LOG --/--") + (tape ? ` · ${tape}` : "");
+    meter.append(bar, readout);
+    banner.appendChild(meter);
   }
-  bar.appendChild(fill);
-  banner.append(heading, note, bar);
   banner.classList.remove("hidden");
 }
 

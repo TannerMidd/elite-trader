@@ -134,49 +134,122 @@ input[type="checkbox"]:focus-visible {
   font-weight: 700;
 }
 .banner.banner-warn { background: #4a2c00; color: var(--orange-soft); }
+/* Startup initiation sequence: launch-control housing (accent-tinted dark
+   panel + hazard chevrons), a pre-flight step checklist and a log-tape meter.
+   Good/bad stay fixed colors; everything else follows the accent theme. */
 .banner.banner-rebuild {
   display: grid;
-  grid-template-columns: minmax(220px, auto) minmax(160px, 1fr);
+  grid-template-columns: minmax(260px, 1.1fr) auto minmax(200px, .9fr);
   align-items: center;
-  gap: 6px 18px;
-  background: #172b33;
-  color: #bcecf5;
-  border-bottom-color: #3b9db0;
-}
-.journal-rebuild-title { font-weight: 700; letter-spacing: .02em; }
-.journal-rebuild-note { color: #8fc2cc; font-size: 12px; }
-.journal-rebuild-bar {
-  grid-column: 2;
-  grid-row: 1 / span 2;
-  height: 7px;
+  gap: 8px 26px;
+  position: relative;
   overflow: hidden;
-  border-radius: 999px;
-  background: rgba(0, 0, 0, .3);
+  padding: 12px 20px 14px;
+  background: linear-gradient(180deg, rgba(var(--accent-rgb), .08), rgba(var(--accent-rgb), .02)), #0b0c0e;
+  color: var(--fg);
+  border-bottom: 1px solid rgba(var(--accent-rgb), .35);
 }
-.journal-rebuild-fill {
+.banner.banner-rebuild::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 4px;
+  background: repeating-linear-gradient(135deg, var(--orange) 0 10px, transparent 10px 20px);
+  opacity: .35;
+}
+.bs-head { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.bs-dot {
+  flex: none;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--orange);
+  box-shadow: 0 0 10px rgba(var(--accent-rgb), .6);
+}
+.bs-lines { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.bs-title { font-size: 11px; letter-spacing: 4px; font-weight: 700; color: var(--orange-soft); white-space: nowrap; }
+.bs-sub { font-size: 12px; letter-spacing: .3px; color: var(--dim); }
+.bs-steps { display: flex; gap: 20px; flex-wrap: wrap; }
+.bs-step {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 10.5px;
+  letter-spacing: 2px;
+  font-weight: 600;
+  color: var(--dim);
+  white-space: nowrap;
+}
+.bs-step .bs-glyph { width: 1em; text-align: center; }
+.bs-step.active { color: var(--orange-soft); }
+.bs-step.active .bs-glyph { color: var(--orange); }
+.bs-step.done { color: var(--good); }
+.bs-step.fault { color: #ff9d9d; }
+.bs-step-state {
+  font-family: "IBM Plex Mono", Consolas, monospace;
+  font-size: 10.5px;
+  padding: 1px 6px;
+  border: 1px solid currentColor;
+  opacity: .85;
+}
+.bs-meter { display: grid; gap: 5px; justify-items: stretch; }
+.bs-bar {
+  height: 6px;
+  overflow: hidden;
+  background: rgba(0, 0, 0, .38);
+  border: 1px solid rgba(var(--accent-rgb), .3);
+}
+.bs-fill {
   height: 100%;
   width: 0;
-  background: linear-gradient(90deg, #3b9db0, #9be8f3);
-  transition: width .2s ease;
+  background: linear-gradient(90deg, rgba(var(--accent-rgb), .45), var(--orange));
+  transition: width .25s ease;
 }
-.journal-rebuild-bar.indeterminate .journal-rebuild-fill {
+.bs-bar.indeterminate .bs-fill {
   width: 36%;
   animation: rebuild-sweep 1.3s ease-in-out infinite;
+}
+.bs-readout {
+  font-family: "IBM Plex Mono", Consolas, monospace;
+  font-size: 10.5px;
+  letter-spacing: 1.5px;
+  color: var(--dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-align: right;
+}
+/* Hold (auto-retry) and fault states re-tint the housing */
+.banner.banner-rebuild.bs-hold .bs-dot { background: var(--warn, #e6b84c); box-shadow: 0 0 10px rgba(230, 184, 76, .55); }
+.banner.banner-rebuild.bs-fault {
+  background: linear-gradient(180deg, rgba(255, 70, 70, .09), rgba(255, 70, 70, .02)), #0b0c0e;
+  border-bottom-color: rgba(255, 90, 90, .5);
+}
+.banner.banner-rebuild.bs-fault::before {
+  background: repeating-linear-gradient(135deg, #f55 0 10px, transparent 10px 20px);
+}
+.banner.banner-rebuild.bs-fault .bs-dot { background: #f55; box-shadow: 0 0 10px rgba(255, 85, 85, .6); }
+.banner.banner-rebuild.bs-fault .bs-title { color: #ff9d9d; }
+@media (prefers-reduced-motion: no-preference) {
+  .banner.banner-rebuild:not(.bs-fault) .bs-dot { animation: bs-pulse 1.6s ease-in-out infinite; }
+}
+@keyframes bs-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: .45; }
 }
 @keyframes rebuild-sweep {
   from { transform: translateX(-110%); }
   to { transform: translateX(285%); }
 }
 @media (prefers-reduced-motion: reduce) {
-  .journal-rebuild-fill { transition: none; }
-  .journal-rebuild-bar.indeterminate .journal-rebuild-fill {
-    animation: none;
-    transform: translateX(90%);
-  }
+  .bs-fill { transition: none; }
+  .bs-bar.indeterminate .bs-fill { animation: none; transform: translateX(90%); }
 }
-@media (max-width: 700px) {
+@media (max-width: 980px) {
   .banner.banner-rebuild { grid-template-columns: 1fr; }
-  .journal-rebuild-bar { grid-column: 1; grid-row: auto; }
+  .bs-readout { text-align: left; }
 }
 
 .galaxy-mode-banner {

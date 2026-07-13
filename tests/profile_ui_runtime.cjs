@@ -168,11 +168,16 @@ vm.runInContext(`
   renderBanner();
 `, context);
 const rebuildBanner = getElement("banner");
+// Startup-sequence contract: [0] head (dot + title/sub), [1] steps, [2] meter.
+const bsTitle = () => rebuildBanner.children[0]?.children[1]?.children[0]?.textContent;
+const bsSub = () => rebuildBanner.children[0]?.children[1]?.children[1]?.textContent;
+const bsMeterBar = () => rebuildBanner.children[2]?.children[0];
 if (!rebuildBanner.classList.contains("banner-rebuild")
-    || rebuildBanner.children[0]?.textContent !== "Rebuilding commander history — 6 of 6 journals"
-    || rebuildBanner.children[2]?.children[0]?.style?.width !== "100%"
-    || rebuildBanner.children[2]?.getAttribute("role") !== "progressbar"
-    || rebuildBanner.children[2]?.getAttribute("aria-valuenow") !== "6") {
+    || bsTitle() !== "STARTUP SEQUENCE"
+    || rebuildBanner.children[1]?.children[0]?.children[2]?.textContent !== "06/06"
+    || bsMeterBar()?.children[0]?.style?.width !== "100%"
+    || bsMeterBar()?.getAttribute("role") !== "progressbar"
+    || bsMeterBar()?.getAttribute("aria-valuenow") !== "6") {
   throw new Error("journal rebuild progress did not render or clamp safely");
 }
 const stableProgressChildren = rebuildBanner.children;
@@ -184,14 +189,17 @@ vm.runInContext(`
   state.journal_rebuild = { active: true, phase: "history", completed: 2, total: 6, attempt: 3, retrying: true };
   renderBanner();
 `, context);
-if (!rebuildBanner.children[0]?.textContent.includes("retrying automatically (attempt 3)")) {
+if (!bsSub()?.includes("retrying automatically (attempt 3)")
+    || bsTitle() !== "STARTUP SEQUENCE — HOLDING") {
   throw new Error("journal rebuild retry state was not explained");
 }
 vm.runInContext(`
   state.journal_rebuild = { active: false, phase: "error", completed: 2, total: 6, attempt: 3, retrying: false };
   renderBanner();
 `, context);
-if (!rebuildBanner.children[0]?.textContent.includes("could not be reconstructed safely")) {
+if (bsTitle() !== "STARTUP FAULT"
+    || !bsSub()?.includes("could not be reconstructed safely")
+    || rebuildBanner.children.length !== 2) {
   throw new Error("terminal journal rebuild failure was hidden by the generic waiting banner");
 }
 
