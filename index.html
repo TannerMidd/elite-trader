@@ -159,6 +159,13 @@
     .row.flip .row-copy { order: 0; }
   }
   .tour-note { margin: 44px auto 0; max-width: 72ch; text-align: center; color: var(--dim); font-size: 14px; }
+  .theme-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 18px; }
+  .theme-cell { margin: 0; }
+  .theme-cell figcaption {
+    margin-top: 10px; text-align: center; font-family: var(--mono); font-size: 11px;
+    letter-spacing: .3em; color: var(--dim);
+  }
+  .yours-ticks { margin-top: 26px; max-width: 78ch; margin-left: auto; margin-right: auto; }
 
   /* ---------- steps ---------- */
   .steps { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 14px; }
@@ -331,8 +338,53 @@
       </div>
     </div>
 
+    <div class="row flip">
+      <div class="frame"><a href="assets/shot-roles.png" target="_blank" rel="noopener" title="Open full size"><img src="assets/shot-roles.png" alt="Panel-mode roles page: specialist console with mining, combat, carrier and exobiology workspaces" loading="lazy"></a></div>
+      <div class="row-copy">
+        <h3>A workspace for the way you fly tonight</h3>
+        <p>The ROLES console switches the cockpit into dedicated mining, combat, carrier and surface workflows.</p>
+        <ul class="ticks">
+          <li><b>Mining runs</b> with journal-counted yield, refinery totals, prospector quality and limpet economics</li>
+          <li><b>Combat &amp; AX</b> session tracking with loadout readiness and unclaimed bounty warnings</li>
+          <li><b>Carrier ops</b>: upkeep runway, tritium budgeting and jump planning</li>
+          <li><b>Exobio surface navigator</b> with persistent body-local waypoints</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="row">
+      <div class="frame"><a href="assets/shot-analytics.png" target="_blank" rel="noopener" title="Open full size"><img src="assets/shot-analytics.png" alt="Panel-mode stats page: earnings by source, trading performance and balance history" loading="lazy"></a></div>
+      <div class="row-copy">
+        <h3>Your career, quantified — locally</h3>
+        <p>Every credit accounted for, computed from your own journal history and never uploaded anywhere.</p>
+        <ul class="ticks">
+          <li><b>Earnings by source</b> — trade, exploration, exobiology, missions, bounties</li>
+          <li><b>Trading performance</b> windows: today, seven days, any period</li>
+          <li>Credit balance over time, session rates, jumps and distance</li>
+          <li>Backed by a compact <b>lifetime event ledger</b>, scoped per commander</li>
+        </ul>
+      </div>
+    </div>
+
     <p class="tour-note">Every page above is the touch-first flight panel — the view Frameshift opens with.
       Prefer a mouse? The same app also serves a full desktop workspace with every card in tabbed form.</p>
+  </div>
+</section>
+
+<section id="themes">
+  <div class="wrap">
+    <div class="sec-label">Make it yours</div>
+    <div class="theme-grid">
+      <figure class="theme-cell"><div class="frame"><a href="assets/shot-theme-ice.png" target="_blank" rel="noopener" title="Open full size"><img src="assets/shot-theme-ice.png" alt="Frameshift status page in the ice accent theme" loading="lazy"></a></div><figcaption>ICE</figcaption></figure>
+      <figure class="theme-cell"><div class="frame"><a href="assets/shot-theme-emerald.png" target="_blank" rel="noopener" title="Open full size"><img src="assets/shot-theme-emerald.png" alt="Frameshift status page in the emerald accent theme" loading="lazy"></a></div><figcaption>EMERALD</figcaption></figure>
+      <figure class="theme-cell"><div class="frame"><a href="assets/shot-theme-crimson.png" target="_blank" rel="noopener" title="Open full size"><img src="assets/shot-theme-crimson.png" alt="Frameshift status page in the crimson accent theme" loading="lazy"></a></div><figcaption>CRIMSON</figcaption></figure>
+    </div>
+    <ul class="ticks yours-ticks">
+      <li><b>Six accent themes</b> plus a full custom color picker — the whole cockpit follows</li>
+      <li><b>Arrange or hide every card</b> per device: the tablet shows what you fly with, the desktop keeps the rest</li>
+      <li><b>Per-device pages and display scales</b> — interface, status strip and helper text each size independently</li>
+      <li><b>Six neural voices</b> for callouts, synthesized locally — plus opt-in CRT ambience if you like the glow</li>
+    </ul>
   </div>
 </section>
 
