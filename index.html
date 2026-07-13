@@ -7,13 +7,13 @@
 <meta name="description" content="A local-first Elite Dangerous companion: live cockpit, trading, exploration, engineering and mission planning — served from your PC to any paired tablet. No account, no API key.">
 <meta property="og:title" content="Frameshift — the local Elite Dangerous cockpit companion">
 <meta property="og:description" content="Live cockpit, trade routing, exobiology, engineering and mission planning on your desktop and paired tablets. Local-first: no account, no API key.">
-<meta property="og:image" content="https://tannermidd.github.io/frameshift/assets/shot-panel.png">
+<meta property="og:image" content="https://tannermidd.github.io/frameshift/assets/hero-mockup.jpg">
 <meta property="og:url" content="https://tannermidd.github.io/frameshift/">
 <meta property="og:type" content="website">
 <link rel="icon" type="image/svg+xml" href="assets/icon.svg">
 <meta name="theme-color" content="#0b0c0e">
-<meta property="og:image:width" content="1280">
-<meta property="og:image:height" content="800">
+<meta property="og:image:width" content="1672">
+<meta property="og:image:height" content="941">
 <script type="application/ld+json">
 {
   "@context": "https://schema.org",
@@ -23,7 +23,7 @@
   "applicationCategory": "UtilitiesApplication",
   "description": "A local-first Elite Dangerous companion: live cockpit, trading, exploration, engineering and mission planning served from your PC to any paired tablet.",
   "url": "https://tannermidd.github.io/frameshift/",
-  "image": "https://tannermidd.github.io/frameshift/assets/shot-panel.png",
+  "image": "https://tannermidd.github.io/frameshift/assets/hero-mockup.jpg",
   "downloadUrl": "https://github.com/TannerMidd/frameshift/releases/latest",
   "license": "https://github.com/TannerMidd/frameshift/blob/main/LICENSE",
   "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
@@ -58,7 +58,7 @@
   @media (prefers-reduced-motion: no-preference) { html { scroll-behavior: smooth; } }
   section[id] { scroll-margin-top: 70px; }
   .frame > a { display: block; }
-  img { max-width: 100%; display: block; }
+  img { max-width: 100%; height: auto; display: block; }
   .wrap { max-width: 1120px; margin: 0 auto; padding: 0 22px; }
 
   /* ---------- top bar ---------- */
@@ -114,7 +114,8 @@
   }
   .btn.primary:hover { filter: brightness(1.08); background-blend-mode: normal; }
   .hero-note { font-size: 12.5px; color: var(--dim); }
-  .hero-shot { margin-top: 34px; position: relative; }
+  .hero-shot { margin-top: 34px; position: relative; max-width: 1250px; }
+  .hero-shot img { border-radius: 10px; box-shadow: 0 30px 90px rgba(0, 0, 0, .65); }
   .frame {
     position: relative; border: 1px solid var(--line); background: var(--panel);
     padding: 10px; box-shadow: 0 24px 80px rgba(0, 0, 0, .55);
@@ -221,8 +222,8 @@
       <a class="btn" href="https://github.com/TannerMidd/frameshift">View source</a>
     </div>
     <span class="hero-note">Free &amp; open source (MIT) · Windows exe, or run from source on Linux &amp; Steam Deck</span>
-    <div class="hero-shot frame">
-      <a href="assets/shot-panel.png" target="_blank" rel="noopener" title="Open full size"><img src="assets/shot-panel.png" width="1280" height="800" alt="Frameshift panel mode: live cockpit with fuel, cargo, credits, rebuy and session stats" fetchpriority="high"></a>
+    <div class="hero-shot">
+      <a href="assets/hero-mockup.jpg" target="_blank" rel="noopener" title="Open full size"><img src="assets/hero-mockup.jpg" alt="Frameshift's live flight panel on a mounted tablet: fuel, cargo, credits, rebuy and session stats" fetchpriority="high"></a>
     </div>
   </div>
 </div>
