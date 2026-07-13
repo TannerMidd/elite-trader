@@ -18,7 +18,7 @@
 [**Demo**](https://tannermidd.github.io/frameshift/) ·
 [**Documentation**](../../wiki)
 
-<img src="docs/screenshots/flight-panel.png" alt="Frameshift flight panel on a tablet" width="850">
+<img src="docs/screenshots/frameshift-panel-hero.png" alt="Frameshift flight panel on a tablet" width="850">
 
 </div>
 
