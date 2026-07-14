@@ -308,19 +308,19 @@ footer.colophon {
   <p class="subtitle">A local-first flight companion for Elite&nbsp;Dangerous: journal telemetry, a
   self-hosted trading engine, and a touch-ready cockpit panel — one Python process, no accounts, no cloud.</p>
   <div class="docmeta">
-    <span>REV <b>v2.1.7</b></span>
+    <span>REV <b>v2.2.0</b></span>
     <span>DATE <b>2026-07-13</b></span>
     <span>LICENSE <b>MIT</b></span>
     <span>REPO <b><a href="https://github.com/TannerMidd/frameshift">github.com/TannerMidd/frameshift</a></b></span>
   </div>
   <div class="hazard" aria-hidden="true"></div>
   <div class="stats" role="list">
-    <div class="stat" role="listitem"><div class="v">20.1k</div><div class="k">Python LOC</div></div>
-    <div class="stat" role="listitem"><div class="v">11.7k</div><div class="k">UI LOC</div></div>
+    <div class="stat" role="listitem"><div class="v">20.3k</div><div class="k">Python LOC</div></div>
+    <div class="stat" role="listitem"><div class="v">12.3k</div><div class="k">UI LOC</div></div>
     <div class="stat" role="listitem"><div class="v">44</div><div class="k">Modules</div></div>
-    <div class="stat" role="listitem"><div class="v">83</div><div class="k">API endpoints</div></div>
-    <div class="stat" role="listitem"><div class="v">58</div><div class="k">Test files</div></div>
-    <div class="stat" role="listitem"><div class="v">34</div><div class="k">Releases</div></div>
+    <div class="stat" role="listitem"><div class="v">87</div><div class="k">API endpoints</div></div>
+    <div class="stat" role="listitem"><div class="v">59</div><div class="k">Test files</div></div>
+    <div class="stat" role="listitem"><div class="v">35</div><div class="k">Releases</div></div>
     <div class="stat" role="listitem"><div class="v">5</div><div class="k">Runtime deps</div></div>
     <div class="stat" role="listitem"><div class="v">0</div><div class="k">CodeQL alerts</div></div>
   </div>
@@ -409,7 +409,7 @@ footer.colophon {
 
       <rect x="316" y="208" width="248" height="46" rx="3" class="box"/>
       <text x="330" y="227" class="dt" font-size="11.5">Flask ServerThread</text>
-      <text x="330" y="243" class="dd" font-size="10">83 endpoints · scope guard</text>
+      <text x="330" y="243" class="dd" font-size="10">87 endpoints · scope guard</text>
 
       <rect x="316" y="264" width="120" height="46" rx="3" class="box"/>
       <text x="328" y="283" class="dt" font-size="11">EddnListener</text>
@@ -425,7 +425,7 @@ footer.colophon {
 
       <rect x="444" y="320" width="120" height="46" rx="3" class="box"/>
       <text x="456" y="339" class="dt" font-size="11">Extensions</text>
-      <text x="456" y="355" class="dd" font-size="10">manifest packs</text>
+      <text x="456" y="355" class="dd" font-size="10">packs + builder</text>
 
       <rect x="316" y="376" width="248" height="46" rx="3" class="box"/>
       <text x="330" y="395" class="dt" font-size="11.5">Autoplot · TTS · Launcher</text>
@@ -747,7 +747,7 @@ footer.colophon {
 <!-- ============================================================ -->
 <section id="s05">
   <div class="sec-head"><span class="code">05</span><h2>HTTP API</h2></div>
-  <p>The Flask server exposes <strong>83 endpoints</strong> under <code>/api/</code>, plus the static UI.
+  <p>The Flask server exposes <strong>87 endpoints</strong> under <code>/api/</code>, plus the static UI.
   Authorization is <em>default-deny</em>: a route added tomorrow gets a scope requirement automatically —
   unlisted GETs require <span class="chip read">READ</span>, unlisted mutations require
   <span class="chip control">CONTROL</span>, and only two endpoints (pairing itself) are public.
@@ -807,6 +807,7 @@ footer.colophon {
       <tr><td class="mono">/api/update/check · /apply · /status</td><td>mixed</td><td><span class="chip read">read</span>/<span class="chip admin">adm</span></td><td>Self-update lifecycle</td></tr>
       <tr><td class="mono">/api/settings</td><td><span class="chip get">GET</span>/<span class="chip post">POST</span></td><td><span class="chip admin">admin</span></td><td>Validated settings store</td></tr>
       <tr><td class="mono">/api/extensions (+ reload/approve/revoke)</td><td>all</td><td><span class="chip admin">admin</span></td><td>Extension pack management</td></tr>
+      <tr><td class="mono">/api/extensions/save · /test · /&lt;id&gt;/manifest · delete</td><td>all</td><td><span class="chip admin">admin</span></td><td>In-app extension builder: save/edit/remove declarative packs; dry-run rules over recent ledger history</td></tr>
       <tr><td class="mono">/api/diagnostics/health · /bundle</td><td>mixed</td><td><span class="chip admin">admin</span></td><td>Health probe; redacted support bundle</td></tr>
       <tr><td class="mono">/api/journal-dir/validate</td><td><span class="chip get">GET</span></td><td><span class="chip admin">admin</span></td><td>Probe a journal directory before adopting it</td></tr>
       <tr><td class="mono">/api/tts/download · /voice</td><td><span class="chip post">POST</span></td><td><span class="chip admin">admin</span></td><td>Voice model install / switch</td></tr>
@@ -996,7 +997,7 @@ footer.colophon {
       <text x="20" y="26" class="da" font-size="11" letter-spacing="2">GITHUB ACTIONS · ON TAG v*</text>
       <rect x="20" y="38" width="150" height="64" rx="3" class="box"/>
       <text x="34" y="60" class="dt" font-size="11.5">Test suite</text>
-      <text x="34" y="76" class="dd" font-size="9.5">58 files, each in its</text>
+      <text x="34" y="76" class="dd" font-size="9.5">59 files, each in its</text>
       <text x="34" y="90" class="dd" font-size="9.5">own process</text>
 
       <rect x="192" y="38" width="150" height="64" rx="3" class="box"/>
@@ -1069,7 +1070,7 @@ footer.colophon {
 <section id="s11">
   <div class="sec-head"><span class="code">11</span><h2>Quality engineering</h2></div>
 
-  <h3>Test suite <span class="mono-tag">58 files · ~7,600 LOC</span></h3>
+  <h3>Test suite <span class="mono-tag">59 files · ~7,800 LOC</span></h3>
   <p>Tests are deliberately <strong>script-style</strong>: each file is a plain Python program that builds its own
   fixtures (temp databases, synthetic journals, a live Flask test client) and asserts its contract, run in its own
   process. That isolation is a rule, not an accident — shared-fixture frameworks false-failed on module-level state,
@@ -1106,22 +1107,22 @@ footer.colophon {
 
   <div class="bars" role="img" aria-label="Lines of code by module, largest first">
     <div class="bar"><span class="bl">journal.py</span><span class="bt"><span class="bf" style="width:100%"></span></span><span class="bv">2,935</span></div>
-    <div class="bar"><span class="bl">server.py</span><span class="bt"><span class="bf" style="width:64%"></span></span><span class="bv">1,877</span></div>
+    <div class="bar"><span class="bl">server.py</span><span class="bt"><span class="bf" style="width:66%"></span></span><span class="bv">1,932</span></div>
     <div class="bar"><span class="bl">marketdb.py</span><span class="bt"><span class="bf" style="width:43%"></span></span><span class="bv">1,256</span></div>
     <div class="bar"><span class="bl">eddn_upload.py</span><span class="bt"><span class="bf" style="width:38%"></span></span><span class="bv">1,105</span></div>
     <div class="bar"><span class="bl">routes.py</span><span class="bt"><span class="bf" style="width:30%"></span></span><span class="bv">888</span></div>
     <div class="bar"><span class="bl">commanderdb.py</span><span class="bt"><span class="bf" style="width:25%"></span></span><span class="bv">728</span></div>
+    <div class="bar"><span class="bl">extensions.py</span><span class="bt"><span class="bf" style="width:24%"></span></span><span class="bv">717</span></div>
     <div class="bar"><span class="bl">objectives.py</span><span class="bt"><span class="bf" style="width:24%"></span></span><span class="bv">698</span></div>
     <div class="bar"><span class="bl">operations.py</span><span class="bt"><span class="bf" style="width:22%"></span></span><span class="bv">633</span></div>
     <div class="bar"><span class="bl">eventledger.py</span><span class="bt"><span class="bf" style="width:21%"></span></span><span class="bv">620</span></div>
     <div class="bar"><span class="bl">state.py</span><span class="bt"><span class="bf" style="width:21%"></span></span><span class="bv">603</span></div>
-    <div class="bar"><span class="bl">extensions.py</span><span class="bt"><span class="bf" style="width:20%"></span></span><span class="bv">589</span></div>
     <div class="bar"><span class="bl">spansh.py</span><span class="bt"><span class="bf" style="width:20%"></span></span><span class="bv">582</span></div>
     <div class="bar"><span class="bl">exobiology.py</span><span class="bt"><span class="bf" style="width:19%"></span></span><span class="bv">561</span></div>
     <div class="bar"><span class="bl">updater.py</span><span class="bt"><span class="bf" style="width:18%"></span></span><span class="bv">533</span></div>
-    <div class="bar alt"><span class="bl">ui/app.js</span><span class="bt"><span class="bf" style="width:100%"></span></span><span class="bv">7,270</span></div>
-    <div class="bar alt"><span class="bl">ui/style.css</span><span class="bt"><span class="bf" style="width:38%"></span></span><span class="bv">2,777</span></div>
-    <div class="bar alt"><span class="bl">ui/index.html</span><span class="bt"><span class="bf" style="width:20%"></span></span><span class="bv">1,419</span></div>
+    <div class="bar alt"><span class="bl">ui/app.js</span><span class="bt"><span class="bf" style="width:100%"></span></span><span class="bv">7,715</span></div>
+    <div class="bar alt"><span class="bl">ui/style.css</span><span class="bt"><span class="bf" style="width:37%"></span></span><span class="bv">2,864</span></div>
+    <div class="bar alt"><span class="bl">ui/index.html</span><span class="bt"><span class="bf" style="width:19%"></span></span><span class="bv">1,446</span></div>
   </div>
 
   <div class="table-wrap"><table>
@@ -1134,7 +1135,7 @@ footer.colophon {
       <tr><td class="mono">launcher.py</td><td class="num">157</td><td>Game-running probe; Steam/Frontier launch (fixed command)</td></tr>
       <tr><td class="mono">flight.py</td><td class="num">218</td><td>Fuel/scoop planning, surface-distance math, jumponium recipes</td></tr>
       <tr class="tgroup"><td colspan="3">Server &amp; security</td></tr>
-      <tr><td class="mono">server.py</td><td class="num">1,877</td><td>Flask app: 83 endpoints, scope guard, host/origin checks, static UI</td></tr>
+      <tr><td class="mono">server.py</td><td class="num">1,932</td><td>Flask app: 87 endpoints, scope guard, host/origin checks, static UI</td></tr>
       <tr><td class="mono">security.py</td><td class="num">325</td><td>Pairing capabilities, device registry, scopes, rate limiter</td></tr>
       <tr><td class="mono">network.py</td><td class="num">313</td><td>LAN pairing URLs and QR provisioning</td></tr>
       <tr><td class="mono">errors.py</td><td class="num">—</td><td>User-facing error taxonomy (leak-proof responses)</td></tr>
@@ -1164,7 +1165,7 @@ footer.colophon {
       <tr><td class="mono">exploration.py</td><td class="num">53</td><td>Exploration payout helpers</td></tr>
       <tr class="tgroup"><td colspan="3">Platform</td></tr>
       <tr><td class="mono">app.py</td><td class="num">227</td><td>Composition root, single-instance guard, lifecycle</td></tr>
-      <tr><td class="mono">extensions.py</td><td class="num">589</td><td>Declarative extension host with fingerprint approval</td></tr>
+      <tr><td class="mono">extensions.py</td><td class="num">717</td><td>Declarative extension host with fingerprint approval + in-app builder backend</td></tr>
       <tr><td class="mono">tts.py</td><td class="num">324</td><td>Piper neural voice (pinned downloads, persistent process)</td></tr>
       <tr><td class="mono">settings.py</td><td class="num">135</td><td>Validated settings store</td></tr>
     </tbody>
@@ -1178,7 +1179,7 @@ footer.colophon {
 ├── ui/                     frontend, served from disk — no build step
 │   ├── app.js · index.html · style.css
 │   └── fonts/              self-hosted Chakra Petch + IBM Plex Mono
-├── tests/                  58 script-style tests + 2 vm harnesses
+├── tests/                  59 script-style tests + 2 vm harnesses
 ├── packaging/              Windows version-resource template
 ├── .github/workflows/      test.yml (push/PR, 2 OSes) · release.yml (tags)
 └── data/ (runtime)         market.db · commander.db · security.json
@@ -1193,13 +1194,13 @@ footer.colophon {
     <dt>Showcase</dt><dd><a href="https://tannermidd.github.io/frameshift/">tannermidd.github.io/frameshift</a> — feature tour with live screenshots</dd>
     <dt>User docs</dt><dd><a href="https://github.com/TannerMidd/frameshift/wiki">Project wiki</a> — 16 pages: getting started, flight panel, trading, autoplot, pairing &amp; security, troubleshooting</dd>
     <dt>Downloads</dt><dd><a href="https://github.com/TannerMidd/frameshift/releases/latest">Latest release</a> — Windows one-file executable + SHA-256</dd>
-    <dt>This dossier</dt><dd>Generated from the v2.1.7 source tree; figures and counts are measured, not estimated</dd>
+    <dt>This dossier</dt><dd>Generated from the v2.2.0 source tree; figures and counts are measured, not estimated</dd>
   </dl>
 </section>
 
 <footer class="colophon">
   <span>FRAMESHIFT ENGINEERING DOSSIER · TD-01</span>
-  <span>REV v2.1.7 · 2026-07-13</span>
+  <span>REV v2.2.0 · 2026-07-13</span>
   <span>© 2026 Tanner Middleton · MIT</span>
   <span>o7</span>
 </footer>
