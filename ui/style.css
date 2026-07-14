@@ -2754,6 +2754,14 @@ body.panel-mode #fp-boot.hidden { display: none; }
 }
 .paired-device .device-main { flex: 1; min-width: 0; }
 .paired-device .device-name { font-weight: 600; }
+/* Sortable table headers (commodity search): the ⇅ hint invites the click,
+   the accent arrow shows the active column and direction. */
+th.sortable { cursor: pointer; user-select: none; white-space: nowrap; }
+th.sortable:hover { color: var(--orange-soft); }
+th.sortable::after { content: "⇅"; margin-left: 5px; font-size: .7rem; opacity: .35; }
+th.sortable.sort-asc::after { content: "▲"; opacity: 1; color: var(--orange); }
+th.sortable.sort-desc::after { content: "▼"; opacity: 1; color: var(--orange); }
+
 .profiles-primer { margin-top: 8px; font-size: .85rem; line-height: 1.45; }
 .profiles-list { margin-top: 12px; display: grid; gap: 6px; }
 .profiles-unattributed {

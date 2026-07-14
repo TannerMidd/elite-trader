@@ -3700,11 +3700,87 @@ function ageText(epoch) {
   return Math.round(mins / 1440) + "d";
 }
 
+// Last search results + the active column sort. Sorting is client-side over
+// the cached results, so clicking headers never refires the search; the
+// chosen sort survives new searches until the page reloads.
+let csResults = null;   // { results, mode }
+let csSort = null;      // { key, dir }  (dir: 1 ascending, -1 descending)
+
+// Per-column sort value + the direction a first click should mean. "Better
+// first" for prices/units/freshness, "closest first" for distances. A null
+// price dir resolves per mode: buying wants cheap first, selling rich first.
+const CS_SORT_COLUMNS = {
+  station: { value: (r) => (r.station || "").toLowerCase(), firstDir: 1 },
+  system: { value: (r) => (r.system || "").toLowerCase(), firstDir: 1 },
+  price: {
+    value: (r, mode) => (mode === "buy" ? r.buy_price : r.sell_price) || 0,
+    firstDir: null,
+  },
+  units: { value: (r, mode) => (mode === "buy" ? r.supply : r.demand) || 0, firstDir: -1 },
+  jump: { value: (r) => (r.distance != null ? Number(r.distance) : Infinity), firstDir: 1 },
+  dist_ls: { value: (r) => (r.dist_ls != null ? Number(r.dist_ls) : Infinity), firstDir: 1 },
+  updated: { value: (r) => Number(r.updated_at) || Date.parse(r.updated_at) || 0, firstDir: -1 },
+};
+
+function renderCommodityRows() {
+  const table = $("cs-table");
+  const tbody = table.querySelector("tbody");
+  if (!csResults) return;
+  const { results, mode } = csResults;
+
+  let rows = results;
+  if (csSort && CS_SORT_COLUMNS[csSort.key]) {
+    const { value } = CS_SORT_COLUMNS[csSort.key];
+    rows = [...results].sort((a, b) => {
+      const va = value(a, mode);
+      const vb = value(b, mode);
+      if (va < vb) return -csSort.dir;
+      if (va > vb) return csSort.dir;
+      return 0;
+    });
+  }
+  for (const th of table.querySelectorAll("th.sortable")) {
+    th.classList.toggle("sort-asc", !!csSort && th.dataset.sort === csSort.key && csSort.dir === 1);
+    th.classList.toggle("sort-desc", !!csSort && th.dataset.sort === csSort.key && csSort.dir === -1);
+  }
+
+  tbody.innerHTML = "";
+  for (const r of rows) {
+    const tr = document.createElement("tr");
+    const price = mode === "buy" ? r.buy_price : r.sell_price;
+    const units = mode === "buy" ? r.supply : r.demand;
+    tr.innerHTML =
+      `<td>${esc(r.station)}${r.large_pad ? "" : ' <span class="sub">no L pad</span>'}</td>` +
+      `<td>${esc(r.system)}</td>` +
+      `<td class="num orange">${fmtNum(price)}</td>` +
+      `<td class="num">${fmtNum(units)}</td>` +
+      `<td class="num">${r.distance} ly</td>` +
+      `<td class="num">${r.dist_ls != null ? fmtNum(r.dist_ls) + " ls" : "?"}</td>` +
+      `<td class="num freshness-cell">${ageText(r.updated_at)} ${confidenceHtml(r.confidence)}</td>`;
+    const td = document.createElement("td");
+    td.appendChild(plotButton(r.system));
+    tr.appendChild(td);
+    tbody.appendChild(tr);
+  }
+}
+
+function sortCommodityTable(key) {
+  const column = CS_SORT_COLUMNS[key];
+  if (!column || !csResults) return;
+  if (csSort && csSort.key === key) {
+    csSort = { key, dir: -csSort.dir };
+  } else {
+    const firstDir = column.firstDir != null ? column.firstDir
+      : (csResults.mode === "buy" ? 1 : -1);
+    csSort = { key, dir: firstDir };
+  }
+  renderCommodityRows();
+}
+
 async function searchCommodity(ev) {
   ev.preventDefault();
   const status = $("cs-status");
   const table = $("cs-table");
-  const tbody = table.querySelector("tbody");
   const mode = $("cs-mode").value;
   status.classList.remove("error");
   status.textContent = "Searching…";
@@ -3719,27 +3795,11 @@ async function searchCommodity(ev) {
     const resp = await fetch("/api/commodity-search?" + params);
     const data = await resp.json();
     if (!resp.ok) throw new Error(data.error || "Search failed");
-    tbody.innerHTML = "";
-    for (const r of data.results || []) {
-      const tr = document.createElement("tr");
-      const price = mode === "buy" ? r.buy_price : r.sell_price;
-      const units = mode === "buy" ? r.supply : r.demand;
-      tr.innerHTML =
-        `<td>${esc(r.station)}${r.large_pad ? "" : ' <span class="sub">no L pad</span>'}</td>` +
-        `<td>${esc(r.system)}</td>` +
-        `<td class="num orange">${fmtNum(price)}</td>` +
-        `<td class="num">${fmtNum(units)}</td>` +
-        `<td class="num">${r.distance} ly</td>` +
-        `<td class="num">${r.dist_ls != null ? fmtNum(r.dist_ls) + " ls" : "?"}</td>` +
-        `<td class="num freshness-cell">${ageText(r.updated_at)} ${confidenceHtml(r.confidence)}</td>`;
-      const td = document.createElement("td");
-      td.appendChild(plotButton(r.system));
-      tr.appendChild(td);
-      tbody.appendChild(tr);
-    }
-    table.classList.toggle("hidden", !(data.results || []).length);
-    status.textContent = (data.results || []).length
-      ? `${data.results.length} station(s) ${mode === "buy" ? "selling" : "buying"} ${data.commodity} within ${$("cs-radius").value} ly.`
+    csResults = { results: data.results || [], mode };
+    renderCommodityRows();
+    table.classList.toggle("hidden", !csResults.results.length);
+    status.textContent = csResults.results.length
+      ? `${csResults.results.length} station(s) ${mode === "buy" ? "selling" : "buying"} ${data.commodity} within ${$("cs-radius").value} ly. Click a column header to sort.`
       : `Nothing ${mode === "buy" ? "selling" : "buying"} ${data.commodity || "that"} nearby with those filters — ` +
         "widen the radius, or if you're deep in the black, WHERE TO SELL YOUR DATA (Explore tab) finds the nearest civilization.";
   } catch (err) {
@@ -6922,6 +6982,10 @@ document.addEventListener("DOMContentLoaded", async () => {
       button.dataset.extensionId, button.dataset.extensionAction, button);
   });
   $("cs-form").addEventListener("submit", searchCommodity);
+  $("cs-table").querySelector("thead").addEventListener("click", (ev) => {
+    const th = ev.target.closest("th.sortable");
+    if (th) sortCommodityTable(th.dataset.sort);
+  });
   $("mining-form").addEventListener("submit", searchMining);
   $("os-form").addEventListener("submit", searchStations);
   $("cargo-sell-btn").addEventListener("click", findCargoSell);
