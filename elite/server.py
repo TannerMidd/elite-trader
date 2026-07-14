@@ -560,6 +560,32 @@ def create_app(state, security_manager=None):
         response.delete_cookie(COOKIE_NAME, path="/")
         return response
 
+    @app.get("/api/suggest")
+    def api_suggest():
+        """Prefix suggestions for system/station name inputs.
+
+        Served from the local cache's NOCASE name indexes, so every keystroke
+        is an indexed lookup. %/_/\\ are stripped rather than escaped: an
+        ESCAPE clause would defeat SQLite's LIKE-optimization and turn each
+        keystroke into a full table scan.
+        """
+        kind = request.args.get("kind", "systems")
+        q = str(request.args.get("q", "")).strip()
+        q = q.replace("%", "").replace("_", "").replace("\\", "")
+        if len(q) < 2 or len(q) > 60:
+            return jsonify({"suggestions": []})
+        table = "stations" if kind == "stations" else "systems"
+        conn = marketdb.connect()
+        try:
+            rows = conn.execute(
+                f"SELECT DISTINCT name FROM {table} WHERE name LIKE ?"
+                " ORDER BY name COLLATE NOCASE LIMIT 12",
+                (q + "%",),
+            ).fetchall()
+            return jsonify({"suggestions": [row[0] for row in rows]})
+        finally:
+            conn.close()
+
     # ---- commander profile repair (admin) -------------------------------
     # Test sessions, borrowed accounts, or a mis-adopted pre-v2.1 bucket can
     # leave local data owned by the wrong profile. These endpoints are the

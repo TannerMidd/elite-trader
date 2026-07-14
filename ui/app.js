@@ -3700,6 +3700,111 @@ function ageText(epoch) {
   return Math.round(mins / 1440) + "d";
 }
 
+/* ---------- contextual autocomplete ----------
+   Text inputs that name a system, station, ship or module get a datalist fed
+   by the local database (indexed prefix search per keystroke) or a static
+   catalog. Native datalists keep it accessible and touch-friendly. */
+
+const SUGGEST_SHIPS = [
+  "Adder", "Alliance Challenger", "Alliance Chieftain", "Alliance Crusader",
+  "Anaconda", "Asp Explorer", "Asp Scout", "Beluga Liner", "Cobra Mk III",
+  "Cobra Mk IV", "Cobra Mk V", "Corsair", "Diamondback Explorer",
+  "Diamondback Scout", "Dolphin", "Eagle", "Federal Assault Ship",
+  "Federal Corvette", "Federal Dropship", "Federal Gunship", "Fer-de-Lance",
+  "Hauler", "Imperial Clipper", "Imperial Courier", "Imperial Cutter",
+  "Imperial Eagle", "Keelback", "Krait Mk II", "Krait Phantom", "Mamba",
+  "Mandalay", "Orca", "Panther Clipper Mk II", "Python", "Python Mk II",
+  "Sidewinder", "Type-6 Transporter", "Type-7 Transporter",
+  "Type-8 Transporter", "Type-9 Heavy", "Type-10 Defender", "Viper Mk III",
+  "Viper Mk IV", "Vulture",
+];
+const SUGGEST_MODULES = [
+  "Fuel Scoop", "Frame Shift Drive", "FSD Interdictor", "Guardian FSD Booster",
+  "Detailed Surface Scanner", "Refinery", "Prospector Limpet Controller",
+  "Collector Limpet Controller", "Fuel Transfer Limpet Controller",
+  "Repair Limpet Controller", "Auto Field-Maintenance Unit",
+  "Shield Generator", "Bi-Weave Shield Generator", "Prismatic Shield Generator",
+  "Shield Cell Bank", "Hull Reinforcement Package",
+  "Module Reinforcement Package", "Power Plant", "Power Distributor",
+  "Thrusters", "Life Support", "Sensors", "Cargo Rack", "Passenger Cabin",
+  "Planetary Vehicle Hangar", "Supercruise Assist", "Advanced Docking Computer",
+  "Beam Laser", "Pulse Laser", "Burst Laser", "Multi-Cannon", "Cannon",
+  "Fragment Cannon", "Missile Rack", "Seeker Missile Rack", "Torpedo Pylon",
+  "Mine Launcher", "Plasma Accelerator", "Rail Gun", "Mining Laser",
+  "Abrasion Blaster", "Sub-surface Displacement Missile",
+  "Seismic Charge Launcher", "Chaff Launcher", "Heat Sink Launcher",
+  "Point Defence", "Kill Warrant Scanner", "Frame Shift Wake Scanner",
+  "Xeno Scanner", "AX Multi-Cannon", "AX Missile Rack",
+];
+
+function attachSuggest(id, kind) {
+  const input = $(id);
+  if (!input) return;
+  const list = document.createElement("datalist");
+  list.id = "suggest-" + id;
+  document.body.appendChild(list);
+  input.setAttribute("list", list.id);
+  input.removeAttribute("autocomplete"); // datalist needs the browser popup
+
+  let timer = null;
+  let seq = 0;
+  input.addEventListener("input", () => {
+    clearTimeout(timer);
+    timer = setTimeout(async () => {
+      const q = input.value.trim();
+      if (q.length < 2) { list.replaceChildren(); return; }
+      const mySeq = ++seq;
+      let names = [];
+      try {
+        const resp = await fetch(`/api/suggest?kind=${kind}&q=${encodeURIComponent(q)}`);
+        if (resp.ok) names = (await resp.json()).suggestions || [];
+      } catch (e) { /* suggestions are best-effort */ }
+      if (mySeq !== seq) return; // a newer keystroke's response wins
+      if (kind === "systems") {
+        // Recently visited systems that match float to the top.
+        const lower = q.toLowerCase();
+        const recents = (typeof galaxyHistory !== "undefined" ? galaxyHistory : [])
+          .map((h) => h.system)
+          .filter((s) => s && s.toLowerCase().startsWith(lower));
+        names = [...new Set([...recents.slice(0, 3), ...names])].slice(0, 12);
+      }
+      list.replaceChildren();
+      for (const name of names) {
+        const option = document.createElement("option");
+        option.value = name;
+        list.appendChild(option);
+      }
+    }, 150);
+  });
+}
+
+function initSuggest() {
+  for (const id of ["fp-plot-input", "plot-input", "nr-to", "ss-system",
+                    "ops-objective-system", "ops-board-objective-system"]) {
+    attachSuggest(id, "systems");
+  }
+  for (const id of ["ops-objective-station", "ops-board-objective-station"]) {
+    attachSuggest(id, "stations");
+  }
+  // Outfitting & shipyard search: ships + common module types, locally.
+  const os = $("os-query");
+  if (os) {
+    const list = document.createElement("datalist");
+    list.id = "suggest-os-query";
+    for (const name of [...SUGGEST_MODULES, ...SUGGEST_SHIPS]) {
+      const option = document.createElement("option");
+      option.value = name;
+      list.appendChild(option);
+    }
+    document.body.appendChild(list);
+    os.setAttribute("list", list.id);
+    os.removeAttribute("autocomplete");
+  }
+  // Ops resource reservations are usually commodities.
+  const reservation = $("ops-reservation-key");
+  if (reservation) reservation.setAttribute("list", "commodity-list");
+}
+
 // Last search results + the active column sort. Sorting is client-side over
 // the cached results, so clicking headers never refires the search; the
 // chosen sort survives new searches until the page reloads.
@@ -6986,6 +7091,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     const th = ev.target.closest("th.sortable");
     if (th) sortCommodityTable(th.dataset.sort);
   });
+  initSuggest();
   $("mining-form").addEventListener("submit", searchMining);
   $("os-form").addEventListener("submit", searchStations);
   $("cargo-sell-btn").addEventListener("click", findCargoSell);

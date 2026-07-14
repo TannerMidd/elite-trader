@@ -52,6 +52,7 @@ CREATE TABLE IF NOT EXISTS stations(
     large_pad INTEGER NOT NULL DEFAULT 0,
     updated_at INTEGER);
 CREATE INDEX IF NOT EXISTS idx_stations_system ON stations(system_id64);
+CREATE INDEX IF NOT EXISTS idx_stations_name ON stations(name COLLATE NOCASE);
 CREATE TABLE IF NOT EXISTS commodities(
     market_id INTEGER NOT NULL,
     symbol TEXT NOT NULL,
