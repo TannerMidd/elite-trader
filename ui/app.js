@@ -383,24 +383,39 @@ async function loadLocalServices() {
   const card = $("local-services-card");
   const admin = securityStatus?.scopes?.includes("admin");
   card.classList.toggle("hidden", !admin);
+  $("ext-builder-card").classList.toggle("hidden", !admin);
   if (!admin) return;
+  // The health probe can take seconds (SQLite integrity check on a large DB,
+  // worse on spinning disks) — never make the extensions list wait for it.
+  const extensionsDone = (async () => {
+    try {
+      const resp = await fetch("/api/extensions", { cache: "no-store" });
+      if (!resp.ok) throw new Error("Extension packs are unavailable.");
+      renderExtensionRows(await resp.json());
+    } catch (error) {
+      $("extensions-status").textContent = String(error.message || error);
+    }
+  })();
   try {
-    const [healthResponse, extensionResponse] = await Promise.all([
-      fetch("/api/diagnostics/health", { cache: "no-store" }),
-      fetch("/api/extensions", { cache: "no-store" }),
-    ]);
-    if (!healthResponse.ok || !extensionResponse.ok) throw new Error("Local diagnostics are unavailable.");
-    const health = await healthResponse.json();
-    const extensions = await extensionResponse.json();
+    const resp = await fetch("/api/diagnostics/health", { cache: "no-store" });
+    if (!resp.ok) throw new Error("Local diagnostics are unavailable.");
+    const health = await resp.json();
     const db = health.market_database || {};
     const integrity = health.sqlite_integrity || (health.market_database_error ? "unavailable" : "unknown");
     $("local-health").textContent =
       `Frameshift ${health.version || "?"} · database ${integrity}` +
       `${db.markets != null ? ` · ${Number(db.markets).toLocaleString()} markets` : ""}` +
       " · logs rotate locally";
-    const loaded = extensions.loaded || [];
-    const errors = extensions.errors || [];
-    $("extensions-status").innerHTML =
+  } catch (error) {
+    $("local-health").textContent = String(error.message || error);
+  }
+  await extensionsDone;
+}
+
+function renderExtensionRows(extensions) {
+  const loaded = extensions.loaded || [];
+  const errors = extensions.errors || [];
+  $("extensions-status").innerHTML =
       `<b>${loaded.length} extension pack${loaded.length === 1 ? "" : "s"} loaded</b>` +
       `<span class="dim"> from the local extensions folder` +
       `${errors.length ? ` · ${errors.length} rejected (details included in diagnostics)` : ""}</span>` +
@@ -412,16 +427,17 @@ async function loadLocalServices() {
             ? '<span class="good">APPROVED FOR THIS EXACT BUILD</span>'
             : '<span class="warn">CODE EXECUTION BLOCKED · APPROVAL REQUIRED</span>'
           : '<span class="good">DECLARATIVE · NO CODE EXECUTION</span>';
-        const action = !process ? "" : extension.approved
-          ? `<button type="button" class="copy danger" data-extension-action="revoke" data-extension-id="${esc(extension.id)}">REVOKE</button>`
-          : `<button type="button" class="copy" data-extension-action="approve" data-extension-id="${esc(extension.id)}">APPROVE CODE</button>`;
+        const action = process
+          ? (extension.approved
+            ? `<button type="button" class="copy danger" data-extension-action="revoke" data-extension-id="${esc(extension.id)}">REVOKE</button>`
+            : `<button type="button" class="copy" data-extension-action="approve" data-extension-id="${esc(extension.id)}">APPROVE CODE</button>`)
+          : `<span class="extension-tools">` +
+            `<button type="button" class="copy" data-extension-action="edit" data-extension-id="${esc(extension.id)}" title="Open in the extension builder">✎ EDIT</button>` +
+            `<button type="button" class="copy danger" data-extension-action="delete" data-extension-id="${esc(extension.id)}" title="Remove this pack">✕</button></span>`;
         return `<div class="extension-row"><div><b>${esc(extension.name || extension.id)}</b>` +
           `<span class="dim">${esc(extension.id)} · ${esc(extension.version || "0")} · ${esc(permissionText)}</span>` +
           `<span>${approval}${process && extension.fingerprint ? ` · fingerprint ${esc(extension.fingerprint)}` : ""}</span></div>${action}</div>`;
       }).join("")}</div>`;
-  } catch (error) {
-    $("local-health").textContent = String(error.message || error);
-  }
 }
 
 async function downloadSupportBundle() {
@@ -466,8 +482,436 @@ async function reloadExtensions() {
   }
 }
 
+/* ---------- extension builder ----------
+   A guided form that writes declarative extension manifests: pick a journal
+   event, add conditions, choose an alert or objective. The server validates
+   with the exact code that vets installed packs; nothing here executes. */
+
+// Curated journal events with the fields people actually condition on.
+// Free-text entry still allows any event and any dotted field path.
+const XB_EVENTS = [
+  { id: "*", label: "Any event", fields: ["event", "timestamp"] },
+  { id: "FSDJump", label: "Hyperspace jump (FSDJump)", fields: ["StarSystem", "JumpDist", "FuelLevel", "FuelUsed", "StarClass", "Population"] },
+  { id: "Docked", label: "Docked at a station", fields: ["StationName", "StarSystem", "StationType", "DistFromStarLS"] },
+  { id: "Undocked", label: "Undocked", fields: ["StationName"] },
+  { id: "Bounty", label: "Bounty awarded", fields: ["Reward", "Target", "VictimFaction"] },
+  { id: "MissionCompleted", label: "Mission completed", fields: ["Reward", "Faction", "Name"] },
+  { id: "MissionAccepted", label: "Mission accepted", fields: ["Faction", "Name", "Reward", "Expiry"] },
+  { id: "MarketSell", label: "Sold commodity", fields: ["Type", "Count", "SellPrice", "TotalSale", "AvgPricePaid"] },
+  { id: "MarketBuy", label: "Bought commodity", fields: ["Type", "Count", "BuyPrice", "TotalCost"] },
+  { id: "Scan", label: "Body scanned", fields: ["BodyName", "WasDiscovered", "WasMapped", "PlanetClass", "TerraformState", "Landable"] },
+  { id: "SAASignalsFound", label: "Surface signals found", fields: ["BodyName"] },
+  { id: "ScanOrganic", label: "Organic scanned", fields: ["Genus_Localised", "Species_Localised", "ScanType"] },
+  { id: "SellOrganicData", label: "Sold exobiology data", fields: [] },
+  { id: "HullDamage", label: "Hull damage", fields: ["Health", "PlayerPilot"] },
+  { id: "ShieldState", label: "Shields up/down", fields: ["ShieldsUp"] },
+  { id: "Interdicted", label: "Interdicted", fields: ["Submitted", "Interdictor", "IsPlayer"] },
+  { id: "FuelScoop", label: "Fuel scooped", fields: ["Scooped", "Total"] },
+  { id: "CollectCargo", label: "Cargo collected", fields: ["Type", "Stolen"] },
+  { id: "CargoDepot", label: "Wing mission depot", fields: ["UpdateType", "ItemsDelivered", "TotalItemsToDeliver"] },
+  { id: "RedeemVoucher", label: "Voucher redeemed", fields: ["Type", "Amount"] },
+  { id: "ReceiveText", label: "Message received", fields: ["From", "Message", "Channel"] },
+  { id: "Touchdown", label: "Surface touchdown", fields: ["Body", "OnPlanet"] },
+  { id: "LaunchSRV", label: "SRV deployed", fields: ["SRVType"] },
+];
+
+const XB_OPS = [
+  { id: "eq", label: "equals" },
+  { id: "in", label: "is one of (comma-separated)" },
+  { id: "min", label: "is at least" },
+  { id: "max", label: "is at most" },
+  { id: "exists", label: "is present" },
+  { id: "absent", label: "is absent" },
+];
+
+const XB_TEMPLATES = [
+  {
+    label: "💰 Big bounty callout",
+    name: "Big bounty callout",
+    rule: { event: "Bounty", conditions: [{ field: "Reward", op: "min", value: "100000" }],
+      action: { type: "alert", level: "info", text: "Bounty {Reward} cr — {Target}", voice: true } },
+  },
+  {
+    label: "⛽ Low fuel after jump",
+    name: "Low fuel after jump",
+    rule: { event: "FSDJump", conditions: [{ field: "FuelLevel", op: "max", value: "8" }],
+      action: { type: "alert", level: "warn", text: "Fuel at {FuelLevel} t after jump — find a scoopable star", voice: true } },
+  },
+  {
+    label: "📦 Mission payout tracker",
+    name: "Mission payout tracker",
+    rule: { event: "MissionCompleted", conditions: [{ field: "Reward", op: "min", value: "1000000" }],
+      action: { type: "alert", level: "info", text: "{Faction} paid {Reward} cr", voice: false } },
+  },
+  {
+    label: "★ First-discovery follow-up",
+    name: "First discovery follow-up",
+    rule: { event: "Scan", conditions: [{ field: "WasDiscovered", op: "eq", value: "false" }],
+      action: { type: "objective", title: "Map first discovery {BodyName}", category: "exploration" } },
+  },
+];
+
+let xbModel = null;      // { name, id, editingId, rules: [...] }
+let xbBusy = false;
+
+function xbSlug(name) {
+  const slug = String(name || "").toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 40);
+  return /^[a-z0-9]/.test(slug) && slug.length >= 2 ? slug : "";
+}
+
+function xbBlankRule() {
+  return { event: "FSDJump", customEvent: "", conditions: [],
+    action: { type: "alert", level: "info", text: "", voice: false, title: "", category: "" } };
+}
+
+function xbOpen(seed) {
+  xbModel = {
+    name: seed?.name || "",
+    editingId: seed?.editingId || null,
+    rules: (seed?.rules || [xbBlankRule()]).map((r) => ({ ...xbBlankRule(), ...r,
+      action: { ...xbBlankRule().action, ...(r.action || {}) },
+      conditions: (r.conditions || []).map((c) => ({ ...c })) })),
+  };
+  $("xb-name").value = xbModel.name;
+  $("xb-form").classList.remove("hidden");
+  $("xb-status").textContent = "";
+  $("xb-results").classList.add("hidden");
+  xbRenderRules();
+  xbSyncId();
+  $("xb-name").focus();
+}
+
+function xbClose() {
+  xbModel = null;
+  $("xb-form").classList.add("hidden");
+}
+
+function xbSyncId() {
+  const id = xbModel?.editingId || xbSlug($("xb-name").value);
+  $("xb-id").textContent = id || "—";
+}
+
+// Rebuilds the rule blocks from the model. Value edits update the model via
+// the delegated input listener without a rebuild; structure changes rebuild.
+function xbRenderRules() {
+  const wrap = $("xb-rules");
+  wrap.innerHTML = "";
+  xbModel.rules.forEach((rule, ri) => {
+    const block = document.createElement("div");
+    block.className = "xb-rule";
+    const known = XB_EVENTS.some((e) => e.id === rule.event);
+    const catalogEntry = XB_EVENTS.find((e) => e.id === (known ? rule.event : "")) || null;
+    const fields = catalogEntry ? catalogEntry.fields : [];
+    const alert = rule.action.type === "alert";
+    block.innerHTML =
+      `<div class="xb-rule-head"><span class="xb-rule-n">RULE ${ri + 1}</span>` +
+      (xbModel.rules.length > 1
+        ? `<button type="button" class="copy small" data-xb="rule-remove" data-ri="${ri}">✕ REMOVE</button>` : "") +
+      `</div>` +
+      `<div class="xb-row"><span class="xb-kw">WHEN</span>` +
+      `<select data-xb="event" data-ri="${ri}">` +
+      XB_EVENTS.map((e) => `<option value="${esc(e.id)}"${known && e.id === rule.event ? " selected" : ""}>${esc(e.label)}</option>`).join("") +
+      `<option value="__custom__"${known ? "" : " selected"}>Custom event…</option>` +
+      `</select>` +
+      (known ? "" :
+        `<input type="text" data-xb="custom-event" data-ri="${ri}" placeholder="Journal event name" value="${esc(rule.customEvent || rule.event || "")}">`) +
+      `</div>` +
+      `<div class="xb-conditions">` +
+      rule.conditions.map((c, ci) =>
+        `<div class="xb-row xb-cond"><span class="xb-kw">${ci === 0 ? "IF" : "AND"}</span>` +
+        `<input type="text" data-xb="cond-field" data-ri="${ri}" data-ci="${ci}" list="xb-fields-${ri}" placeholder="Field" value="${esc(c.field || "")}">` +
+        `<select data-xb="cond-op" data-ri="${ri}" data-ci="${ci}">` +
+        XB_OPS.map((o) => `<option value="${o.id}"${o.id === c.op ? " selected" : ""}>${o.label}</option>`).join("") +
+        `</select>` +
+        (["exists", "absent"].includes(c.op) ? "" :
+          `<input type="text" data-xb="cond-value" data-ri="${ri}" data-ci="${ci}" placeholder="Value" value="${esc(c.value || "")}">`) +
+        `<button type="button" class="copy small" data-xb="cond-remove" data-ri="${ri}" data-ci="${ci}" title="Remove condition">✕</button>` +
+        `</div>`).join("") +
+      `</div>` +
+      `<datalist id="xb-fields-${ri}">${fields.map((f) => `<option value="${esc(f)}">`).join("")}</datalist>` +
+      `<button type="button" class="copy small" data-xb="cond-add" data-ri="${ri}">＋ CONDITION</button>` +
+      `<div class="xb-row"><span class="xb-kw">THEN</span>` +
+      `<select data-xb="action-type" data-ri="${ri}">` +
+      `<option value="alert"${alert ? " selected" : ""}>Show a cockpit alert</option>` +
+      `<option value="objective"${alert ? "" : " selected"}>Suggest an objective</option>` +
+      `</select>` +
+      (alert
+        ? `<select data-xb="action-level" data-ri="${ri}">` +
+          ["info", "warn", "critical"].map((l) => `<option value="${l}"${rule.action.level === l ? " selected" : ""}>${l.toUpperCase()}</option>`).join("") +
+          `</select>`
+        : `<input type="text" data-xb="action-category" data-ri="${ri}" placeholder="Category (optional)" value="${esc(rule.action.category || "")}">`) +
+      `</div>` +
+      `<div class="xb-row xb-msgrow">` +
+      (alert
+        ? `<input type="text" data-xb="action-text" data-ri="${ri}" maxlength="500" placeholder="Alert text — {FieldName} inserts a value from the event" value="${esc(rule.action.text || "")}">`
+        : `<input type="text" data-xb="action-title" data-ri="${ri}" maxlength="240" placeholder="Objective title — {FieldName} inserts a value from the event" value="${esc(rule.action.title || "")}">`) +
+      `</div>` +
+      (alert
+        ? `<label class="check xb-voice"><input type="checkbox" data-xb="action-voice" data-ri="${ri}"${rule.action.voice ? " checked" : ""}> Also speak it (voice callout)</label>`
+        : "") +
+      (fields.length
+        ? `<div class="xb-chips dim">Insert: ${fields.map((f) => `<button type="button" class="chip" data-xb="chip" data-ri="${ri}" data-field="${esc(f)}">{${esc(f)}}</button>`).join(" ")}</div>`
+        : "");
+    wrap.appendChild(block);
+  });
+}
+
+function xbHandleClick(target) {
+  const kind = target.dataset.xb;
+  const ri = Number(target.dataset.ri);
+  const rule = xbModel?.rules?.[ri];
+  if (!kind) return false;
+  if (kind === "rule-remove") { xbModel.rules.splice(ri, 1); xbRenderRules(); }
+  else if (kind === "cond-add") { rule.conditions.push({ field: "", op: "eq", value: "" }); xbRenderRules(); }
+  else if (kind === "cond-remove") { rule.conditions.splice(Number(target.dataset.ci), 1); xbRenderRules(); }
+  else if (kind === "chip") {
+    const input = $("xb-rules").querySelector(
+      `[data-xb="${rule.action.type === "alert" ? "action-text" : "action-title"}"][data-ri="${ri}"]`);
+    if (input) {
+      input.value += `{${target.dataset.field}}`;
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+      input.focus();
+    }
+  } else return false;
+  return true;
+}
+
+function xbHandleInput(target) {
+  const kind = target.dataset.xb;
+  const ri = Number(target.dataset.ri);
+  const rule = xbModel?.rules?.[ri];
+  if (!kind || !rule) return;
+  const ci = Number(target.dataset.ci);
+  if (kind === "event") {
+    if (target.value === "__custom__") { rule.event = ""; rule.customEvent = ""; }
+    else rule.event = target.value;
+    xbRenderRules();
+  } else if (kind === "custom-event") { rule.customEvent = target.value; rule.event = ""; }
+  else if (kind === "cond-field") rule.conditions[ci].field = target.value.trim();
+  else if (kind === "cond-op") {
+    rule.conditions[ci].op = target.value;
+    xbRenderRules();  // value input appears/disappears
+  } else if (kind === "cond-value") rule.conditions[ci].value = target.value;
+  else if (kind === "action-type") { rule.action.type = target.value; xbRenderRules(); }
+  else if (kind === "action-level") rule.action.level = target.value;
+  else if (kind === "action-text") rule.action.text = target.value;
+  else if (kind === "action-title") rule.action.title = target.value;
+  else if (kind === "action-category") rule.action.category = target.value;
+  else if (kind === "action-voice") rule.action.voice = target.checked;
+}
+
+// "50" → 50, "true" → true — journal values are typed, string-compare fails.
+function xbCoerce(text) {
+  const value = String(text).trim();
+  if (value === "true") return true;
+  if (value === "false") return false;
+  if (value !== "" && !isNaN(Number(value))) return Number(value);
+  return value;
+}
+
+function xbCollect() {
+  const name = $("xb-name").value.trim();
+  const id = xbModel.editingId || xbSlug(name);
+  if (!name) throw new Error("Give the extension a name.");
+  if (!id) throw new Error("The name must contain at least two letters or digits.");
+  const rules = [];
+  const permissions = new Set(["read:journal"]);
+  for (const rule of xbModel.rules) {
+    const event = rule.event || rule.customEvent.trim();
+    if (!event) throw new Error("Every rule needs an event.");
+    const when = {};
+    for (const c of rule.conditions) {
+      if (!c.field) throw new Error("Conditions need a field name.");
+      if (c.op === "exists") when[c.field] = { exists: true };
+      else if (c.op === "absent") when[c.field] = { exists: false };
+      else if (c.op === "in") when[c.field] = { in: c.value.split(",").map((v) => xbCoerce(v)).filter((v) => v !== "") };
+      else if (c.op === "min" || c.op === "max") {
+        const n = Number(c.value);
+        if (isNaN(n)) throw new Error(`"${c.field}" needs a numeric value for ${c.op === "min" ? "at least" : "at most"}.`);
+        when[c.field] = { [c.op]: n };
+      } else when[c.field] = { eq: xbCoerce(c.value) };
+    }
+    const action = { type: rule.action.type };
+    if (rule.action.type === "alert") {
+      if (!rule.action.text.trim()) throw new Error("Alert rules need alert text.");
+      action.text = rule.action.text.trim();
+      action.level = rule.action.level || "info";
+      action.code = "user." + id;
+      if (rule.action.voice) action.say = action.text;
+      permissions.add("emit:alert");
+    } else {
+      if (!rule.action.title.trim()) throw new Error("Objective rules need a title.");
+      action.title = rule.action.title.trim();
+      if (rule.action.category.trim()) action.category = rule.action.category.trim();
+      permissions.add("emit:objective");
+    }
+    const entry = { event, action };
+    if (Object.keys(when).length) entry.when = when;
+    rules.push(entry);
+  }
+  if (!rules.length) throw new Error("Add at least one rule.");
+  return { id, api_version: 1, name, version: "1", permissions: [...permissions], rules };
+}
+
+async function xbTest() {
+  const status = $("xb-status");
+  const results = $("xb-results");
+  const button = $("xb-test");
+  let manifest;
+  try { manifest = xbCollect(); } catch (err) { status.textContent = String(err.message || err); return; }
+  button.disabled = true;
+  status.textContent = "Replaying your recent history…";
+  results.classList.add("hidden");
+  try {
+    const headers = { "Content-Type": "application/json" };
+    const commanderId = profileStorageId();
+    if (commanderId) headers["X-Frameshift-Commander"] = commanderId;
+    const resp = await fetch("/api/extensions/test", {
+      method: "POST", headers, body: JSON.stringify({ manifest }),
+    });
+    const data = await resp.json();
+    if (!resp.ok) throw new Error(data.error || "Test failed");
+    const matches = data.matches || [];
+    status.textContent = matches.length
+      ? `Scanned your last ${data.scanned} events — this would have fired ${matches.length} time${matches.length === 1 ? "" : "s"}${data.truncated ? " (showing the first " + matches.length + ")" : ""}:`
+      : `Scanned your last ${data.scanned} events — no matches. The rule may still be right (nothing recent qualified); loosen a condition to see it fire.`;
+    results.innerHTML = matches.slice(0, 12).map((m) =>
+      `<div class="xb-hit"><span class="mono dim">${esc((m.timestamp || "").replace("T", " ").replace("Z", ""))}</span>` +
+      `<span class="mono">${esc(m.event_type || "?")}</span>` +
+      `<span class="xb-hit-msg ${m.action.level === "critical" ? "bad" : m.action.level === "warn" ? "warn" : ""}">` +
+      `${m.action.type === "objective" ? "◎ " : "⚠ "}${esc(m.action.text || m.action.title || "")}</span></div>`).join("");
+    results.classList.toggle("hidden", !matches.length);
+  } catch (err) {
+    status.textContent = String(err.message || err);
+  } finally {
+    button.disabled = false;
+  }
+}
+
+async function xbSave(ev) {
+  ev.preventDefault();
+  if (xbBusy) return;
+  const status = $("xb-status");
+  let manifest;
+  try { manifest = xbCollect(); } catch (err) { status.textContent = String(err.message || err); return; }
+  xbBusy = true;
+  $("xb-save").disabled = true;
+  status.textContent = "Saving…";
+  try {
+    const resp = await fetch("/api/extensions/save", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ manifest }),
+    });
+    const data = await resp.json();
+    if (!resp.ok) throw new Error(data.error || "Save failed");
+    xbClose();
+    await loadLocalServices();
+    $("xb-status").textContent = "";
+  } catch (err) {
+    status.textContent = String(err.message || err);
+  } finally {
+    xbBusy = false;
+    $("xb-save").disabled = false;
+  }
+}
+
+// Load an installed declarative pack back into the builder form.
+function xbRuleFromManifest(rule) {
+  const conditions = [];
+  for (const [field, expected] of Object.entries(rule.when || {})) {
+    if (expected && typeof expected === "object") {
+      if ("exists" in expected) conditions.push({ field, op: expected.exists ? "exists" : "absent", value: "" });
+      if ("eq" in expected) conditions.push({ field, op: "eq", value: String(expected.eq) });
+      if ("in" in expected) conditions.push({ field, op: "in", value: (expected.in || []).join(", ") });
+      if ("min" in expected) conditions.push({ field, op: "min", value: String(expected.min) });
+      if ("max" in expected) conditions.push({ field, op: "max", value: String(expected.max) });
+    } else {
+      conditions.push({ field, op: "eq", value: String(expected) });
+    }
+  }
+  const action = rule.action || {};
+  const known = XB_EVENTS.some((e) => e.id === rule.event);
+  return {
+    event: known ? rule.event : "",
+    customEvent: known ? "" : rule.event,
+    conditions,
+    action: {
+      type: action.type === "objective" ? "objective" : "alert",
+      level: action.level || "info",
+      text: action.text || "",
+      voice: !!action.say,
+      title: action.title || "",
+      category: action.category || "",
+    },
+  };
+}
+
+async function xbEditPack(extensionId) {
+  try {
+    const resp = await fetch(`/api/extensions/${encodeURIComponent(extensionId)}/manifest`);
+    const data = await resp.json();
+    if (!resp.ok) throw new Error(data.error || "Extension could not be loaded");
+    const manifest = data.manifest || {};
+    xbOpen({
+      name: manifest.name || extensionId,
+      editingId: manifest.id || extensionId,
+      rules: (manifest.rules || []).map(xbRuleFromManifest),
+    });
+    $("ext-builder-card").scrollIntoView({ behavior: "smooth", block: "nearest" });
+  } catch (err) {
+    $("extensions-status").textContent = String(err.message || err);
+  }
+}
+
+async function xbDeletePack(extensionId, button) {
+  if (!confirm(`Remove the extension "${extensionId}"? Its alerts and suggestions stop immediately.`)) return;
+  if (button) button.disabled = true;
+  try {
+    const resp = await fetch(`/api/extensions/${encodeURIComponent(extensionId)}`, { method: "DELETE" });
+    const data = await resp.json();
+    if (!resp.ok) throw new Error(data.error || "Extension could not be removed");
+    await loadLocalServices();
+  } catch (err) {
+    $("extensions-status").textContent = String(err.message || err);
+  } finally {
+    if (button) button.disabled = false;
+  }
+}
+
+function initExtensionBuilder() {
+  const templates = $("xb-templates");
+  if (!templates) return;
+  templates.innerHTML = XB_TEMPLATES.map((t, i) =>
+    `<button type="button" class="xb-template" data-template="${i}">${esc(t.label)}</button>`).join("") +
+    `<button type="button" class="xb-template xb-blank" data-template="blank">Blank</button>`;
+  templates.addEventListener("click", (ev) => {
+    const chip = ev.target.closest("[data-template]");
+    if (!chip) return;
+    const t = XB_TEMPLATES[Number(chip.dataset.template)];
+    xbOpen(t ? { name: t.name, rules: [t.rule] } : null);
+  });
+  $("xb-new").addEventListener("click", () => xbOpen(null));
+  $("xb-cancel").addEventListener("click", xbClose);
+  $("xb-add-rule").addEventListener("click", () => { xbModel.rules.push(xbBlankRule()); xbRenderRules(); });
+  $("xb-test").addEventListener("click", xbTest);
+  $("xb-form").addEventListener("submit", xbSave);
+  $("xb-name").addEventListener("input", xbSyncId);
+  $("xb-rules").addEventListener("click", (ev) => {
+    const target = ev.target.closest("[data-xb]");
+    if (target && xbHandleClick(target)) ev.preventDefault();
+  });
+  $("xb-rules").addEventListener("input", (ev) => {
+    const target = ev.target.closest("[data-xb]");
+    if (target) xbHandleInput(target);
+  });
+}
+
 async function changeExtensionApproval(extensionId, action, button) {
-  if (!extensionId || !["approve", "revoke"].includes(action)) return;
+  if (!extensionId) return;
+  if (action === "edit") { xbEditPack(extensionId); return; }
+  if (action === "delete") { xbDeletePack(extensionId, button); return; }
+  if (!["approve", "revoke"].includes(action)) return;
   if (action === "approve" && !window.confirm(
     "Approve this exact process extension build? It can execute local code and is not an operating-system sandbox. Any code change will require approval again."
   )) return;
@@ -7186,6 +7630,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   $("pairing-refresh").addEventListener("click", () => refreshSecurityPanel(true));
   $("diagnostics-bundle").addEventListener("click", downloadSupportBundle);
   $("extensions-reload").addEventListener("click", reloadExtensions);
+  initExtensionBuilder();
   $("extensions-status").addEventListener("click", (event) => {
     const button = event.target.closest("[data-extension-action]");
     if (button) changeExtensionApproval(

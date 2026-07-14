@@ -1721,6 +1721,61 @@ def create_app(state, security_manager=None):
         except ExtensionError as exc:
             return error_response(exc, 400)
 
+    @app.get("/api/extensions/<extension_id>/manifest")
+    def api_extension_manifest(extension_id):
+        from .extensions import EXTENSIONS, ExtensionError
+
+        try:
+            return jsonify({"manifest": EXTENSIONS.read_manifest(extension_id)})
+        except ExtensionError as exc:
+            return error_response(exc, 404)
+
+    @app.post("/api/extensions/save")
+    def api_extension_save():
+        from .extensions import EXTENSIONS, ExtensionError
+
+        body = request.get_json(silent=True) or {}
+        try:
+            snapshot = EXTENSIONS.save_declarative(body.get("manifest"))
+        except ExtensionError as exc:
+            return error_response(exc, 400)
+        return jsonify(snapshot)
+
+    @app.delete("/api/extensions/<extension_id>")
+    def api_extension_delete(extension_id):
+        from .extensions import EXTENSIONS, ExtensionError
+
+        try:
+            return jsonify(EXTENSIONS.delete_pack(extension_id))
+        except ExtensionError as exc:
+            return error_response(exc, 400)
+
+    @app.post("/api/extensions/test")
+    def api_extension_test():
+        from .extensions import ExtensionError, dry_run_rules
+
+        body = request.get_json(silent=True) or {}
+        sample = body.get("sample_event")
+        if isinstance(sample, dict):
+            events = [{"event": sample, "timestamp": sample.get("timestamp")}]
+        else:
+            from .eventledger import EventLedger
+
+            snap = request_state_snapshot()
+            commander_id = (
+                str(request.headers.get("X-Frameshift-Commander") or "").strip()
+                or snap.get("commander_id")
+            )
+            if not commander_id:
+                return error_response(UserFacingError(
+                    "No commander history yet — test runs need a loaded profile "
+                    "or a sample event."), 400)
+            events = EventLedger(commander_id).query(limit=1000, ascending=False)
+        try:
+            return jsonify(dry_run_rules(body.get("manifest"), events))
+        except ExtensionError as exc:
+            return error_response(exc, 400)
+
     @app.get("/api/settings")
     def api_settings_get():
         import sys

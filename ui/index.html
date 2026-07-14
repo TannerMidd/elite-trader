@@ -1391,6 +1391,33 @@
       <div id="extensions-status" class="extensions-status"></div>
     </section>
 
+    <section class="card" id="ext-builder-card" data-arr="extbuilder">
+      <div class="card-head">
+        <div class="label">EXTENSION BUILDER <span class="exp-tag" title="New in this build — freshly commissioned and still being tuned. Everything it saves is a plain local pack you can remove anytime.">◇ EXPERIMENTAL</span> <span class="dim">your own alerts &amp; objective suggestions from game events · no code needed</span></div>
+        <button id="xb-new" class="primary small" type="button">＋ NEW EXTENSION</button>
+      </div>
+      <div class="dim xb-primer">Pick a game event, add conditions if you want them, and choose what happens —
+        a cockpit alert (with optional voice callout) or a suggested objective. Test it against your own recent
+        flight history before saving; a saved extension starts working immediately and appears in the pack list above.
+        Start from a template:</div>
+      <div id="xb-templates" class="xb-templates"></div>
+      <form id="xb-form" class="xb-form hidden" autocomplete="off">
+        <div class="xb-toprow">
+          <label>Name <input id="xb-name" type="text" maxlength="80" placeholder="e.g. Big bounty callout" required></label>
+          <div class="xb-idline dim">saves as <span id="xb-id" class="mono">—</span></div>
+        </div>
+        <div id="xb-rules"></div>
+        <button type="button" id="xb-add-rule" class="copy small">＋ ADD ANOTHER RULE</button>
+        <div class="xb-actions">
+          <button type="button" id="xb-test" class="copy">▶ TEST AGAINST MY HISTORY</button>
+          <button type="submit" id="xb-save" class="primary">SAVE &amp; ACTIVATE</button>
+          <button type="button" id="xb-cancel" class="copy">CANCEL</button>
+        </div>
+        <div id="xb-status" class="dim"></div>
+        <div id="xb-results" class="xb-results hidden"></div>
+      </form>
+    </section>
+
     <section class="card" data-arr="marketdb">
       <div class="card-head">
         <div class="label">MARKET DATABASE <span class="dim">powers trade routes, commodity search &amp; mining · seeded from the Spansh dump, then live-updated by EDDN</span></div>

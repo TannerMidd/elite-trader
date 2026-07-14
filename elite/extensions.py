@@ -20,6 +20,7 @@ import hashlib
 import os
 import re
 import secrets
+import shutil
 import subprocess
 import threading
 from concurrent.futures import ThreadPoolExecutor
@@ -182,32 +183,7 @@ def _normalise_condition(index: int, path: Any, expected: Any) -> None:
             raise ExtensionError(f"rule {index} condition {operator} must be a number")
 
 
-def _normalise_extension(
-    directory: Path, raw: dict[str, Any], approvals: dict[str, str] | None = None
-) -> Extension:
-    extension_id = str(raw.get("id") or "").strip().lower()
-    if not _ID_RE.fullmatch(extension_id):
-        raise ExtensionError("id must be 2-64 lowercase letters, digits, dots, dashes or underscores")
-    if directory.name.lower() != extension_id:
-        raise ExtensionError("directory name must match manifest id")
-    try:
-        api_version = int(raw.get("api_version", 0))
-    except (TypeError, ValueError) as exc:
-        raise ExtensionError("api_version must be an integer") from exc
-    if api_version != API_VERSION:
-        raise ExtensionError(f"unsupported api_version {api_version}; expected {API_VERSION}")
-
-    permission_values = raw.get("permissions") or []
-    if not isinstance(permission_values, list) or len(permission_values) > len(_ALLOWED_PERMISSIONS):
-        raise ExtensionError("permissions must be a bounded list")
-    if not all(isinstance(value, str) for value in permission_values):
-        raise ExtensionError("permissions must contain strings")
-    permissions = frozenset(permission_values)
-    unknown = permissions - _ALLOWED_PERMISSIONS
-    if unknown:
-        raise ExtensionError("unknown permissions: " + ", ".join(sorted(unknown)))
-
-    rules_value = raw.get("rules") or []
+def _validate_rules(rules_value: Any) -> list[dict[str, Any]]:
     if not isinstance(rules_value, list) or len(rules_value) > _MAX_RULES:
         raise ExtensionError(f"rules must be a list of at most {_MAX_RULES} items")
     rules: list[dict[str, Any]] = []
@@ -234,6 +210,35 @@ def _normalise_extension(
         ):
             raise ExtensionError(f"rule {index + 1} action values must be scalar")
         rules.append(rule)
+    return rules
+
+
+def _normalise_extension(
+    directory: Path, raw: dict[str, Any], approvals: dict[str, str] | None = None
+) -> Extension:
+    extension_id = str(raw.get("id") or "").strip().lower()
+    if not _ID_RE.fullmatch(extension_id):
+        raise ExtensionError("id must be 2-64 lowercase letters, digits, dots, dashes or underscores")
+    if directory.name.lower() != extension_id:
+        raise ExtensionError("directory name must match manifest id")
+    try:
+        api_version = int(raw.get("api_version", 0))
+    except (TypeError, ValueError) as exc:
+        raise ExtensionError("api_version must be an integer") from exc
+    if api_version != API_VERSION:
+        raise ExtensionError(f"unsupported api_version {api_version}; expected {API_VERSION}")
+
+    permission_values = raw.get("permissions") or []
+    if not isinstance(permission_values, list) or len(permission_values) > len(_ALLOWED_PERMISSIONS):
+        raise ExtensionError("permissions must be a bounded list")
+    if not all(isinstance(value, str) for value in permission_values):
+        raise ExtensionError("permissions must contain strings")
+    permissions = frozenset(permission_values)
+    unknown = permissions - _ALLOWED_PERMISSIONS
+    if unknown:
+        raise ExtensionError("unknown permissions: " + ", ".join(sorted(unknown)))
+
+    rules = _validate_rules(raw.get("rules") or [])
 
     command_value = raw.get("command") or []
     if isinstance(command_value, str):
@@ -372,6 +377,49 @@ def _write_approvals(path: Path, approvals: dict[str, str]) -> None:
         raise ExtensionError("extension approval could not be saved") from exc
 
 
+def dry_run_rules(raw: Any, events: list[dict[str, Any]], limit: int = 50) -> dict[str, Any]:
+    """Run a manifest's rules over decoded ledger events without installing it.
+
+    Powers the builder's "test against my own history" preview: the caller
+    passes recent ledger rows and gets back each event that would have fired,
+    with the action rendered exactly as the live host would render it."""
+    if not isinstance(raw, dict):
+        raise ExtensionError("manifest must be a JSON object")
+    rules = _validate_rules(raw.get("rules") or [])
+    preview = Extension(
+        extension_id=str(raw.get("id") or "preview"),
+        name="preview", version="0", path=EXTENSIONS_DIR,
+        permissions=frozenset({"read:journal", "emit:alert", "emit:objective"}),
+        rules=tuple(rules),
+    )
+    matches: list[dict[str, Any]] = []
+    scanned = 0
+    for row in events:
+        event = row.get("event") if isinstance(row.get("event"), dict) else row
+        if not isinstance(event, dict):
+            continue
+        scanned += 1
+        for index, rule in enumerate(rules):
+            try:
+                if not _matches(rule, event):
+                    continue
+                action = _action_for(preview, rule["action"], event)
+            except (KeyError, TypeError, ValueError):
+                continue
+            if not action:
+                continue
+            matches.append({
+                "rule": index + 1,
+                "timestamp": row.get("timestamp") or event.get("timestamp"),
+                "event_type": event.get("event"),
+                "system": row.get("system"),
+                "action": action,
+            })
+            if len(matches) >= limit:
+                return {"scanned": scanned, "matches": matches, "truncated": True}
+    return {"scanned": scanned, "matches": matches, "truncated": False}
+
+
 def _process_approval_valid(extension: Extension, approvals_path: Path) -> bool:
     """Re-hash immediately before execution so edits cannot reuse approval."""
     if not extension.command or not extension.approved:
@@ -432,6 +480,8 @@ class ExtensionManager:
                 "approved": ext.approved if ext.command else True,
                 "approval_required": bool(ext.command and not ext.approved),
                 "fingerprint": ext.fingerprint[:16] if ext.command else None,
+                "editable": not ext.command,
+                "rules": len(ext.rules),
             } for ext in loaded],
             errors=errors,
         )
@@ -474,6 +524,84 @@ class ExtensionManager:
             approvals.pop(wanted, None)
             _write_approvals(self.approvals_path, approvals)
             return self.reload()
+
+    def _pack_dir(self, extension_id: str) -> Path:
+        """Resolve a pack directory, confined to the extensions root."""
+        wanted = str(extension_id or "").strip().lower()
+        if not _ID_RE.fullmatch(wanted):
+            raise ExtensionError(
+                "id must be 2-64 lowercase letters, digits, dots, dashes or underscores")
+        self.root.mkdir(parents=True, exist_ok=True)
+        root = os.path.normpath(os.path.abspath(str(self.root)))
+        candidate = os.path.normpath(os.path.abspath(str(self.root / wanted)))
+        if os.name == "nt":
+            root = root.casefold()
+            candidate = candidate.casefold()
+        if candidate.startswith(root + os.sep):
+            return Path(candidate)
+        raise ExtensionError("invalid extension id")
+
+    def read_manifest(self, extension_id: str) -> dict[str, Any]:
+        """The raw manifest of an installed pack (for the in-app builder)."""
+        directory = self._pack_dir(extension_id)
+        manifest = directory / "manifest.json"
+        if not manifest.is_file():
+            raise ExtensionError("extension is not installed")
+        return _safe_read_manifest(manifest)
+
+    def save_declarative(self, raw: Any) -> dict[str, Any]:
+        """Create or update a declarative pack written by the in-app builder.
+
+        The manifest is staged and pushed through the exact same validation an
+        installed pack gets before it replaces anything on disk. Process
+        adapters can never be created or overwritten this way."""
+        if not isinstance(raw, dict):
+            raise ExtensionError("manifest must be a JSON object")
+        if raw.get("command"):
+            raise ExtensionError("the in-app builder only creates declarative packs")
+        raw = {key: value for key, value in raw.items() if key != "command"}
+        raw["id"] = str(raw.get("id") or "").strip().lower()
+        raw.setdefault("api_version", API_VERSION)
+        raw.setdefault("created_with", "frameshift-builder")
+        directory = self._pack_dir(raw["id"])
+        payload = json.dumps(raw, indent=2, ensure_ascii=False, sort_keys=False) + "\n"
+        if len(payload.encode("utf-8")) > _MAX_MANIFEST_BYTES:
+            raise ExtensionError("manifest is too large")
+
+        existing = directory / "manifest.json"
+        if existing.is_file() and _safe_read_manifest(existing).get("command"):
+            raise ExtensionError(
+                "a process-adapter pack already uses this id — choose another name")
+
+        staging_parent = self.root / f".staging-{secrets.token_hex(6)}"
+        staging_dir = staging_parent / raw["id"]
+        try:
+            staging_dir.mkdir(parents=True)
+            staged = staging_dir / "manifest.json"
+            staged.write_text(payload, encoding="utf-8", newline="\n")
+            _normalise_extension(staging_dir, _safe_read_manifest(staged))
+            directory.mkdir(parents=True, exist_ok=True)
+            os.replace(staged, directory / "manifest.json")
+        except OSError as exc:
+            raise ExtensionError("extension could not be saved") from exc
+        finally:
+            shutil.rmtree(staging_parent, ignore_errors=True)
+        return self.reload()
+
+    def delete_pack(self, extension_id: str) -> dict[str, Any]:
+        """Remove a declarative pack. Process adapters are refused: something
+        executable should be removed by the person who copied it in."""
+        directory = self._pack_dir(extension_id)
+        manifest = directory / "manifest.json"
+        if not manifest.is_file():
+            raise ExtensionError("extension is not installed")
+        if _safe_read_manifest(manifest).get("command"):
+            raise ExtensionError("process-adapter packs must be removed from disk manually")
+        try:
+            shutil.rmtree(directory)
+        except OSError as exc:
+            raise ExtensionError("extension could not be removed") from exc
+        return self.reload()
 
     def snapshot(self) -> dict[str, Any]:
         with self._lock:

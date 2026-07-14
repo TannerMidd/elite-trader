@@ -2743,7 +2743,94 @@ body.panel-mode #fp-boot.hidden { display: none; }
 }
 .extension-row > div { display: grid; gap: 2px; min-width: 0; }
 .extension-row span { font-size: .82rem; overflow-wrap: anywhere; }
+.extension-tools { display: flex; gap: 6px; flex: none; }
 .service-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+
+/* Extension builder: a guided WHEN / IF / THEN form. */
+/* Test-article stencil: amber like the startup sequence's HOLDING state,
+   dashed like a taped-on placard — clearly provisional, still cockpit. */
+.exp-tag {
+  display: inline-block;
+  font-family: var(--mono);
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 2.5px;
+  color: var(--warn, #e6b84c);
+  border: 1px dashed rgba(230, 184, 76, .55);
+  background: rgba(230, 184, 76, .07);
+  padding: 2px 8px 1px;
+  border-radius: 3px;
+  vertical-align: 1px;
+  text-transform: uppercase;
+  white-space: nowrap;
+  cursor: help;
+}
+body.panel-mode .exp-tag { font-size: 10px; padding: 3px 10px 2px; }
+.xb-primer { max-width: 78ch; }
+.xb-templates { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+.xb-template {
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  color: var(--text);
+  padding: 7px 14px;
+  border-radius: 5px;
+  cursor: pointer;
+  font-size: .85rem;
+}
+.xb-template:hover { border-color: var(--orange); color: var(--orange-soft); }
+.xb-template.xb-blank { color: var(--dim); border-style: dashed; }
+.xb-form { margin-top: 14px; display: grid; gap: 12px; }
+.xb-toprow { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 8px 16px; }
+.xb-toprow label { display: flex; flex-direction: column; gap: 3px; font-size: 11px; color: var(--dim); letter-spacing: 1px; }
+.xb-toprow input {
+  width: 260px; background: var(--panel-2); border: 1px solid var(--border);
+  color: var(--text); border-radius: 5px; padding: 6px 8px; font-size: 14px;
+}
+.xb-toprow input:focus { outline: none; border-color: var(--orange); box-shadow: var(--focus-ring); }
+.xb-idline { font-size: .8rem; padding-bottom: 8px; }
+.xb-rule {
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--orange);
+  background: var(--panel-2);
+  padding: 10px 12px;
+  display: grid;
+  gap: 8px;
+  margin-top: 4px;
+}
+.xb-rule-head { display: flex; justify-content: space-between; align-items: center; }
+.xb-rule-n { font-family: var(--mono); font-size: .72rem; letter-spacing: 2px; color: var(--orange); }
+.xb-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.xb-kw {
+  font-family: var(--mono); font-size: .72rem; letter-spacing: 2px;
+  color: var(--dim); flex: none; width: 42px; text-align: right;
+}
+.xb-row select, .xb-row input[type="text"] {
+  background: var(--panel); border: 1px solid var(--border); color: var(--text);
+  border-radius: 5px; padding: 6px 8px; font-size: 13.5px; min-width: 0;
+}
+.xb-row select:focus, .xb-row input:focus { outline: none; border-color: var(--orange); box-shadow: var(--focus-ring); }
+.xb-msgrow input { flex: 1; min-width: 220px; }
+.xb-cond input[data-xb="cond-field"] { width: 170px; font-family: var(--mono); font-size: 12.5px; }
+.xb-cond input[data-xb="cond-value"] { width: 170px; }
+.xb-conditions { display: grid; gap: 6px; }
+.xb-voice { margin-left: 50px; font-size: 13px; color: var(--dim); display: flex; align-items: center; gap: 6px; }
+.xb-chips { margin-left: 50px; font-size: .78rem; display: flex; flex-wrap: wrap; gap: 5px; align-items: center; }
+.xb-chips .chip {
+  background: var(--panel); border: 1px solid var(--border); color: var(--dim);
+  font-family: var(--mono); font-size: .72rem; padding: 2px 7px; border-radius: 3px; cursor: pointer;
+}
+.xb-chips .chip:hover { color: var(--orange-soft); border-color: var(--orange); }
+.xb-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.xb-results { display: grid; gap: 5px; margin-top: 4px; }
+.xb-hit {
+  display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: baseline;
+  border: 1px dashed var(--border); padding: 6px 10px; font-size: .84rem;
+}
+.xb-hit .mono { font-family: var(--mono); font-size: .76rem; }
+.xb-hit-msg.warn { color: var(--orange-soft); }
+.xb-hit-msg.bad { color: var(--bad); }
+body.panel-mode .xb-row select, body.panel-mode .xb-row input[type="text"] { min-height: 44px; font-size: 15px; }
+body.panel-mode .xb-template { min-height: 46px; font-size: 14px; }
 .extensions-status { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
 .paired-device {
   display: flex;

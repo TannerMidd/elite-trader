@@ -1,40 +1,37 @@
-## Frameshift v2.1.7 — search anywhere, keep your settings
+## Frameshift v2.2.0 — build your own extensions
 
-Four small changes aimed at the things you do every session.
+### Extension builder (experimental)
 
-### Your search settings survive a restart
+Settings has a new card: **EXTENSION BUILDER**. Make Frameshift react to the
+game exactly the way you want — no code, no files, no manual.
 
-Every search form now remembers what you set — commodity search (mode,
-radius, min units, large pad, even the last commodity), the mining advisor,
-outfitting, the neutron plotter, road to riches, exobiology filters. Set
-"radius 100, large pad" once and it's still there tomorrow. Trade-route
-settings already persisted; now everything does.
+- **Pick a game event** from a plain-English list (hyperspace jump, bounty
+  awarded, mission completed, body scanned, cargo sold…) or type any journal
+  event name.
+- **Add conditions** with simple operators: *equals*, *is one of*,
+  *is at least*, *is at most*, *is present / absent*. `Reward is at least
+  100000` reads the way you'd say it.
+- **Choose what happens** — a cockpit alert (INFO / WARN / CRITICAL, with an
+  optional voice callout) or a suggested objective for Mission Control.
+  Write `{FieldName}` in the message and the live value drops in:
+  `Bounty {Reward} cr — {Target}`.
+- **Test before you save.** One button replays your rule against your own
+  last 1,000 journal events and shows exactly what would have fired, message
+  rendered. No guessing whether a condition is right.
+- **Templates** get you started in one tap: big-bounty callout, low fuel
+  after jump, mission payout tracker, first-discovery follow-up.
 
-### Search near any system, not just where you're parked
+Saved extensions activate immediately, appear in the pack list with edit and
+remove buttons, and are ordinary declarative packs on your own disk —
+reviewable, portable, and unable to execute code by design. The builder can
+never create or overwrite a process-adapter pack.
 
-Commodity search, the mining advisor and outfitting search each gained a
-**Near** box (with the same autocomplete as every other system field). Leave
-it empty and searches work exactly as before — around you. Type a system and
-you're shopping around your carrier's destination, tomorrow's expedition
-stop, or home before you fly back. Distances in the results are measured
-from that system.
+### Also in this release
 
-The Near box deliberately resets on restart: a search silently pinned to
-last week's system would be worse than retyping it.
+- The extensions and diagnostics readouts on the Settings page now load
+  independently, so the pack list no longer waits behind the (slower)
+  database health probe.
 
-### Every result table sorts
+### Upgrade notes
 
-The mining advisor and outfitting results now sort by any column header,
-just like commodity search — closest buyer first, best price first, station
-A-Z. First click means the useful direction; click again to reverse.
-
-### Copy from any result row
-
-Commodity, mining and outfitting rows now have a ⧉ copy button next to ◎
-plot — grab the system name for wing chat or the in-game galaxy map without
-autoplotting.
-
-### Fixes
-
-- The commodity SEARCH button now disables while a search is running, so a
-  double-tap can't fire the search twice.
+- Update normally from any 2.x release. No database changes.
