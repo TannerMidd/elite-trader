@@ -1458,8 +1458,17 @@ function renderPanel() {
 
   $("fp-cmdr").textContent = state.commander ? "CMDR " + state.commander : "";
   $("fp-system").textContent = state.system || "—";
-  $("fp-station").textContent = stationTxt;
+  const stationChip = $("fp-station");
+  stationChip.textContent = state.docked ? "◆ " + stationTxt : stationTxt;
+  stationChip.classList.toggle("inspace", !state.docked);
   $("fp-dest").textContent = state.destination ? `DESTINATION · ${state.destination}` : "";
+  // Named ship first; otherwise the model, mending raw journal type strings
+  // like "Diamondbackxl" / "Cobramkiii" into readable labels.
+  const shipName = (state.ship_name || "").trim();
+  const shipType = (state.ship_type || "").trim()
+    .replace(/mk\s*(i+v?|vi*)$/i, (m, n) => " MK " + n.toUpperCase())
+    .replace(/xl$/i, " XL");
+  $("fp-ship-type").textContent = (shipName || shipType).toUpperCase();
 
   const fuelPct = state.fuel_capacity > 0 ? Math.min(100, (state.fuel_main / state.fuel_capacity) * 100) : 0;
   const fuelTxt = state.fuel_main != null
@@ -1469,17 +1478,34 @@ function renderPanel() {
   fill.style.background = fuelPct < 25 ? "var(--bad)" : "";
   $("fp-fuel").textContent = fuelTxt;
 
+  // Fuel note: jumps of fuel at recent burn + whether there's a scoop here/next
+  const nav = state.nav || {};
+  const ahead = nav.ahead || [];
+  const fuelNotes = [];
+  if (nav.jumps_of_fuel != null) fuelNotes.push(`≈${nav.jumps_of_fuel} JUMPS AT CURRENT BURN`);
+  const scoop = ahead[0]?.scoopable ? "SCOOPABLE STAR IN SYSTEM"
+    : ahead[1]?.scoopable ? "NEXT STAR IS SCOOPABLE" : "";
+  $("fp-fuel-note").innerHTML =
+    `<span>${fuelNotes.join(" · ")}</span>` + (scoop ? `<span class="good">${scoop}</span>` : "");
+
   const cargoPct = state.cargo_capacity > 0 ? Math.min(100, (state.cargo_tons / state.cargo_capacity) * 100) : 0;
   const cargoTxt = state.cargo_tons != null
     ? `${Math.round(state.cargo_tons)} / ${state.cargo_capacity || 0} t` : "—";
   $("fp-cargo-fill").style.width = cargoPct + "%";
   $("fp-cargo").textContent = cargoTxt;
+  $("fp-cargo-note").textContent = state.cargo_capacity > 0
+    ? (state.cargo_tons ? `${Math.max(0, state.cargo_capacity - Math.round(state.cargo_tons))} T FREE`
+      : "HOLD EMPTY · READY FOR LOOP CARGO")
+    : "";
 
   // Persistent status strip (visible on every panel page)
   $("fp-strip-system").textContent = state.system || "—";
   $("fp-strip-station").textContent = stationTxt;
   $("fp-strip-dest-block").classList.toggle("hidden", !state.destination);
-  $("fp-strip-dest").textContent = state.destination || "";
+  // Jumps left on the in-game route: nav.ahead includes the current system.
+  const jumpsLeft = ahead.length > 1 ? ahead.length - 1 : 0;
+  $("fp-strip-dest").textContent = state.destination
+    ? state.destination + (jumpsLeft ? ` · ${jumpsLeft} JUMP${jumpsLeft === 1 ? "" : "S"}` : "") : "";
   const stripFuel = $("fp-strip-fuel-fill");
   stripFuel.style.width = fuelPct + "%";
   stripFuel.style.background = fuelPct < 25 ? "var(--bad)" : "";
@@ -1495,18 +1521,34 @@ function renderPanel() {
   if (risky) {
     $("fp-risk").classList.toggle("crit", atRisk >= state.rebuy * 50);
     $("fp-risk-text").textContent =
-      `≈${shortCr(atRisk)} cr unsold — ${Math.round(atRisk / state.rebuy)}× your rebuy. Bank it soon.`;
+      `≈${shortCr(atRisk)} cr unbanked · ${(atRisk / state.rebuy).toFixed(1).replace(/\.0$/, "")}× your rebuy`;
   }
 
-  $("fp-credits").textContent = state.credits != null ? shortCr(state.credits) + " cr" : "—";
+  $("fp-credits").textContent = state.credits != null ? shortCr(state.credits) : "—";
   const legal = $("fp-legal");
-  legal.textContent = state.legal_state || "—";
+  legal.textContent = (state.legal_state || "—").toUpperCase();
   legal.style.color = state.legal_state && state.legal_state !== "Clean" ? "var(--bad)" : "var(--good)";
   renderRebuy($("fp-rebuy"));
+  // The telemetry tiles drop the "cr" unit — the column head says it once.
+  $("fp-rebuy").textContent = $("fp-rebuy").textContent.replace(/ cr$/, "");
+  const covers = $("fp-rebuy-covers");
+  if (state.rebuy > 0 && state.credits != null) {
+    const ratio = state.credits / state.rebuy;
+    covers.textContent = `COVERS ${ratio >= 10 ? Math.round(ratio) : ratio.toFixed(1)}×`;
+    covers.className = "fp-tel-sub" + (ratio < 1 ? " bad" : ratio < 2 ? " thin" : "");
+  } else {
+    covers.textContent = "";
+  }
   const ex = state.exploration || {};
-  $("fp-explo").textContent = ex.count ? "≈" + shortCr(ex.total) + " cr" : "—";
+  $("fp-explo").textContent = ex.count ? "≈" + shortCr(ex.total) : "—";
+  $("fp-explo-label").textContent = "EXPLO DATA" + (ex.count ? ` · ${ex.count} BODIES` : "");
   const vault = (state.bio || {}).vault || {};
-  $("fp-bio").textContent = (vault.items || []).length ? "≈" + shortCr(vault.total) + " cr" : "—";
+  const species = (vault.items || []).length;
+  $("fp-bio").textContent = species ? "≈" + shortCr(vault.total) : "—";
+  $("fp-bio-label").textContent = "BIO SAMPLES" + (species ? ` · ${species} SPECIES` : "");
+  $("fp-telemetry-at").textContent =
+    "TELEMETRY " + new Date().toLocaleTimeString([], { hour12: false });
+  $("fp-link").textContent = "LINK STABLE";
 
   const jumps = (state.jump_history || []).slice(0, 4);
   const jl = $("fp-jumps");
@@ -7426,7 +7468,11 @@ async function poll() {
       securityLocked = false;
       render();
     }
-  } catch (e) { /* server briefly unreachable; keep last render */ }
+  } catch (e) {
+    // Server briefly unreachable; keep the last render but say so quietly.
+    const link = $("fp-link");
+    if (link) link.textContent = "LINK · RETRYING";
+  }
   setTimeout(poll, 1500);
 }
 

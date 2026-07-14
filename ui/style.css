@@ -1213,6 +1213,8 @@ body.panel-mode button { font-family: inherit; }
 
 /* Left nav rail: icon + label per page, voice/exit pinned at the bottom */
 #fp-nav { display: none; }
+/* Tactical rail: accent header bar, hazard-striped active page with a cut
+   corner and ▸ marker. All tints derive from --accent-rgb so themes hold. */
 body.panel-mode #fp-nav {
   display: flex;
   flex-direction: column;
@@ -1222,17 +1224,24 @@ body.panel-mode #fp-nav {
   bottom: 0;
   width: 100px;
   z-index: 30;
-  background: linear-gradient(180deg, #0b0c0f, #08090b);
-  border-right: 1px solid #1d222b;
-  padding: 12px 0 10px;
+  background: linear-gradient(180deg, #0a0a0c, #060708);
+  border-right: 1px solid rgba(var(--accent-rgb), .22);
+  padding: 0 0 10px;
+}
+body.panel-mode #fp-nav::before {
+  content: "";
+  display: block;
+  flex: none;
+  height: 3px;
+  background: linear-gradient(90deg, var(--orange), rgba(var(--accent-rgb), .25));
 }
 .fp-nav-brand {
   display: flex;
   justify-content: center;
-  padding: 2px 0 12px;
-  border-bottom: 1px solid #1d222b;
+  padding: 13px 0 12px;
+  border-bottom: 1px solid rgba(var(--accent-rgb), .13);
 }
-.fp-nav-brand img { display: block; filter: drop-shadow(0 0 8px rgba(var(--accent-rgb), .35)); }
+.fp-nav-brand img { display: block; filter: drop-shadow(0 0 10px rgba(var(--accent-rgb), .5)); }
 .fp-nav-pages {
   flex: 1;
   display: flex;
@@ -1243,34 +1252,46 @@ body.panel-mode #fp-nav {
   overflow-x: hidden;
 }
 .fp-nav-pages button {
+  position: relative;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 5px;
-  padding: 11px 4px 9px;
-  min-height: 64px;
+  justify-content: center;
+  gap: 4px;
+  padding: 9px 4px 8px;
+  min-height: 56px;
   background: transparent;
   border: none;
   border-left: 3px solid transparent;
-  border-right: 3px solid transparent;
   color: var(--dim);
   cursor: pointer;
   touch-action: manipulation;
   transition: color .15s, background .15s, border-color .15s;
 }
-.fp-nav-pages .fp-ni { font-size: 19px; line-height: 1; font-variant-emoji: text; }
+.fp-nav-pages .fp-ni { font-size: 18px; line-height: 1; font-variant-emoji: text; }
 .fp-nav-pages .fp-nl { font-size: 9px; letter-spacing: 2.5px; font-weight: 700; }
 .fp-nav-pages button.active {
   color: var(--orange);
   border-left-color: var(--orange);
-  background: linear-gradient(90deg, rgba(var(--accent-rgb), .12), transparent);
+  background: repeating-linear-gradient(-45deg,
+    rgba(var(--accent-rgb), .16) 0 4px, rgba(var(--accent-rgb), .05) 4px 8px);
+  clip-path: polygon(0 0, 100% 0, 100% calc(100% - 10px), calc(100% - 10px) 100%, 0 100%);
 }
-.fp-nav-pages button.active .fp-ni { text-shadow: 0 0 12px rgba(var(--accent-rgb), .6); }
+.fp-nav-pages button.active .fp-ni { text-shadow: 0 0 14px rgba(var(--accent-rgb), .8); }
+.fp-nav-pages button.active::after {
+  content: "▸";
+  position: absolute;
+  right: 5px;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 9px;
+  color: var(--orange-soft);
+}
 .fp-nav-pages button:active { background: rgba(var(--accent-rgb), .08); }
 /* Short tablets: compress the rail so the primary pages stay visible (buttons
    keep a >=44px touch target; without this the DB entry clips off-screen). */
 @media (max-height: 820px) {
-  /* Eleven pages × 48px plus the brand/foot sections; shorter rails scroll. */
+  /* Twelve pages × 48px plus the brand/foot sections; shorter rails scroll. */
   .fp-nav-pages button { min-height: 48px; padding: 6px 4px 5px; gap: 2px; }
   .fp-nav-pages .fp-ni { font-size: 16px; }
 }
@@ -1283,14 +1304,14 @@ body.panel-mode #fp-nav {
   flex-direction: column;
   gap: 6px;
   padding: 10px 10px 4px;
-  border-top: 1px solid #1d222b;
+  border-top: 1px solid rgba(var(--accent-rgb), .13);
 }
 .fp-railbtn {
   font-variant-emoji: text;
   min-height: 46px;
-  background: #101114;
-  border: 1px solid var(--border);
-  border-radius: 6px;
+  background: #0e0d0e;
+  border: 1px solid rgba(var(--accent-rgb), .22);
+  clip-path: polygon(6px 0, 100% 0, 100% calc(100% - 6px), calc(100% - 6px) 100%, 0 100%, 0 6px);
   color: var(--dim);
   font-size: 10px;
   letter-spacing: 1.5px;
@@ -1313,18 +1334,30 @@ body.panel-mode #fp-strip {
   position: sticky;
   top: 0;
   z-index: 25;
-  padding: 10px 20px;
-  border-bottom: 2px solid var(--orange);
-  background: linear-gradient(180deg, #0c0d10, #08090b);
+  padding: 10px 20px 12px;
+  border-bottom: 1px solid rgba(var(--accent-rgb), .22);
+  background: linear-gradient(180deg, rgba(var(--accent-rgb), .05), rgba(0, 0, 0, 0) 70%), linear-gradient(180deg, #0c0b0a, #08090a);
   overflow: hidden;
+}
+/* Split accent baseline: solid for the first third, dimmed after — the sweep
+   rides along it. */
+body.panel-mode #fp-strip::after {
+  content: "";
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: linear-gradient(90deg, var(--orange) 0 34%, rgba(var(--accent-rgb), .25) 34% 100%);
 }
 .fps-sweep {
   position: absolute;
-  bottom: -2px;
+  bottom: 0;
   left: 0;
+  z-index: 1;
   height: 2px;
   width: 22%;
-  background: linear-gradient(90deg, transparent, rgba(var(--accent-soft-rgb), .85), transparent);
+  background: linear-gradient(90deg, transparent, rgba(var(--accent-soft-rgb), .9), transparent);
   animation: fp-sweep 5s var(--ease) infinite;
 }
 .fps-block { display: flex; flex-direction: column; gap: 1px; min-width: 110px; max-width: calc(240px * var(--strip-scale)); overflow: hidden; }
@@ -1340,6 +1373,7 @@ body.panel-mode #fp-strip {
   text-overflow: ellipsis;
   text-shadow: 0 0 12px rgba(var(--accent-rgb), .45);
 }
+.fps-system::before { content: "◆ "; }
 .fps-value { font-size: calc(13px * var(--strip-scale)); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .fps-dest { color: var(--orange-soft); }
 .fps-right {
@@ -1353,8 +1387,22 @@ body.panel-mode #fp-strip {
 .fps-mini { display: flex; flex-direction: column; gap: 3px; width: calc(92px * var(--strip-scale)); }
 .fps-mini-head { display: flex; justify-content: space-between; font-size: calc(8px * var(--strip-scale)); letter-spacing: 2px; color: var(--dim); font-weight: 600; }
 .fps-mini-head span:last-child { font-family: "IBM Plex Mono", Consolas, monospace; letter-spacing: 0; color: var(--text); }
-.fps-minibar { height: calc(5px * var(--strip-scale)); background: var(--panel); border: 1px solid var(--border); border-radius: 999px; overflow: hidden; }
-.fps-minibar > div { height: 100%; width: 0; background: var(--orange); border-radius: 999px; transition: width .6s var(--ease), background-color .3s; }
+.fps-minibar {
+  position: relative;
+  height: calc(6px * var(--strip-scale));
+  background: #15120e;
+  border: 1px solid rgba(var(--accent-rgb), .22);
+  overflow: hidden;
+}
+.fps-minibar > div { height: 100%; width: 0; background: var(--orange); transition: width .6s var(--ease), background-color .3s; }
+/* Segment ticks over the fill, matching the page bars */
+.fps-minibar::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: repeating-linear-gradient(90deg, transparent 0 8px, #08090a 8px 10px);
+  pointer-events: none;
+}
 .fps-clock { font-family: "IBM Plex Mono", Consolas, monospace; font-size: calc(15px * var(--strip-scale)); letter-spacing: 1px; }
 .fps-cmdr { font-size: calc(11px * var(--strip-scale)); letter-spacing: 2px; color: var(--dim); }
 
@@ -2191,140 +2239,294 @@ section.card.arr-drag {
 .fp-grid {
   display: grid;
   grid-template-columns: 1.15fr .85fr;
-  gap: 16px;
+  gap: 14px;
   align-items: start;
 }
-.fp-main { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.fp-main { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
 .fp-side { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
 
+/* Shared tactical surfaces: accent-tinted dark panels with cut corners.
+   All tints ride --accent-rgb so the color themes carry through. */
+.fp-cmd, .fp-gauge, .fp-unbanked, .fp-loop {
+  background: linear-gradient(180deg, rgba(var(--accent-rgb), .05), rgba(0, 0, 0, 0) 60%), linear-gradient(180deg, #0d0c0b, #090909);
+  border: 1px solid rgba(var(--accent-rgb), .13);
+}
+
 .fp-btn {
-  background: var(--orange);
+  background: repeating-linear-gradient(45deg, rgba(0, 0, 0, .1) 0 5px, transparent 5px 10px), var(--orange);
   color: #14100a;
   border: none;
-  border-radius: 6px;
+  clip-path: polygon(10px 0, 100% 0, 100% calc(100% - 10px), calc(100% - 10px) 100%, 0 100%, 0 10px);
   font-family: inherit;
   font-weight: 800;
   letter-spacing: 2px;
   font-size: clamp(14px, 1.6vw, 15px);
   padding: 0 26px;
-  min-height: 52px;
+  min-height: 54px;
   cursor: pointer;
   touch-action: manipulation;
   transition: background .15s, transform .08s;
 }
 .fp-btn:active { background: var(--orange-soft); transform: scale(.97); }
 
-.fp-system-label { color: var(--dim); letter-spacing: 4px; font-size: clamp(10px, 1.2vw, 11px); font-weight: 600; }
+/* Command header: the system readout, dock state, tracked route and the
+   ship's money telemetry in one corner-cut block. */
+.fp-cmd {
+  position: relative;
+  display: flex;
+  align-items: flex-start;
+  gap: 28px;
+  padding: 18px 24px;
+  clip-path: polygon(18px 0, 100% 0, 100% calc(100% - 18px), calc(100% - 18px) 100%, 0 100%, 0 18px);
+}
+.fp-cmd::before, .fp-cmd::after {
+  content: "";
+  position: absolute;
+  height: 2px;
+  width: 120px;
+  background: var(--orange);
+}
+.fp-cmd::before { top: 0; left: 18px; }
+.fp-cmd::after { bottom: 0; right: 18px; }
+.fp-cmd-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 8px; }
+
+.fp-system-label {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  color: var(--dim);
+  letter-spacing: 4px;
+  font-size: clamp(10px, 1.2vw, 11px);
+  font-weight: 600;
+}
+.fp-blink {
+  flex: none;
+  width: 7px;
+  height: 7px;
+  background: var(--orange);
+  transform: rotate(45deg);
+  animation: fp-blink 2.4s ease-in-out infinite;
+}
+@keyframes fp-blink { 0%, 100% { opacity: 1; } 50% { opacity: .25; } }
+.fp-fade-rule { flex: 1; height: 1px; background: linear-gradient(90deg, rgba(var(--accent-rgb), .5), transparent); }
 .fp-system {
   font-family: "IBM Plex Mono", Consolas, monospace;
   color: var(--orange);
-  font-size: clamp(28px, 4.6vw, 44px);
+  font-size: clamp(30px, 4.8vw, 48px);
   font-weight: 600;
   line-height: 1.05;
-  text-shadow: 0 0 24px rgba(var(--accent-rgb), .5);
+  text-shadow: 0 0 28px rgba(var(--accent-rgb), .55);
   overflow-wrap: anywhere;
 }
 body.crt-fx .fp-system { animation: fp-flicker 9s linear infinite; }
-.fp-sub { font-size: clamp(15px, 2vw, 19px); letter-spacing: 1px; }
+.fp-chiprow { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+.fp-dockchip {
+  background: rgba(111, 191, 115, .1);
+  border: 1px solid rgba(111, 191, 115, .5);
+  color: var(--good);
+  font-size: clamp(11px, 1.4vw, 12px);
+  letter-spacing: 2.5px;
+  font-weight: 700;
+  padding: 5px 12px 4px;
+  clip-path: polygon(8px 0, 100% 0, 100% calc(100% - 8px), calc(100% - 8px) 100%, 0 100%, 0 8px);
+  white-space: nowrap;
+}
+.fp-dockchip.inspace {
+  background: rgba(var(--accent-soft-rgb), .08);
+  border-color: rgba(var(--accent-soft-rgb), .45);
+  color: var(--orange-soft);
+}
+.fp-sub { font-size: clamp(15px, 2vw, 17px); letter-spacing: 1px; }
 .fp-dest { color: var(--orange-soft); font-size: clamp(13px, 1.7vw, 15px); }
 .fp-status { color: var(--dim); font-size: clamp(13px, 1.7vw, 15px); min-height: 1.4em; }
 .fp-status.error { color: var(--bad); }
 
-/* Tracked-route progress under the destination line */
-.fp-routeline { display: flex; align-items: center; gap: 10px; margin-top: 2px; }
-.fp-routebar { flex: 1; height: 4px; background: var(--panel); border-radius: 999px; overflow: hidden; }
-.fp-routebar > div { height: 100%; width: 0; background: var(--orange); border-radius: 999px; transition: width .6s var(--ease); }
-.fp-routetext { font-family: "IBM Plex Mono", Consolas, monospace; font-size: 12px; color: var(--dim); white-space: nowrap; }
-
-.fp-gauges { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
-.fp-gauge {
-  position: relative;
-  background: linear-gradient(180deg, #101114, #0a0b0e);
-  border: 1px solid #1f242c;
-  border-radius: 6px;
-  padding: 14px 16px;
-}
-.fp-label { color: var(--dim); letter-spacing: 3px; font-size: clamp(10px, 1.2vw, 11px); font-weight: 600; margin-bottom: 8px; }
-.fp-bar {
-  height: 16px;
-  background: #111318;
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  overflow: hidden;
-}
-.fp-bar > div { height: 100%; background: linear-gradient(90deg, #b35000, var(--orange)); border-radius: 999px; transition: width .6s var(--ease), background-color .3s; }
-.fp-gvalue {
-  margin-top: 8px;
+/* Ship telemetry column (right side of the command header) */
+.fp-telemetry {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 8px;
   font-family: "IBM Plex Mono", Consolas, monospace;
+}
+.fp-tel-head { font-size: 11px; color: var(--dim); letter-spacing: 2px; white-space: nowrap; }
+.fp-tel-head span:not(:empty)::before { content: " · "; }
+.fp-tel-tiles { display: flex; gap: 20px; }
+.fp-tel { display: flex; flex-direction: column; align-items: flex-end; min-width: 0; }
+.fp-tel .fp-label { margin-bottom: 0; }
+.fp-tel .fp-value {
   font-size: clamp(17px, 2vw, 21px);
   font-weight: 600;
   white-space: nowrap;
   font-variant-numeric: tabular-nums;
 }
+.fp-tel .fp-value.orange { color: var(--orange); }
+.fp-tel-sub { font-size: 10px; letter-spacing: 1px; color: var(--good); white-space: nowrap; min-height: 1.2em; }
+.fp-tel-sub.thin { color: var(--orange-soft); }
+.fp-tel-sub.bad { color: var(--bad); }
 
-.fp-tiles { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
-.fp-tiles-row { grid-template-columns: repeat(5, 1fr); }
+/* Tracked-route progress inside the command header */
+.fp-routeline { display: flex; align-items: center; gap: 12px; margin-top: 4px; }
+.fp-route-label { font-size: 10px; letter-spacing: 2.5px; color: var(--orange-soft); font-weight: 700; white-space: nowrap; }
+.fp-routebar {
+  position: relative;
+  flex: 1;
+  height: 8px;
+  background: #0a0a09;
+  border: 1px solid rgba(var(--accent-rgb), .22);
+  overflow: hidden;
+}
+.fp-routebar > div {
+  height: 100%;
+  width: 0;
+  background: linear-gradient(90deg, rgba(var(--accent-rgb), .55), var(--orange));
+  box-shadow: 0 0 10px rgba(var(--accent-rgb), .5);
+  transition: width .6s var(--ease);
+}
+.fp-routebar::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: repeating-linear-gradient(90deg, transparent 0 12px, #090909 12px 14px);
+  pointer-events: none;
+}
+.fp-routetext { font-family: "IBM Plex Mono", Consolas, monospace; font-size: 11px; color: var(--dim); white-space: nowrap; }
 
-/* Unsold scans + samples worth many rebuys: nudge to bank them */
+/* Fuel / cargo readouts: segmented bars with a status note underneath */
+.fp-gauge {
+  position: relative;
+  padding: 15px 18px;
+  clip-path: polygon(12px 0, 100% 0, 100% calc(100% - 12px), calc(100% - 12px) 100%, 0 100%, 0 12px);
+}
+.fp-gauge-head { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 9px; }
+.fp-gauge-head .fp-label { margin-bottom: 0; }
+.fp-label { color: var(--dim); letter-spacing: 3px; font-size: clamp(10px, 1.2vw, 11px); font-weight: 600; margin-bottom: 8px; }
+.fp-bar {
+  position: relative;
+  height: 18px;
+  background: #0a0a09;
+  border: 1px solid rgba(var(--accent-rgb), .22);
+  overflow: hidden;
+}
+.fp-bar > div {
+  height: 100%;
+  background: linear-gradient(90deg, rgba(var(--accent-rgb), .55), var(--orange));
+  box-shadow: 0 0 14px rgba(var(--accent-rgb), .5);
+  transition: width .6s var(--ease), background-color .3s;
+}
+.fp-bar::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: repeating-linear-gradient(90deg, transparent 0 14px, #090909 14px 17px);
+  pointer-events: none;
+}
+.fp-gvalue {
+  font-family: "IBM Plex Mono", Consolas, monospace;
+  font-size: clamp(17px, 2vw, 19px);
+  font-weight: 600;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.fp-gauge-note {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 6px;
+  font-family: "IBM Plex Mono", Consolas, monospace;
+  font-size: 10px;
+  color: var(--dim);
+  min-height: 1.2em;
+}
+.fp-gauge-note .good { color: var(--good); }
+
+/* Unbanked exploration + bio value */
+.fp-unbanked {
+  padding: 14px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  clip-path: polygon(12px 0, 100% 0, 100% calc(100% - 12px), calc(100% - 12px) 100%, 0 100%, 0 12px);
+}
+.fp-unbanked .fp-rule { margin: 0 0 2px; }
+.fp-unb-row { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; }
+.fp-unb-row .fp-label { margin-bottom: 0; }
+.fp-unb-row .fp-value {
+  font-family: "IBM Plex Mono", Consolas, monospace;
+  font-size: clamp(17px, 2vw, 19px);
+  font-weight: 600;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.fp-unb-row .fp-value.orange { color: var(--orange); }
+
+/* Unsold scans + samples worth many rebuys: full-width hazard banner */
 .fp-risk {
   display: flex;
   align-items: baseline;
-  gap: 6px;
+  gap: 10px;
   flex-wrap: wrap;
-  padding: 10px 14px;
-  background: rgba(var(--accent-rgb), .07);
+  padding: 11px 16px;
+  background: repeating-linear-gradient(-45deg, rgba(var(--accent-soft-rgb), .05) 0 6px, transparent 6px 12px), rgba(var(--accent-rgb), .05);
   border: 1px solid rgba(var(--accent-soft-rgb), .55);
-  border-left: 3px solid var(--orange-soft);
-  border-radius: 6px;
-  font-size: 12px;
-  letter-spacing: 1.5px;
-  font-weight: 700;
-  color: var(--orange-soft);
+  border-left: 4px solid var(--orange-soft);
+  clip-path: polygon(0 0, 100% 0, 100% calc(100% - 10px), calc(100% - 10px) 100%, 0 100%);
   cursor: help;
 }
-.fp-risk.crit { border-color: var(--bad); border-left-color: var(--bad); color: #ff9d9d; background: rgba(224, 93, 93, .08); }
-.fp-risk span { font-family: "IBM Plex Mono", Consolas, monospace; letter-spacing: 0; font-weight: 600; color: var(--text); }
+.fp-risk-tag { font-size: 12px; letter-spacing: 2px; font-weight: 700; color: var(--orange-soft); white-space: nowrap; }
+.fp-risk.crit { border-color: var(--bad); border-left-color: var(--bad); background: rgba(224, 93, 93, .08); }
+.fp-risk.crit .fp-risk-tag { color: #ff9d9d; }
+#fp-risk-text { font-family: "IBM Plex Mono", Consolas, monospace; font-size: 13px; font-weight: 600; color: var(--text); }
+.fp-risk-hint { font-size: 11px; letter-spacing: 1px; color: var(--dim); margin-left: auto; white-space: nowrap; }
+
+/* Session tiles: one joined readout strip with cut outer corners */
+.fp-tiles { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.fp-tiles-row {
+  grid-template-columns: repeat(5, 1fr);
+  gap: 2px;
+  background: rgba(var(--accent-rgb), .13);
+  border: 1px solid rgba(var(--accent-rgb), .13);
+  clip-path: polygon(14px 0, 100% 0, 100% calc(100% - 14px), calc(100% - 14px) 100%, 0 100%, 0 14px);
+}
 .fp-tile {
-  background: linear-gradient(180deg, #101114, #0a0b0e);
-  border: 1px solid #1f242c;
-  border-radius: 6px;
-  padding: 12px 16px;
+  background: #0c0b0a;
+  border: none;
+  padding: 13px 18px;
   min-width: 0;
 }
-.fp-tile-wide { grid-column: span 2; display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
-.fp-tile-wide .fp-label { margin-bottom: 0; }
 .fp-tile .fp-value {
-  margin-top: 4px;
+  margin-top: 5px;
   font-family: "IBM Plex Mono", Consolas, monospace;
-  font-size: clamp(19px, 2.2vw, 26px);
+  font-size: clamp(19px, 2.2vw, 22px);
   font-weight: 600;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
   font-variant-numeric: tabular-nums;
 }
-.fp-tile-wide .fp-value { margin-top: 0; }
 .fp-tile .fp-value.orange { color: var(--orange); }
+.fp-tile .fp-label { margin-bottom: 0; }
 
 /* Section rules: label + fading hairline */
 .fp-rule { display: flex; align-items: center; gap: 14px; margin-top: 4px; }
 .fp-rule > span { font-size: 10px; letter-spacing: 3px; color: var(--orange); font-weight: 700; white-space: nowrap; }
 .fp-rule > i { flex: 1; height: 1px; background: linear-gradient(90deg, rgba(var(--accent-rgb), .4), transparent); }
 
-.fp-jumps { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 12px; }
+.fp-jumps { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 10px; }
 .fp-jump {
   display: flex;
   justify-content: space-between;
   align-items: center;
   gap: 10px;
-  background: linear-gradient(180deg, #101114, #0a0b0e);
-  border: 1px solid #1f242c;
+  background: linear-gradient(90deg, rgba(var(--accent-rgb), .06), transparent 40%), #0d0c0a;
+  border: 1px solid rgba(var(--accent-rgb), .13);
   border-left: 3px solid var(--orange);
-  border-radius: 6px;
+  clip-path: polygon(0 0, 100% 0, 100% calc(100% - 10px), calc(100% - 10px) 100%, 0 100%);
   color: var(--text);
   font-size: clamp(14px, 1.7vw, 15px);
   padding: 12px 16px;
-  min-height: 58px;
+  min-height: 56px;
   cursor: pointer;
   text-align: left;
   touch-action: manipulation;
@@ -2333,41 +2535,57 @@ body.crt-fx .fp-system { animation: fp-flicker 9s linear infinite; }
 .fp-jump:active { border-color: var(--orange); background: var(--panel-2); transform: scale(.985); }
 .fp-jump-dist { font-family: "IBM Plex Mono", Consolas, monospace; color: var(--dim); font-size: 12px; white-space: nowrap; }
 
-.fp-plotrow { display: flex; gap: 10px; margin-top: 8px; }
+.fp-plotrow { display: flex; gap: 10px; }
 .fp-plotrow input {
   flex: 1;
   min-width: 0;
-  background: #111318;
-  border: 1px solid var(--border);
-  border-radius: 6px;
+  background: #0d0c0a;
+  border: 1px solid rgba(var(--accent-rgb), .22);
+  clip-path: polygon(10px 0, 100% 0, 100% calc(100% - 10px), calc(100% - 10px) 100%, 0 100%, 0 10px);
   color: var(--text);
   font-family: inherit;
-  font-size: 16px;
+  font-size: 15px;
+  letter-spacing: 1px;
   padding: 0 16px;
-  min-height: 52px;
+  min-height: 54px;
 }
 .fp-plotrow input:focus { outline: none; border-color: var(--orange); box-shadow: var(--focus-ring); }
 
 /* panel quick wins (F8) */
 .fp-bestloop-btn {
   width: 100%;
-  background: rgba(var(--accent-rgb), .1);
+  background: rgba(var(--accent-rgb), .08);
   color: var(--orange);
   border: 1px solid var(--orange);
-  min-height: 54px;
-  letter-spacing: 3px;
+  clip-path: polygon(14px 0, 100% 0, 100% calc(100% - 14px), calc(100% - 14px) 100%, 0 100%, 0 14px);
+  min-height: 56px;
+  letter-spacing: 4px;
   animation: fp-pulse-glow 3.2s ease-in-out infinite;
 }
-.fp-bestloop-btn:active { background: #241a0c; }
+.fp-bestloop-btn:active { background: rgba(var(--accent-rgb), .2); }
 .fp-bestloop-btn:disabled { color: var(--dim); border-color: var(--border); background: var(--panel); animation: none; }
 .fp-loops { display: flex; flex-direction: column; gap: 10px; }
 .fp-loop {
-  background: linear-gradient(180deg, #101114, #0a0b0e);
-  border: 1px solid #1f242c;
   border-left: 3px solid var(--orange);
-  border-radius: 6px;
   padding: 12px 14px;
 }
+
+/* Footer status line */
+.fp-footer {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding-top: 8px;
+  border-top: 1px solid rgba(var(--accent-rgb), .1);
+  font-family: "IBM Plex Mono", Consolas, monospace;
+  font-size: 10px;
+  letter-spacing: 2px;
+  color: var(--dim);
+}
+.fp-foot-accent { color: var(--orange); }
+.fp-foot-sep { color: rgba(var(--accent-rgb), .35); }
+.fp-foot-right { margin-left: auto; white-space: nowrap; }
 
 /* Scanline + vignette overlays: pure decoration, never intercept touches.
    Gated behind the per-device "CRT effects" setting — the drifting scanlines
