@@ -1089,6 +1089,17 @@ function plotButton(system) {
   return btn;
 }
 
+function copySystemButton(system) {
+  const btn = document.createElement("button");
+  btn.className = "copy";
+  btn.type = "button";
+  btn.title = "Copy system name";
+  btn.setAttribute("aria-label", btn.title);
+  btn.textContent = "⧉";
+  btn.addEventListener("click", () => copyText(system, btn));
+  return btn;
+}
+
 /* One-tap "best loop from here" for the flight panel (F8). Uses the trade-route
    endpoint's built-in defaults (100 ly radius, ship jump range, current system). */
 async function findBestLoop() {
@@ -3780,6 +3791,7 @@ function attachSuggest(id, kind) {
 
 function initSuggest() {
   for (const id of ["fp-plot-input", "plot-input", "nr-to", "ss-system",
+                    "cs-near", "mn-near", "os-near",
                     "ops-objective-system", "ops-board-objective-system"]) {
     attachSuggest(id, "systems");
   }
@@ -3805,15 +3817,51 @@ function initSuggest() {
   if (reservation) reservation.setAttribute("list", "commodity-list");
 }
 
-// Last search results + the active column sort. Sorting is client-side over
-// the cached results, so clicking headers never refires the search; the
-// chosen sort survives new searches until the page reloads.
+/* ---------- sortable result tables ----------
+   Each searchable table caches its last results and re-renders from that cache
+   when a header is clicked, so sorting never refires the search; the chosen
+   sort survives new searches until the page reloads. A column map supplies the
+   sort value and the direction a first click should mean ("better first" for
+   prices/units/freshness, "closest first" for distances). */
+
+function sortedRows(results, columns, sort, mode) {
+  if (!sort || !columns[sort.key]) return results;
+  const { value } = columns[sort.key];
+  return [...results].sort((a, b) => {
+    const va = value(a, mode);
+    const vb = value(b, mode);
+    if (va < vb) return -sort.dir;
+    if (va > vb) return sort.dir;
+    return 0;
+  });
+}
+
+function updateSortIndicators(table, sort) {
+  for (const th of table.querySelectorAll("th.sortable")) {
+    th.classList.toggle("sort-asc", !!sort && th.dataset.sort === sort.key && sort.dir === 1);
+    th.classList.toggle("sort-desc", !!sort && th.dataset.sort === sort.key && sort.dir === -1);
+  }
+}
+
+// Clicking the active column reverses it; a new column starts at its natural
+// direction (fallbackDir when the column defers, e.g. price depends on mode).
+function bumpSort(sort, key, columns, fallbackDir = 1) {
+  if (sort && sort.key === key) return { key, dir: -sort.dir };
+  const firstDir = columns[key].firstDir != null ? columns[key].firstDir : fallbackDir;
+  return { key, dir: firstDir };
+}
+
+function sortableHeaders(tableId, onSort) {
+  $(tableId).querySelector("thead").addEventListener("click", (ev) => {
+    const th = ev.target.closest("th.sortable");
+    if (th && th.dataset.sort) onSort(th.dataset.sort);
+  });
+}
+
 let csResults = null;   // { results, mode }
 let csSort = null;      // { key, dir }  (dir: 1 ascending, -1 descending)
 
-// Per-column sort value + the direction a first click should mean. "Better
-// first" for prices/units/freshness, "closest first" for distances. A null
-// price dir resolves per mode: buying wants cheap first, selling rich first.
+// A null price dir resolves per mode: buying wants cheap first, selling rich first.
 const CS_SORT_COLUMNS = {
   station: { value: (r) => (r.station || "").toLowerCase(), firstDir: 1 },
   system: { value: (r) => (r.system || "").toLowerCase(), firstDir: 1 },
@@ -3832,25 +3880,10 @@ function renderCommodityRows() {
   const tbody = table.querySelector("tbody");
   if (!csResults) return;
   const { results, mode } = csResults;
-
-  let rows = results;
-  if (csSort && CS_SORT_COLUMNS[csSort.key]) {
-    const { value } = CS_SORT_COLUMNS[csSort.key];
-    rows = [...results].sort((a, b) => {
-      const va = value(a, mode);
-      const vb = value(b, mode);
-      if (va < vb) return -csSort.dir;
-      if (va > vb) return csSort.dir;
-      return 0;
-    });
-  }
-  for (const th of table.querySelectorAll("th.sortable")) {
-    th.classList.toggle("sort-asc", !!csSort && th.dataset.sort === csSort.key && csSort.dir === 1);
-    th.classList.toggle("sort-desc", !!csSort && th.dataset.sort === csSort.key && csSort.dir === -1);
-  }
+  updateSortIndicators(table, csSort);
 
   tbody.innerHTML = "";
-  for (const r of rows) {
+  for (const r of sortedRows(results, CS_SORT_COLUMNS, csSort, mode)) {
     const tr = document.createElement("tr");
     const price = mode === "buy" ? r.buy_price : r.sell_price;
     const units = mode === "buy" ? r.supply : r.demand;
@@ -3863,6 +3896,7 @@ function renderCommodityRows() {
       `<td class="num">${r.dist_ls != null ? fmtNum(r.dist_ls) + " ls" : "?"}</td>` +
       `<td class="num freshness-cell">${ageText(r.updated_at)} ${confidenceHtml(r.confidence)}</td>`;
     const td = document.createElement("td");
+    td.appendChild(copySystemButton(r.system));
     td.appendChild(plotButton(r.system));
     tr.appendChild(td);
     tbody.appendChild(tr);
@@ -3870,15 +3904,8 @@ function renderCommodityRows() {
 }
 
 function sortCommodityTable(key) {
-  const column = CS_SORT_COLUMNS[key];
-  if (!column || !csResults) return;
-  if (csSort && csSort.key === key) {
-    csSort = { key, dir: -csSort.dir };
-  } else {
-    const firstDir = column.firstDir != null ? column.firstDir
-      : (csResults.mode === "buy" ? 1 : -1);
-    csSort = { key, dir: firstDir };
-  }
+  if (!CS_SORT_COLUMNS[key] || !csResults) return;
+  csSort = bumpSort(csSort, key, CS_SORT_COLUMNS, csResults.mode === "buy" ? 1 : -1);
   renderCommodityRows();
 }
 
@@ -3886,7 +3913,10 @@ async function searchCommodity(ev) {
   ev.preventDefault();
   const status = $("cs-status");
   const table = $("cs-table");
+  const go = $("cs-go");
   const mode = $("cs-mode").value;
+  const near = $("cs-near").value.trim();
+  go.disabled = true;
   status.classList.remove("error");
   status.textContent = "Searching…";
   try {
@@ -3897,31 +3927,83 @@ async function searchCommodity(ev) {
       min_units: $("cs-min").value || "1",
       large_pad: $("cs-largepad").checked ? "1" : "0",
     });
+    if (near) params.set("system", near);
     const resp = await fetch("/api/commodity-search?" + params);
     const data = await resp.json();
     if (!resp.ok) throw new Error(data.error || "Search failed");
     csResults = { results: data.results || [], mode };
     renderCommodityRows();
     table.classList.toggle("hidden", !csResults.results.length);
+    const where = near ? ` of ${near}` : "";
     status.textContent = csResults.results.length
-      ? `${csResults.results.length} station(s) ${mode === "buy" ? "selling" : "buying"} ${data.commodity} within ${$("cs-radius").value} ly. Click a column header to sort.`
-      : `Nothing ${mode === "buy" ? "selling" : "buying"} ${data.commodity || "that"} nearby with those filters — ` +
+      ? `${csResults.results.length} station(s) ${mode === "buy" ? "selling" : "buying"} ${data.commodity} within ${$("cs-radius").value} ly${where}. Click a column header to sort.`
+      : `Nothing ${mode === "buy" ? "selling" : "buying"} ${data.commodity || "that"} ${near ? "near " + near : "nearby"} with those filters — ` +
         "widen the radius, or if you're deep in the black, WHERE TO SELL YOUR DATA (Explore tab) finds the nearest civilization.";
   } catch (err) {
     table.classList.add("hidden");
     status.classList.add("error");
     status.textContent = String(err.message || err);
+  } finally {
+    go.disabled = false;
   }
 }
 
 /* ---------- mining advisor ---------- */
 
+let mnResults = null;
+let mnSort = null;
+
+const MN_SORT_COLUMNS = {
+  mineral: { value: (r) => (r.name || "").toLowerCase(), firstDir: 1 },
+  method: { value: (r) => (r.method || "").toLowerCase(), firstDir: 1 },
+  sell: { value: (r) => r.sell_price || 0, firstDir: -1 },
+  station: { value: (r) => (r.station || "").toLowerCase(), firstDir: 1 },
+  jump: { value: (r) => (r.distance != null ? Number(r.distance) : Infinity), firstDir: 1 },
+  demand: { value: (r) => r.demand || 0, firstDir: -1 },
+};
+
+function renderMiningRows() {
+  const table = $("mining-table");
+  const tbody = table.querySelector("tbody");
+  if (!mnResults) return;
+  updateSortIndicators(table, mnSort);
+  tbody.innerHTML = "";
+  for (const r of sortedRows(mnResults, MN_SORT_COLUMNS, mnSort)) {
+    const tr = document.createElement("tr");
+    tr.innerHTML =
+      `<td><b>${esc(r.name)}</b></td>` +
+      `<td><span class="mine-method mine-${esc(r.method)}">${esc(r.method)}</span></td>` +
+      `<td class="num orange">${fmtNum(r.sell_price)}</td>` +
+      `<td>${esc(r.station)}${r.large_pad ? "" : ' <span class="sub">no L pad</span>'}<div class="sub">${esc(r.system)} · ${confidenceAgeText(r.confidence?.age_s)} ${confidenceHtml(r.confidence)}</div></td>` +
+      `<td class="num">${r.distance} ly</td>` +
+      `<td class="num">${fmtNum(r.demand)}</td>`;
+    const td = document.createElement("td");
+    const hs = document.createElement("button");
+    hs.className = "plotbtn";
+    hs.type = "button";
+    hs.textContent = "◇ hotspots";
+    hs.title = "Find the nearest ring hotspots for " + r.name;
+    hs.addEventListener("click", () => showHotspots(r.name, hs, tr));
+    td.appendChild(hs);
+    td.appendChild(copySystemButton(r.system));
+    td.appendChild(plotButton(r.system));
+    tr.appendChild(td);
+    tbody.appendChild(tr);
+  }
+}
+
+function sortMiningTable(key) {
+  if (!MN_SORT_COLUMNS[key] || !mnResults) return;
+  mnSort = bumpSort(mnSort, key, MN_SORT_COLUMNS);
+  renderMiningRows();
+}
+
 async function searchMining(ev) {
   ev.preventDefault();
   const status = $("mining-status");
   const table = $("mining-table");
-  const tbody = table.querySelector("tbody");
   const go = $("mn-go");
+  const near = $("mn-near").value.trim();
   go.disabled = true;
   status.classList.remove("error");
   status.textContent = "Checking live prices…";
@@ -3932,35 +4014,17 @@ async function searchMining(ev) {
       max_price_age_days: $("mn-age").value || "30",
       large_pad: $("mn-largepad").checked ? "1" : "0",
     });
+    if (near) params.set("system", near);
     const resp = await fetch("/api/mining?" + params);
     const data = await resp.json();
     if (!resp.ok) throw new Error(data.error || "Search failed");
-    const results = data.results || [];
-    tbody.innerHTML = "";
-    for (const r of results) {
-      const tr = document.createElement("tr");
-      tr.innerHTML =
-        `<td><b>${esc(r.name)}</b></td>` +
-        `<td><span class="mine-method mine-${esc(r.method)}">${esc(r.method)}</span></td>` +
-        `<td class="num orange">${fmtNum(r.sell_price)}</td>` +
-        `<td>${esc(r.station)}${r.large_pad ? "" : ' <span class="sub">no L pad</span>'}<div class="sub">${esc(r.system)} · ${confidenceAgeText(r.confidence?.age_s)} ${confidenceHtml(r.confidence)}</div></td>` +
-        `<td class="num">${r.distance} ly</td>` +
-        `<td class="num">${fmtNum(r.demand)}</td>`;
-      const td = document.createElement("td");
-      const hs = document.createElement("button");
-      hs.className = "plotbtn";
-      hs.textContent = "◇ hotspots";
-      hs.title = "Find the nearest ring hotspots for " + r.name;
-      hs.addEventListener("click", () => showHotspots(r.name, hs, tr));
-      td.appendChild(hs);
-      td.appendChild(plotButton(r.system));
-      tr.appendChild(td);
-      tbody.appendChild(tr);
-    }
-    table.classList.toggle("hidden", !results.length);
-    status.textContent = results.length
-      ? `${results.length} mineable commodities with buyers within ${$("mn-radius").value} ly, best price first. ◇ finds where to mine each.`
-      : "Nothing mineable selling nearby with those filters — widen the radius or lower Min price. " +
+    mnResults = data.results || [];
+    renderMiningRows();
+    table.classList.toggle("hidden", !mnResults.length);
+    status.textContent = mnResults.length
+      ? `${mnResults.length} mineable commodities with buyers within ${$("mn-radius").value} ly` +
+        `${near ? " of " + near : ""}${mnSort ? "" : ", best price first"}. ◇ finds where to mine each.`
+      : `Nothing mineable selling ${near ? "near " + near : "nearby"} with those filters — widen the radius or lower Min price. ` +
         "(Deep in the black? There are no buyers out here — see WHERE TO SELL YOUR DATA on the Explore tab.)";
   } catch (err) {
     table.classList.add("hidden");
@@ -4265,39 +4329,66 @@ async function planNeutron(ev) {
 
 /* ---------- outfitting & shipyard search ---------- */
 
+let osResults = null;
+let osSort = null;
+
+const OS_SORT_COLUMNS = {
+  station: { value: (r) => (r.station || "").toLowerCase(), firstDir: 1 },
+  system: { value: (r) => (r.system || "").toLowerCase(), firstDir: 1 },
+  jump: { value: (r) => (r.distance != null ? Number(r.distance) : Infinity), firstDir: 1 },
+  dist_ls: { value: (r) => (r.dist_ls != null ? Number(r.dist_ls) : Infinity), firstDir: 1 },
+  pad: { value: (r) => (r.large_pad ? 0 : 1), firstDir: 1 },
+};
+
+function renderStationRows() {
+  const table = $("os-table");
+  const tbody = table.querySelector("tbody");
+  if (!osResults) return;
+  updateSortIndicators(table, osSort);
+  tbody.innerHTML = "";
+  for (const r of sortedRows(osResults, OS_SORT_COLUMNS, osSort)) {
+    const tr = document.createElement("tr");
+    tr.innerHTML =
+      `<td>${esc(r.station)}<div class="sub">${esc(r.type || "")}</div></td>` +
+      `<td>${esc(r.system)}</td>` +
+      `<td class="num">${r.distance} ly</td>` +
+      `<td class="num">${r.dist_ls != null ? fmtNum(Math.round(r.dist_ls)) + " ls" : "?"}</td>` +
+      `<td>${r.large_pad ? "L" : "M/S"}</td>`;
+    const td = document.createElement("td");
+    td.appendChild(copySystemButton(r.system));
+    td.appendChild(plotButton(r.system));
+    tr.appendChild(td);
+    tbody.appendChild(tr);
+  }
+}
+
+function sortStationTable(key) {
+  if (!OS_SORT_COLUMNS[key] || !osResults) return;
+  osSort = bumpSort(osSort, key, OS_SORT_COLUMNS);
+  renderStationRows();
+}
+
 async function searchStations(ev) {
   ev.preventDefault();
   const status = $("os-status");
   const table = $("os-table");
-  const tbody = table.querySelector("tbody");
   const go = $("os-go");
+  const near = $("os-near").value.trim();
   go.disabled = true;
   status.classList.remove("error");
   status.textContent = "Searching…";
   try {
     const params = new URLSearchParams({ q: $("os-query").value.trim(), type: $("os-type").value });
+    if (near) params.set("system", near);
     const resp = await fetch("/api/station-search?" + params);
     const data = await resp.json();
     if (!resp.ok) throw new Error(data.error || "Search failed");
-    const results = data.results || [];
-    status.textContent = results.length
-      ? `${results.length} nearest station(s) with "${$("os-query").value.trim()}":`
+    osResults = data.results || [];
+    status.textContent = osResults.length
+      ? `${osResults.length} station(s) with "${$("os-query").value.trim()}" nearest ${near || "you"}:`
       : "Nothing found — check the spelling (e.g. '6A Fuel Scoop', 'Python Mk II').";
-    tbody.innerHTML = "";
-    for (const r of results) {
-      const tr = document.createElement("tr");
-      tr.innerHTML =
-        `<td>${esc(r.station)}<div class="sub">${esc(r.type || "")}</div></td>` +
-        `<td>${esc(r.system)}</td>` +
-        `<td class="num">${r.distance} ly</td>` +
-        `<td class="num">${r.dist_ls != null ? fmtNum(Math.round(r.dist_ls)) + " ls" : "?"}</td>` +
-        `<td>${r.large_pad ? "L" : "M/S"}</td>`;
-      const td = document.createElement("td");
-      td.appendChild(plotButton(r.system));
-      tr.appendChild(td);
-      tbody.appendChild(tr);
-    }
-    table.classList.toggle("hidden", results.length === 0);
+    renderStationRows();
+    table.classList.toggle("hidden", osResults.length === 0);
   } catch (err) {
     status.classList.add("error");
     status.textContent = String(err.message || err);
@@ -7001,31 +7092,45 @@ document.addEventListener("DOMContentLoaded", async () => {
   };
   $("rf-mode").addEventListener("change", applyMode);
 
-  // Persist route settings across reloads; restored values win over auto-seeding.
-  const FORM_FIELDS = ["rf-mode", "rf-capital", "rf-cargo", "rf-radius", "rf-maxleg",
-    "rf-jumprange", "rf-results", "rf-hop", "rf-hops", "rf-minsupply", "rf-lsdist",
-    "rf-age", "rf-largepad"];
-  try {
-    const saved = JSON.parse(localStorage.getItem("routeForm") || "{}");
+  // Persist search settings across reloads; restored values win over
+  // auto-seeding. Returns whether anything was restored.
+  const persistForm = (formId, storageKey, fieldIds) => {
     let restored = false;
-    for (const id of FORM_FIELDS) {
-      if (!(id in saved)) continue;
-      const el = $(id);
-      if (el.type === "checkbox") el.checked = !!saved[id];
-      else el.value = saved[id];
-      restored = true;
-    }
-    if (restored) routeFormTouched = true;
-  } catch (e) { /* corrupted storage - use defaults */ }
+    try {
+      const saved = JSON.parse(localStorage.getItem(storageKey) || "{}");
+      for (const id of fieldIds) {
+        if (!(id in saved)) continue;
+        const el = $(id);
+        if (el.type === "checkbox") el.checked = !!saved[id];
+        else el.value = saved[id];
+        restored = true;
+      }
+    } catch (e) { /* corrupted storage - use defaults */ }
+    $(formId).addEventListener("input", () => {
+      const out = {};
+      for (const id of fieldIds) {
+        const el = $(id);
+        out[id] = el.type === "checkbox" ? el.checked : el.value;
+      }
+      localStorage.setItem(storageKey, JSON.stringify(out));
+    });
+    return restored;
+  };
+  if (persistForm("route-form", "routeForm", ["rf-mode", "rf-capital", "rf-cargo",
+      "rf-radius", "rf-maxleg", "rf-jumprange", "rf-results", "rf-hop", "rf-hops",
+      "rf-minsupply", "rf-lsdist", "rf-age", "rf-largepad"])) {
+    routeFormTouched = true;
+  }
   applyMode();
-  $("route-form").addEventListener("input", () => {
-    const out = {};
-    for (const id of FORM_FIELDS) {
-      const el = $(id);
-      out[id] = el.type === "checkbox" ? el.checked : el.value;
-    }
-    localStorage.setItem("routeForm", JSON.stringify(out));
-  });
+  // The "Near" overrides deliberately reset each launch: a search silently
+  // pinned to last week's system would be worse than retyping it.
+  persistForm("cs-form", "csForm", ["cs-query", "cs-mode", "cs-radius", "cs-min", "cs-largepad"]);
+  persistForm("mining-form", "miningForm", ["mn-radius", "mn-minprice", "mn-age", "mn-largepad"]);
+  persistForm("os-form", "osForm", ["os-query", "os-type"]);
+  persistForm("nr-form", "neutronForm", ["nr-to", "nr-range", "nr-eff"]);
+  persistForm("rr-form", "richesForm", ["rr-range", "rr-radius", "rr-minvalue", "rr-max", "rr-loop"]);
+  persistForm("exo-form", "exoForm", ["exo-grav", "exo-minvalue"]);
+  persistForm("sd-form", "sellDataForm", ["sd-carriers"]);
 
   $("plot-form").addEventListener("submit", (ev) => {
     ev.preventDefault();
@@ -7087,10 +7192,9 @@ document.addEventListener("DOMContentLoaded", async () => {
       button.dataset.extensionId, button.dataset.extensionAction, button);
   });
   $("cs-form").addEventListener("submit", searchCommodity);
-  $("cs-table").querySelector("thead").addEventListener("click", (ev) => {
-    const th = ev.target.closest("th.sortable");
-    if (th) sortCommodityTable(th.dataset.sort);
-  });
+  sortableHeaders("cs-table", sortCommodityTable);
+  sortableHeaders("mining-table", sortMiningTable);
+  sortableHeaders("os-table", sortStationTable);
   initSuggest();
   $("mining-form").addEventListener("submit", searchMining);
   $("os-form").addEventListener("submit", searchStations);

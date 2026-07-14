@@ -1,34 +1,40 @@
-## Frameshift v2.1.6 — sort anything, type less
+## Frameshift v2.1.7 — search anywhere, keep your settings
 
-Two quality-of-life upgrades for the tools you use most.
+Four small changes aimed at the things you do every session.
 
-### Sortable commodity search results
+### Your search settings survive a restart
 
-Click (or tap) any column header — Station, System, Price, Units, Jump, Star
-dist, Updated — and the results re-sort instantly; click again to reverse.
-First click means the useful direction: closest first for distances, best
-first for price and units, freshest first for age. Your chosen sort sticks
-across searches, so "sort by star distance once, shop nearest-first all
-night" works exactly like you'd hope. The active column shows an arrow, and
-stations with an unknown star distance sort last instead of cluttering the
-top.
+Every search form now remembers what you set — commodity search (mode,
+radius, min units, large pad, even the last commodity), the mining advisor,
+outfitting, the neutron plotter, road to riches, exobiology filters. Set
+"radius 100, large pad" once and it's still there tomorrow. Trade-route
+settings already persisted; now everything does.
 
-### Autocomplete where you type names
+### Search near any system, not just where you're parked
 
-Text boxes now suggest as you type, each from the right source:
+Commodity search, the mining advisor and outfitting search each gained a
+**Near** box (with the same autocomplete as every other system field). Leave
+it empty and searches work exactly as before — around you. Type a system and
+you're shopping around your carrier's destination, tomorrow's expedition
+stop, or home before you fly back. Distances in the results are measured
+from that system.
 
-- **System boxes** — both plot inputs, the neutron destination, the system
-  stations viewer and objective/ops system fields — complete from your local
-  database, with your recently visited systems floated to the top.
-- **Station fields** (objectives, ops boards) complete station names.
-- The **outfitting & shipyard** search suggests every ship and the common
-  module types.
-- The ops **resource** field suggests commodities.
+The Near box deliberately resets on restart: a search silently pinned to
+last week's system would be worse than retyping it.
 
-Suggestions come from the database on your disk, answer in under a
-millisecond per keystroke, and work with touch keyboards on the tablet.
+### Every result table sorts
 
-### Upgrade notes
+The mining advisor and outfitting results now sort by any column header,
+just like commodity search — closest buyer first, best price first, station
+A-Z. First click means the useful direction; click again to reverse.
 
-- Update normally from any 2.x release. The first launch adds a small
-  station-name index to your existing market database (a few seconds, once).
+### Copy from any result row
+
+Commodity, mining and outfitting rows now have a ⧉ copy button next to ◎
+plot — grab the system name for wing chat or the in-game galaxy map without
+autoplotting.
+
+### Fixes
+
+- The commodity SEARCH button now disables while a search is running, so a
+  double-tap can't fire the search twice.

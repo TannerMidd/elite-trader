@@ -276,6 +276,7 @@
         <label>Radius (ly) <input type="number" id="mn-radius" min="1" value="50"></label>
         <label>Min price (cr) <input type="number" id="mn-minprice" min="0" value="50000" title="Hide minerals selling below this"></label>
         <label>Price age (days) <input type="number" id="mn-age" min="1" value="30"></label>
+        <label title="Search around another system instead — your carrier's destination, tomorrow's expedition stop…">Near <input type="text" id="mn-near" placeholder="current system" autocomplete="off"></label>
         <label class="check"><input type="checkbox" id="mn-largepad"> Large pad</label>
         <button type="submit" id="mn-go" class="primary">FIND</button>
       </form>
@@ -284,8 +285,8 @@
         <table id="mining-table" class="hidden">
           <thead>
             <tr>
-              <th>Mineral</th><th>Method</th><th class="num">Sell</th>
-              <th>Best buyer near you</th><th class="num">Jump</th><th class="num">Demand</th><th></th>
+              <th class="sortable" data-sort="mineral">Mineral</th><th class="sortable" data-sort="method">Method</th><th class="num sortable" data-sort="sell">Sell</th>
+              <th class="sortable" data-sort="station">Best buyer</th><th class="num sortable" data-sort="jump">Jump</th><th class="num sortable" data-sort="demand">Demand</th><th></th>
             </tr>
           </thead>
           <tbody></tbody>
@@ -308,6 +309,7 @@
         </label>
         <label>Radius (ly) <input type="number" id="cs-radius" min="1" value="50"></label>
         <label>Min units <input type="number" id="cs-min" min="1" value="100"></label>
+        <label title="Search around another system instead — your carrier's destination, tomorrow's expedition stop…">Near <input type="text" id="cs-near" placeholder="current system" autocomplete="off"></label>
         <label class="check"><input type="checkbox" id="cs-largepad"> Large pad</label>
         <button type="submit" id="cs-go" class="primary">SEARCH</button>
       </form>
@@ -339,12 +341,13 @@
             <option value="ship">Ship</option>
           </select>
         </label>
+        <label title="Search around another system instead — your carrier's destination, tomorrow's expedition stop…">Near <input type="text" id="os-near" placeholder="current system" autocomplete="off"></label>
         <button type="submit" id="os-go" class="primary">SEARCH</button>
       </form>
       <div id="os-status" class="dim"></div>
       <div class="table-wrap">
         <table id="os-table" class="hidden">
-          <thead><tr><th>Station</th><th>System</th><th class="num">Jump</th><th class="num">Star dist</th><th>Pad</th><th></th></tr></thead>
+          <thead><tr><th class="sortable" data-sort="station">Station</th><th class="sortable" data-sort="system">System</th><th class="num sortable" data-sort="jump">Jump</th><th class="num sortable" data-sort="dist_ls">Star dist</th><th class="sortable" data-sort="pad">Pad</th><th></th></tr></thead>
           <tbody></tbody>
         </table>
       </div>
