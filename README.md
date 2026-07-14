@@ -16,7 +16,8 @@
 
 [**Download**](https://github.com/TannerMidd/frameshift/releases/latest) ·
 [**Website**](https://tannermidd.github.io/frameshift/) ·
-[**Documentation**](../../wiki)
+[**Documentation**](../../wiki) ·
+[**Engineering dossier**](https://tannermidd.github.io/frameshift/architecture/)
 
 <img src="docs/screenshots/frameshift-panel-hero.png" alt="Frameshift flight panel on a tablet" width="850">
 
