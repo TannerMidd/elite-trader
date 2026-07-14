@@ -1175,7 +1175,9 @@ function setPanelPage(name, slideDir) {
   const statusPage = name === "status";
   $("flight-panel").classList.toggle("hidden", !statusPage);
   document.body.classList.toggle("fp-status-page", statusPage);
-  if (!statusPage) activateTab(name);
+  // When a directional slide is about to play, skip the fade-up entrance —
+  // two stacked animations is what caused the post-slide content flash.
+  if (!statusPage) activateTab(name, !slideDir);
   document.querySelectorAll("#fp-nav button").forEach((b) =>
     b.classList.toggle("active", b.dataset.page === name));
   if (statusPage && state) renderPanel();
@@ -7428,11 +7430,26 @@ async function poll() {
   setTimeout(poll, 1500);
 }
 
-function activateTab(name) {
+function paneEnter(el) {
+  el.classList.remove("pane-enter");
+  void el.offsetWidth; // restart cleanly if the class is re-applied
+  el.classList.add("pane-enter");
+  el.addEventListener("animationend",
+    () => el.classList.remove("pane-enter"), { once: true });
+}
+
+function activateTab(name, enter = true) {
   document.querySelectorAll("#tabs .tab").forEach((b) =>
     b.classList.toggle("active", b.dataset.tab === name));
-  document.querySelectorAll(".tabpane").forEach((p) =>
-    p.classList.toggle("hidden", p.id !== "tab-" + name));
+  document.querySelectorAll(".tabpane").forEach((p) => {
+    const show = p.id === "tab-" + name;
+    const wasHidden = p.classList.contains("hidden");
+    p.classList.toggle("hidden", !show);
+    if (show && wasHidden && enter) paneEnter(p);
+    // A hidden pane never fires animationend; strip stale motion classes so
+    // they can't replay when the pane is next revealed.
+    if (!show) p.classList.remove("pane-enter", "slide-in-left", "slide-in-right");
+  });
   localStorage.setItem("activeTab", name);
   if (name === "analytics") loadAnalytics();
   if (name === "ops") loadOpsWorkspace();

@@ -345,9 +345,13 @@ main {
   display: flex;
   flex-direction: column;
   gap: 14px;
-  animation: pane-in .25s var(--ease);
   transition: transform .28s var(--ease);
 }
+/* One-shot entrance, applied by activateTab only when a pane is revealed
+   without a directional slide. An always-on animation here would restart —
+   and visibly flash — every time a slide class is removed after panel
+   navigation, because removing the class changes the computed animation. */
+.tabpane.pane-enter { animation: pane-in .25s var(--ease); }
 
 td.warn { color: var(--bad); font-weight: 600; }
 
