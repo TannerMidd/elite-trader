@@ -1,29 +1,34 @@
-## Frameshift v2.1.5 — startup initiation sequence
+## Frameshift v2.1.6 — sort anything, type less
 
-The journal reconstruction banner is now a proper cockpit power-on sequence
-instead of a plain progress strip.
+Two quality-of-life upgrades for the tools you use most.
 
-### What you'll see at launch
+### Sortable commodity search results
 
-- A **STARTUP SEQUENCE** panel in the launch-control style: hazard chevrons,
-  a status light, and your color theme's accent.
-- A three-stage pre-flight checklist that tracks what is really happening:
-  **FLIGHT RECORDER** (cataloguing new journals) → **COCKPIT RESTORE**
-  (replaying your latest flight logs) → **SYSTEMS CHECK** (cross-checking
-  preserved data). Completed stages turn green; the live stage shows its
-  counter.
-- A log-tape readout showing the timestamp of the journal currently being
-  replayed.
-- Automatic retries appear as **HOLDING** with an amber light; a hard
-  failure becomes **STARTUP FAULT** with the same recovery guidance as
-  before.
+Click (or tap) any column header — Station, System, Price, Units, Jump, Star
+dist, Updated — and the results re-sort instantly; click again to reverse.
+First click means the useful direction: closest first for distances, best
+first for price and units, freshest first for age. Your chosen sort sticks
+across searches, so "sort by star distance once, shop nearest-first all
+night" works exactly like you'd hope. The active column shows an arrow, and
+stations with an unknown star distance sort last instead of cluttering the
+top.
 
-The sequence itself is unchanged and — since 2.1.3 — fast; this release is
-about making those few seconds read like part of the cockpit.
+### Autocomplete where you type names
 
-### Notes
+Text boxes now suggest as you type, each from the right source:
 
-- Screen-reader progress announcements and count clamping are preserved.
-- The only animation is the status-light pulse, and the reduced-motion
-  system preference disables it.
-- Update normally from any 2.x release.
+- **System boxes** — both plot inputs, the neutron destination, the system
+  stations viewer and objective/ops system fields — complete from your local
+  database, with your recently visited systems floated to the top.
+- **Station fields** (objectives, ops boards) complete station names.
+- The **outfitting & shipyard** search suggests every ship and the common
+  module types.
+- The ops **resource** field suggests commodities.
+
+Suggestions come from the database on your disk, answer in under a
+millisecond per keystroke, and work with touch keyboards on the tablet.
+
+### Upgrade notes
+
+- Update normally from any 2.x release. The first launch adds a small
+  station-name index to your existing market database (a few seconds, once).
