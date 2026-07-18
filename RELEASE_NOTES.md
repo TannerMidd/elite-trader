@@ -1,35 +1,50 @@
-## Frameshift v2.3.0 — the tactical status page
+## Frameshift v2.4.0 — the Holo Bracket controls
 
-The flight panel's home page and rail got a full redesign — more readout,
-less furniture, same touch targets.
+Every button in the app now speaks one design language, and the pages put
+their most-used cards and orderings first.
 
-### Command header
+### One button system
 
-The system readout is now a proper cockpit plate: your current system large
-and glowing, a dock-state chip, and — when you're following a plotted
-route — a segmented progress bar right in the header showing the next
-waypoint. On the right, ship telemetry: credits, rebuy, and legal state,
-with a new **coverage line** under the rebuy — `COVERS 21×` in green, amber
-when you're under two rebuys, red when you can't afford to lose the ship.
+Buttons read as light projected onto glass: translucent faces, thin frames,
+and breathing corner brackets that mark what matters. Four tiers — solid
+primary for the one action a card exists for, translucent secondary, quiet
+ghost for cancel/dismiss, and compact mono utility for in-table chrome.
+Every press answers with a 350ms face flash, before any network round-trip.
 
-### Readouts that advise, not just report
+- Busy buttons pulse and say what they're doing; disabled ones go dashed.
+- Toggles (VOICE, FULL, tabs, the specialist switcher) light up with solid
+  brackets and a glow when active.
+- The desktop tabs and specialist switcher are segmented groups — the
+  active segment is the only one wearing brackets.
+- Honors reduced-motion, Windows High Contrast, and your color theme.
 
-- **Fuel** shows ≈how many jumps your tank holds at your recent burn rate,
-  and whether the star here (or the next one on your route) is scoopable.
-- **Cargo** shows free tonnage, or "hold empty — ready for loop cargo".
-- **Unbanked data** gets its own card: exploration value with body count,
-  bio samples with species count.
-- **Data at risk** is now a full-width hazard banner when your unsold data
-  is worth many rebuys, with a pointer to the nearest place to bank it.
-- The status strip shows your in-game destination with **jumps left**, and
-  a quiet footer reports link health and telemetry time.
+### Cockpit switches
 
-### The rail
+Checkboxes are now flight switches: a squared, accent-framed housing with a
+paddle that slides and lights orange when the circuit is on. The Settings
+toggles share the same look, and everything scales up to touch size in
+panel mode.
 
-Sharper and more legible: an accent header bar, the active page marked with
-hazard striping and a cut corner, and boxed utility buttons. Everything —
-rail, strip, page — follows your chosen color theme, and the ambient CRT
-effects remain opt-in in Settings.
+### Tidier rows
+
+The ◎ plot buttons that trailed each row at a different position now park
+in a clean right-edge column — engineers, ships, traders, missions,
+community goals, alerts.
+
+### Smarter defaults
+
+- Search results show their sort up front in the column headers: buying
+  lists cheapest first, selling richest first, outfitting nearest first.
+  Click any header to override; your choice sticks for the session.
+- System stations list real ports by arrival distance — fleet carriers
+  sink to the bottom instead of drowning the list.
+- Active missions sort soonest-deadline first, matching the card's own
+  "red = expiring soon" legend.
+- Pages lead with their most-used cards: LOCAL puts the station market and
+  jump history above the fold, TRADE puts commodity search ahead of the
+  mining advisor, ENGINEERING puts the workshop above the materials table.
+  Your own card arrangements and hidden cards are untouched — the new
+  layout only applies where you haven't customized.
 
 ### Upgrade notes
 
