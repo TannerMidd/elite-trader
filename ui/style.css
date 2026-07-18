@@ -1296,7 +1296,7 @@ body.panel-mode #fp-nav::before {
   .fp-nav-pages .fp-ni { font-size: 16px; }
 }
 @media (max-height: 660px) {
-  .fp-nav-pages button { min-height: 42px; }
+  .fp-nav-pages button { min-height: 44px; }
   .fp-nav-pages .fp-nl { font-size: 8px; }
 }
 .fp-nav-foot {
@@ -3084,3 +3084,355 @@ th.sortable.sort-desc::after { content: "▼"; opacity: 1; color: var(--orange);
 }
 .profiles-unattributed .device-main { flex: 1; min-width: 0; }
 .profiles-unattributed select, .profiles-list select { max-width: 180px; }
+
+/* ---------- Panel HUD controls ----------
+   A quiet, screen-native control language for the standard Panel pages.
+   Existing cards, navigation, Status controls and component layouts retain
+   their own identity; this layer only normalizes the common action surfaces. */
+body.panel-mode {
+  --mono: "IBM Plex Mono", Consolas, monospace;
+  --line: var(--border);
+  --hud-control-bg: rgba(10, 13, 17, .82);
+  --hud-control-bg-hot: rgba(var(--accent-rgb), .08);
+  --hud-control-line: rgba(var(--accent-rgb), .25);
+  --hud-control-line-hot: rgba(var(--accent-rgb), .7);
+  --hud-control-text: #b5bdc8;
+}
+
+body.panel-mode main button.primary,
+body.panel-mode main button.copy,
+body.panel-mode main button.plotbtn,
+body.panel-mode main button.exo-chip,
+body.panel-mode main .theme-chip,
+body.panel-mode main button.xb-template,
+body.panel-mode main .xb-chips button.chip,
+body.panel-mode .update-banner .ub-btn,
+body.panel-mode .route-progress button,
+body.panel-mode .alert-strip button {
+  min-width: 44px;
+  min-height: 44px;
+  padding: 9px 14px;
+  border: 1px solid var(--hud-control-line);
+  border-radius: 2px;
+  background: var(--hud-control-bg);
+  color: var(--hud-control-text);
+  box-shadow: inset 0 1px rgba(255, 255, 255, .025);
+  font-family: inherit;
+  font-size: 12.5px;
+  font-weight: 650;
+  line-height: 1.15;
+  letter-spacing: .08em;
+  text-decoration: none;
+  cursor: pointer;
+  transform: none;
+  transition: background-color .14s, border-color .14s, color .14s, opacity .14s;
+}
+
+body.panel-mode main button.primary,
+body.panel-mode .update-banner .ub-btn {
+  min-height: 46px;
+  padding-inline: 18px;
+  border-color: rgba(var(--accent-rgb), .56);
+  background:
+    linear-gradient(90deg, rgba(var(--accent-rgb), .07), transparent 70%),
+    var(--hud-control-bg);
+  color: var(--orange-soft);
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: .1em;
+  box-shadow:
+    inset 0 -2px rgba(var(--accent-rgb), .56),
+    inset 0 1px rgba(255, 255, 255, .025);
+}
+
+body.panel-mode main button.primary.small,
+body.panel-mode main button.copy.small {
+  min-height: 44px;
+  padding: 8px 12px;
+  font-size: 12px;
+  letter-spacing: .07em;
+}
+
+body.panel-mode main button.copy,
+body.panel-mode main button.plotbtn {
+  font-size: 12px;
+  letter-spacing: .07em;
+}
+
+body.panel-mode main button[aria-label]:is(.copy, .plotbtn, .sp-remove-leg) {
+  width: 44px;
+  min-width: 44px;
+  padding-inline: 0;
+}
+
+body.panel-mode main :is(
+  button.primary,
+  button.copy,
+  button.plotbtn,
+  button.exo-chip,
+  button.xb-template,
+  .xb-chips button.chip
+):is(.on, .active, [aria-pressed="true"], [aria-selected="true"]),
+body.panel-mode main .theme-chip.on,
+body.panel-mode > .fp-arrange.on {
+  border-color: var(--orange);
+  background: var(--hud-control-bg-hot);
+  color: var(--orange-soft);
+  box-shadow: inset 0 -2px var(--orange);
+}
+
+body.panel-mode main button.exo-chip.on {
+  border-color: var(--exobiology, #3fb6a8);
+  color: var(--exobiology, #3fb6a8);
+  box-shadow: inset 0 -2px var(--exobiology, #3fb6a8);
+}
+
+body.panel-mode main .theme-chip.on {
+  border-color: var(--chip);
+  color: var(--text);
+  box-shadow: inset 0 -2px var(--chip);
+}
+
+body.panel-mode main button:is(.primary, .copy, .plotbtn, .exo-chip):is(.danger, .ep-remove),
+body.panel-mode .alert-strip button.danger,
+body.panel-mode .update-banner.ub-error .ub-btn {
+  border-color: rgba(224, 93, 93, .62);
+  background: rgba(224, 93, 93, .055);
+  color: #ef8a82;
+  box-shadow: inset 0 -2px rgba(224, 93, 93, .52);
+}
+
+body.panel-mode main button:is(.primary, .copy, .plotbtn, .exo-chip).done,
+body.panel-mode .update-banner:not(.ub-error) .ub-btn,
+body.panel-mode .route-progress button:is(.rp-skip, .rp-back) {
+  border-color: rgba(111, 191, 115, .56);
+  color: var(--good);
+  box-shadow: inset 0 -2px rgba(111, 191, 115, .48);
+}
+
+body.panel-mode .update-banner.setup-banner .ub-btn {
+  border-color: rgba(var(--accent-rgb), .56);
+  background:
+    linear-gradient(90deg, rgba(var(--accent-rgb), .07), transparent 70%),
+    var(--hud-control-bg);
+  color: var(--orange-soft);
+  box-shadow: inset 0 -2px rgba(var(--accent-rgb), .56);
+}
+
+body.panel-mode .alert-strip button.alert-recover {
+  border-color: rgba(255, 209, 154, .55);
+  color: #ffd19a;
+  box-shadow: inset 0 -2px rgba(255, 209, 154, .42);
+}
+
+@media (hover: hover) {
+  body.panel-mode main button.primary:hover:not(:disabled),
+  body.panel-mode main button.copy:hover:not(:disabled),
+  body.panel-mode main button.plotbtn:hover:not(:disabled),
+  body.panel-mode main button.exo-chip:hover:not(:disabled),
+  body.panel-mode main .theme-chip:hover,
+  body.panel-mode main button.xb-template:hover:not(:disabled),
+  body.panel-mode main .xb-chips button.chip:hover:not(:disabled),
+  body.panel-mode .update-banner .ub-btn:hover:not(:disabled),
+  body.panel-mode .route-progress button:hover:not(:disabled),
+  body.panel-mode .alert-strip button:hover:not(:disabled) {
+    border-color: var(--hud-control-line-hot);
+    background: var(--hud-control-bg-hot);
+    color: var(--orange-soft);
+    filter: none;
+    transform: none;
+  }
+}
+
+body.panel-mode main button.primary:active:not(:disabled),
+body.panel-mode main button.copy:active:not(:disabled),
+body.panel-mode main button.plotbtn:active:not(:disabled),
+body.panel-mode main button.exo-chip:active:not(:disabled),
+body.panel-mode main .theme-chip:active,
+body.panel-mode main button.xb-template:active:not(:disabled),
+body.panel-mode main .xb-chips button.chip:active:not(:disabled),
+body.panel-mode .update-banner .ub-btn:active:not(:disabled),
+body.panel-mode .route-progress button:active:not(:disabled),
+body.panel-mode .alert-strip button:active:not(:disabled) {
+  border-color: var(--orange);
+  background: var(--orange);
+  color: #111318;
+  transform: none;
+}
+
+body.panel-mode main button.primary:disabled,
+body.panel-mode main button.copy:disabled,
+body.panel-mode main button.plotbtn:disabled,
+body.panel-mode main button.exo-chip:disabled,
+body.panel-mode .update-banner .ub-btn:disabled,
+body.panel-mode .route-progress button:disabled,
+body.panel-mode .alert-strip button:disabled {
+  border-color: rgba(130, 139, 151, .18);
+  background: rgba(10, 13, 17, .52);
+  color: #656d78;
+  box-shadow: none;
+  opacity: .72;
+  animation: none;
+  cursor: not-allowed;
+}
+
+body.panel-mode main button.primary[aria-busy="true"]:disabled,
+body.panel-mode .update-banner .ub-btn[aria-busy="true"]:disabled {
+  cursor: wait;
+  animation: busy-pulse 1.8s ease-in-out infinite;
+}
+
+body.panel-mode main :is(
+  button.primary,
+  button.copy,
+  button.plotbtn,
+  button.exo-chip,
+  button.xb-template,
+  .xb-chips button.chip
+):focus-visible,
+body.panel-mode main .theme-chip:focus-within,
+body.panel-mode .update-banner button:focus-visible,
+body.panel-mode .route-progress button:focus-visible,
+body.panel-mode .alert-strip button:focus-visible,
+body.panel-mode > .fp-arrange:focus-visible {
+  outline: 2px solid var(--orange-soft);
+  outline-offset: 3px;
+  box-shadow: none;
+}
+
+/* Filters and two-line selectors stay compact and information-first. */
+body.panel-mode main :is(.exo-chip, .theme-chip, .xb-template) {
+  min-height: 44px;
+}
+
+body.panel-mode #tab-specialists .sp-switcher button {
+  min-height: 56px;
+  padding: 8px 11px;
+  border-radius: 2px;
+  background: rgba(10, 13, 17, .72);
+  box-shadow: none;
+}
+
+body.panel-mode #tab-specialists .sp-switcher button.active {
+  border-color: var(--orange);
+  background: rgba(var(--accent-rgb), .075);
+  box-shadow: inset 0 -2px var(--orange);
+}
+
+body.panel-mode #tab-specialists .sp-switcher button:focus-visible {
+  outline: 2px solid var(--orange-soft);
+  outline-offset: 3px;
+  box-shadow: none;
+}
+
+body.panel-mode main :is(
+  input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]),
+  select,
+  textarea
+) {
+  border-radius: 2px;
+}
+
+body.panel-mode main input[type="checkbox"] {
+  accent-color: var(--orange);
+}
+
+body.panel-mode main .linkrow a {
+  min-height: 44px;
+  padding: 10px 14px;
+  border-radius: 2px;
+  font-size: 12.5px;
+  letter-spacing: .04em;
+}
+
+/* Customization remains available without competing with page actions. */
+body.panel-mode > .fp-arrange {
+  width: 48px;
+  height: 48px;
+  border: 1px solid rgba(var(--accent-rgb), .46);
+  border-radius: 2px;
+  background: rgba(8, 10, 13, .92);
+  color: var(--orange);
+  box-shadow: 0 5px 16px rgba(0, 0, 0, .38);
+  font-size: 19px;
+}
+
+body.panel-mode > .fp-arrange.on {
+  border-color: var(--orange);
+  background: rgba(var(--accent-rgb), .1);
+  color: var(--orange-soft);
+  box-shadow:
+    inset 0 -2px var(--orange),
+    0 5px 16px rgba(0, 0, 0, .38);
+}
+
+body.panel-mode main .arr-handle,
+body.panel-mode main .arr-eye {
+  min-height: 44px;
+  border-radius: 2px;
+  background: rgba(10, 13, 17, .94);
+  font-size: 11px;
+  letter-spacing: .08em;
+}
+
+body.panel-mode main .arr-handle {
+  border: 1px solid rgba(var(--accent-rgb), .58);
+  color: var(--orange-soft);
+}
+
+body.panel-mode main .arr-eye {
+  border-color: rgba(var(--accent-rgb), .3);
+  color: var(--hud-control-text);
+}
+
+@media (max-width: 680px) {
+  body.panel-mode main button.primary {
+    padding-inline: 15px;
+  }
+
+  body.panel-mode main button.copy,
+  body.panel-mode main button.plotbtn,
+  body.panel-mode main button.exo-chip,
+  body.panel-mode main .theme-chip {
+    padding-inline: 12px;
+  }
+}
+
+@media (forced-colors: active) {
+  body.panel-mode main button.primary,
+  body.panel-mode main button.copy,
+  body.panel-mode main button.plotbtn,
+  body.panel-mode main button.exo-chip,
+  body.panel-mode main .theme-chip,
+  body.panel-mode main button.xb-template,
+  body.panel-mode main .xb-chips button.chip,
+  body.panel-mode .update-banner .ub-btn,
+  body.panel-mode .route-progress button,
+  body.panel-mode .alert-strip button,
+  body.panel-mode > .fp-arrange {
+    border: 1px solid ButtonText;
+    background: ButtonFace;
+    color: ButtonText;
+    box-shadow: none;
+  }
+
+  body.panel-mode main :is(
+    button.primary,
+    button.copy,
+    button.plotbtn,
+    button.exo-chip,
+    button.xb-template,
+    .xb-chips button.chip
+  ):is(.on, .active, [aria-pressed="true"], [aria-selected="true"]),
+  body.panel-mode main .theme-chip.on,
+  body.panel-mode > .fp-arrange.on {
+    border: 2px solid Highlight;
+    background: Highlight;
+    color: HighlightText;
+  }
+
+  body.panel-mode #tab-specialists .sp-switcher button:focus-visible {
+    outline: 2px solid Highlight;
+    outline-offset: 2px;
+  }
+}

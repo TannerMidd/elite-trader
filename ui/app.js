@@ -54,6 +54,42 @@ function copyText(text, btn) {
   }
 }
 
+/* A disabled command can mean either "unavailable" or "working". Only a
+   command disabled by the interaction that invoked it receives a busy state;
+   render-time availability rules remain quiet and truthful. */
+function initBusyButtonStates() {
+  const completed = new WeakSet();
+  const schedule = (button) => {
+    if (!button?.matches("button.primary, .ub-btn")) return;
+    completed.delete(button);
+    requestAnimationFrame(() => {
+      if (button.disabled && !completed.has(button)) {
+        button.setAttribute("aria-busy", "true");
+      }
+      completed.delete(button);
+    });
+  };
+  document.addEventListener("click", (event) => {
+    schedule(event.target.closest?.("button"));
+  });
+  document.addEventListener("submit", (event) => {
+    schedule(event.submitter || event.target.querySelector('button[type="submit"]'));
+  });
+  new MutationObserver((records) => {
+    for (const { target, oldValue } of records) {
+      if (oldValue !== null || !target.disabled) {
+        target.removeAttribute("aria-busy");
+        completed.add(target);
+      }
+    }
+  }).observe(document.body, {
+    subtree: true,
+    attributes: true,
+    attributeFilter: ["disabled"],
+    attributeOldValue: true,
+  });
+}
+
 /* ---------- zero-account LAN pairing ---------- */
 
 function friendlyDeviceName() {
@@ -271,7 +307,7 @@ async function renderPairedDevices(admin) {
       refreshSecurityPanel();
     });
     const revoke = document.createElement("button");
-    revoke.className = "copy";
+    revoke.className = "copy danger";
     revoke.textContent = "REVOKE";
     revoke.addEventListener("click", async () => {
       await fetch(`/api/security/devices/${encodeURIComponent(device.id)}`, { method: "DELETE" });
@@ -359,7 +395,7 @@ async function loadProfiles() {
           loadProfiles();
         });
         const remove = document.createElement("button");
-        remove.className = "copy";
+        remove.className = "copy danger";
         remove.textContent = "DELETE";
         remove.title = "Remove this profile and every local record it owns. In-game progress is never affected.";
         remove.addEventListener("click", async () => {
@@ -1178,8 +1214,12 @@ function setPanelPage(name, slideDir) {
   // When a directional slide is about to play, skip the fade-up entrance —
   // two stacked animations is what caused the post-slide content flash.
   if (!statusPage) activateTab(name, !slideDir);
-  document.querySelectorAll("#fp-nav button").forEach((b) =>
-    b.classList.toggle("active", b.dataset.page === name));
+  document.querySelectorAll("#fp-nav button[data-page]").forEach((b) => {
+    const active = b.dataset.page === name;
+    b.classList.toggle("active", active);
+    if (active) b.setAttribute("aria-current", "page");
+    else b.removeAttribute("aria-current");
+  });
   if (statusPage && state) renderPanel();
   window.scrollTo(0, 0);
   if (slideDir) slideIn(panelViewEl(name), slideDir);
@@ -1790,7 +1830,7 @@ function renderRouteProgress() {
     main.appendChild(back);
   }
   const stop = document.createElement("button");
-  stop.className = "copy rp-stop";
+  stop.className = "copy danger rp-stop";
   stop.textContent = "✕";
   stop.title = "Stop tracking this route";
   stop.setAttribute("aria-label", "Stop tracking route");
@@ -2379,7 +2419,7 @@ function renderEngPlans(wishlist) {
     edit.addEventListener("click", () => editEngineeringItem(item));
     const remove = document.createElement("button");
     remove.type = "button";
-    remove.className = "copy ep-remove";
+    remove.className = "copy danger ep-remove";
     remove.textContent = "REMOVE";
     remove.addEventListener("click", () => pinBlueprint({ id: item.id, action: "unpin" }));
     actions.append(edit, remove);
@@ -5637,8 +5677,11 @@ function buildThemeSetting() {
   const customInput = document.createElement("input");
   const syncActive = () => {
     const t = currentTheme();
-    chips.querySelectorAll("[data-theme]").forEach((b) =>
-      b.classList.toggle("on", b.dataset.theme === t));
+    chips.querySelectorAll("[data-theme]").forEach((b) => {
+      const on = b.dataset.theme === t;
+      b.classList.toggle("on", on);
+      b.setAttribute("aria-pressed", String(on));
+    });
     custom.classList.toggle("on", !THEME_PRESETS[t]);
     custom.style.setProperty("--chip", !THEME_PRESETS[t] ? t : "#888");
   };
@@ -7511,6 +7554,7 @@ function initTabs() {
 }
 
 document.addEventListener("DOMContentLoaded", async () => {
+  initBusyButtonStates();
   try {
     $("pairing-retry").addEventListener("click", () => window.location.reload());
     if (!await bootstrapSecurity()) return;
