@@ -1,0 +1,395 @@
+/* guides tab */
+.guides-intro {
+  font-size: 13px;
+  margin: 2px 2px 2px;
+}
+.exo-genuses {
+  color: var(--orange-soft);
+  margin-top: 2px;
+}
+.exo-genuses .exo-hit {
+  color: var(--good);
+  font-weight: 700;
+}
+.exo-genus-filter {
+  flex: 1 1 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  margin-top: 2px;
+}
+.egf-label {
+  font-size: 11px;
+  color: var(--dim);
+  letter-spacing: 1px;
+}
+.egf-label .dim {
+  text-transform: none;
+  letter-spacing: 0;
+}
+.egf-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.exo-chip {
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  color: var(--dim);
+  border-radius: 999px;
+  padding: 3px 11px;
+  font-size: 12px;
+  cursor: pointer;
+  transition:
+    border-color 0.12s,
+    color 0.12s,
+    background 0.12s;
+}
+.exo-chip:hover {
+  border-color: var(--border-bright);
+  color: var(--text);
+}
+.exo-chip.on {
+  background: rgba(63, 182, 168, 0.16);
+  border-color: var(--exobiology, #3fb6a8);
+  color: var(--text);
+  font-weight: 600;
+}
+.guide-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 12px;
+  margin-top: 6px;
+}
+.guide-item {
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.guide-item b {
+  font-size: 14px;
+}
+.guide-item p {
+  margin: 0;
+  font-size: 12.5px;
+  color: var(--dim);
+  flex: 1;
+}
+/* External links share one look everywhere they appear (guides, empty-state
+   teaching copy) instead of falling back to browser blue outside .guide-item. */
+.extlink {
+  color: var(--orange-soft);
+  text-decoration: none;
+  font-size: 12.5px;
+  font-weight: 600;
+}
+.extlink:hover {
+  color: var(--orange);
+}
+.guide-item .extlink {
+  align-self: flex-start;
+}
+/* The SLEF copy control is a Holo Bracket utility button among plain links. */
+.guide-item .hb {
+  align-self: flex-start;
+}
+
+/* exobio sampling: live clonal-colony distance readout */
+/* The sampling headline reuses .route-line outside a .hop, so it needs its
+   own flex rule — without it the species/badge/payout run together. */
+#bio-sampling .route-line {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  flex-wrap: wrap;
+}
+#bio-sampling .route-line b {
+  font-size: 15px;
+}
+.samp-dist {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin-top: 10px;
+  flex-wrap: wrap;
+}
+.samp-dist-num {
+  font-size: 26px;
+  font-weight: 700;
+  color: var(--orange-soft);
+  font-variant-numeric: tabular-nums;
+}
+.samp-dist.samp-ok .samp-dist-num {
+  color: var(--good);
+}
+.samp-badge {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 1px;
+  color: var(--good);
+  border: 1px solid var(--good);
+  border-radius: 4px;
+  padding: 2px 8px;
+}
+.samp-badge.samp-wait {
+  color: var(--orange-soft);
+  border-color: var(--orange-soft);
+}
+
+/* engineering materials: FSD-injection (jumponium) readiness line */
+.synth-line {
+  margin: 6px 0 2px;
+  font-size: 12.5px;
+}
+.synth-line b {
+  color: var(--orange-soft);
+  letter-spacing: 1px;
+}
+
+/* settings */
+.settings-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 6px;
+}
+.setting {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: start;
+  gap: 12px;
+  padding: 11px 8px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.setting:hover {
+  background: rgba(255, 255, 255, 0.03);
+}
+/* Neural-voice row: a normal setting plus a side button (TEST / DOWNLOAD) */
+.tts-wrap {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.tts-wrap .setting {
+  flex: 1;
+  min-width: 260px;
+}
+.tts-wrap .setting.tts-static {
+  cursor: default;
+}
+.tts-wrap > button {
+  flex: none;
+  margin-top: 12px;
+}
+.tts-voices {
+  flex: none;
+  margin-top: 12px;
+  max-width: 300px;
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text);
+  font-family: inherit;
+  font-size: 13px;
+  padding: 8px 10px;
+}
+.bad-text {
+  color: var(--bad);
+}
+.exp-chip {
+  margin-left: 6px;
+  font-weight: 700;
+  letter-spacing: 1px;
+  vertical-align: 1px;
+}
+.setting.saved {
+  background: rgba(111, 191, 115, 0.1);
+}
+.setting.disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.setting > input {
+  display: none;
+}
+.setting .switch {
+  position: relative;
+  width: 42px;
+  height: 24px;
+  border-radius: 2px;
+  background: rgba(var(--accent-rgb), 0.05);
+  border: 1px solid rgba(var(--accent-rgb), 0.32);
+  flex: none;
+  margin-top: 1px;
+  transition:
+    background 0.2s,
+    border-color 0.2s,
+    box-shadow 0.2s;
+}
+.setting .switch::after {
+  content: "";
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 16px;
+  height: 16px;
+  border-radius: 1px;
+  background: var(--dim);
+  transition:
+    transform 0.2s var(--ease),
+    background 0.2s,
+    box-shadow 0.2s;
+}
+.setting:hover .switch {
+  border-color: rgba(var(--accent-rgb), 0.7);
+}
+.setting > input:checked + .switch {
+  background: rgba(var(--accent-rgb), 0.14);
+  border-color: var(--orange);
+  box-shadow: 0 0 12px rgba(var(--accent-rgb), 0.25);
+}
+.setting > input:checked + .switch::after {
+  transform: translateX(18px);
+  background: var(--orange);
+  box-shadow: 0 0 8px rgba(var(--accent-rgb), 0.6);
+}
+.setting > input:focus-visible + .switch {
+  box-shadow: var(--focus-ring);
+}
+.setting-text b {
+  font-weight: 600;
+}
+.setting-text .dim {
+  font-size: calc(12.5px * var(--helper-scale));
+  margin-top: 2px;
+}
+/* Per-device helper-text size (Settings → Display): scales every dim hint /
+   sub-line relative to its surrounding text. Explicit-size rules above carry
+   the multiplier themselves so they don't shadow this one. */
+span.dim,
+div.dim,
+.sub {
+  font-size: calc(1em * var(--helper-scale));
+}
+/* Display sliders in the settings card (.setting > input {display:none}
+   hides the switch checkboxes — ranges must opt back in) */
+.setting > input[type="range"] {
+  display: block;
+  width: 150px;
+  margin-top: 4px;
+  accent-color: var(--orange);
+}
+.setting .range-val {
+  color: var(--orange-soft);
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+/* Colonisation source lines: station · facts · one-tap autoplot */
+.colo-src {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 2px 0;
+}
+.colo-src .hb {
+  margin-left: auto;
+  flex: none;
+}
+.update-check-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 8px 4px;
+  flex-wrap: wrap;
+}
+.settings-info {
+  margin-top: 12px;
+  font-size: 12px;
+  border-top: 1px solid var(--border);
+  padding-top: 10px;
+}
+.settings-info .path {
+  color: var(--text);
+  font-family: ui-monospace, "Cascadia Code", Consolas, monospace;
+  font-size: 11.5px;
+}
+
+/* mining advisor */
+.mine-method {
+  font-size: 10px;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  white-space: nowrap;
+}
+.mine-core {
+  color: var(--orange);
+  border-color: #6b4a1f;
+  background: rgba(var(--accent-rgb), 0.08);
+}
+.mine-laser {
+  color: #5aa9e6;
+  border-color: #35506b;
+  background: rgba(90, 169, 230, 0.08);
+}
+.hotspot-row > td {
+  background: rgba(255, 255, 255, 0.025);
+  padding: 10px 10px;
+}
+.hotspots-title {
+  margin-bottom: 7px;
+  font-size: 12.5px;
+}
+.hotspot-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.hotspot-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+}
+.hotspot-item .hs-count {
+  color: var(--orange);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  min-width: 28px;
+}
+.hotspot-item .hb {
+  margin-left: auto;
+}
+
+/* engineering materials */
+.materials {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 14px;
+  margin-top: 6px;
+}
+.mat-group .label {
+  margin-bottom: 6px;
+}
+.mat-group .cargo-list li {
+  padding: 4px 2px;
+}
+
+footer {
+  text-align: center;
+  padding: 12px;
+  font-size: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: center;
+}

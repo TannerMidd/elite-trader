@@ -1,0 +1,18 @@
+{
+  "ready": true,
+  "stations": 128,
+  "commodity_rows": 4096,
+  "db_size_mb": 12.5,
+  "seeded_at": "2026-07-18",
+  "seeding": null,
+  "eddn": {
+    "connected": true,
+    "messages": 42,
+    "last_update": "2026-07-18T12:00:00Z"
+  },
+  "eddn_upload": {
+    "enabled": true,
+    "uploads": 3,
+    "last_error": null
+  }
+}

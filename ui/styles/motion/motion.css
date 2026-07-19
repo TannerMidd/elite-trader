@@ -1,0 +1,155 @@
+/* ---------- motion ---------- */
+
+/* flight-panel cockpit ambience */
+@keyframes fp-sweep {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(420%);
+  }
+}
+@keyframes fp-flicker {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  92% {
+    opacity: 1;
+  }
+  93% {
+    opacity: 0.72;
+  }
+  94% {
+    opacity: 1;
+  }
+  97% {
+    opacity: 0.85;
+  }
+  98% {
+    opacity: 1;
+  }
+}
+@keyframes fp-scan-drift {
+  from {
+    background-position: 0 0;
+  }
+  to {
+    background-position: 0 240px;
+  }
+}
+@keyframes fp-pulse-glow {
+  0%,
+  100% {
+    box-shadow: 0 0 12px rgba(var(--accent-rgb), 0.25);
+  }
+  50% {
+    box-shadow: 0 0 22px rgba(var(--accent-rgb), 0.5);
+  }
+}
+@keyframes fp-boot-fade {
+  0% {
+    opacity: 1;
+  }
+  78% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    visibility: hidden;
+  }
+}
+@keyframes fp-boot-line {
+  from {
+    width: 0;
+  }
+  to {
+    width: 100%;
+  }
+}
+@keyframes go-crawl {
+  from {
+    background-position: 0 0;
+  }
+  to {
+    background-position: 34px 0;
+  } /* ≈ one 135° stripe period: near-seamless loop */
+}
+
+@keyframes pane-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes drop-in {
+  from {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes busy-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.6;
+  }
+}
+
+@keyframes slide-in-right {
+  from {
+    opacity: 0.2;
+    transform: translateX(min(18vw, 220px));
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes slide-in-left {
+  from {
+    opacity: 0.2;
+    transform: translateX(max(-18vw, -220px));
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+/* Directional page slides for panel mode (win over the default pane-in). */
+.slide-in-right {
+  animation: slide-in-right 0.3s var(--ease);
+}
+.slide-in-left {
+  animation: slide-in-left 0.3s var(--ease);
+}
+
+/* While a swipe is in flight the page follows the finger with no easing lag;
+   on release the transform transition above settles it back. */
+.fp-dragging {
+  transition: none !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

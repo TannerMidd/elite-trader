@@ -1,0 +1,323 @@
+/* specialist console: mining · combat / AX · carrier · exobiology */
+#tab-specialists .good {
+  color: var(--good);
+}
+#tab-specialists .warn,
+#tab-specialists .error {
+  color: var(--bad);
+}
+.sp-scope {
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--orange);
+  border-radius: var(--radius);
+  background: rgba(var(--accent-rgb), 0.045);
+  color: var(--dim);
+  font-size: calc(12.5px * var(--helper-scale));
+}
+.sp-scope b {
+  color: var(--orange-soft);
+  margin-right: 8px;
+  letter-spacing: 1px;
+}
+/* The switcher is a Holo Bracket segmented group whose segments keep their
+   two-line teaching layout (icon · role / hint), like the spec's rich VOICE
+   toggle. Colors and the active state come from .hb + aria-pressed. */
+.sp-switcher {
+  flex-wrap: wrap;
+  margin: 10px 0 5px;
+}
+.sp-switcher .hb {
+  flex: 1 1 0;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  grid-template-rows: auto auto;
+  gap: 0 9px;
+  align-items: center;
+  min-height: 58px;
+  padding: 8px 11px;
+  text-align: left;
+  white-space: normal;
+}
+.sp-switcher .hb > span {
+  grid-row: 1 / 3;
+  font-size: 22px;
+}
+.sp-switcher .hb b {
+  font-size: 12px;
+  letter-spacing: 1.4px;
+}
+.sp-switcher .hb small {
+  font-size: 10.5px;
+  letter-spacing: 1px;
+  white-space: nowrap;
+}
+.sp-global-status {
+  min-height: 20px;
+  padding: 1px 3px 5px;
+  font-size: calc(11.5px * var(--helper-scale));
+}
+.sp-workflow {
+  animation: pane-in 0.18s var(--ease);
+}
+.sp-head-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 7px;
+  flex-wrap: wrap;
+}
+.sp-state {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--dim);
+  font:
+    700 10.5px "IBM Plex Mono",
+    Consolas,
+    monospace;
+  letter-spacing: 1px;
+}
+.sp-state::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--dim);
+}
+.sp-state.active {
+  color: var(--good);
+  border-color: rgba(111, 191, 115, 0.48);
+}
+.sp-state.active::before {
+  background: var(--good);
+  box-shadow: 0 0 8px rgba(111, 191, 115, 0.65);
+}
+.sp-stat-grid {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(105px, 1fr));
+  gap: 7px;
+  margin-top: 11px;
+}
+.sp-stat {
+  min-width: 0;
+  padding: 9px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--panel-2);
+}
+.sp-stat span {
+  display: block;
+  color: var(--dim);
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 1.3px;
+}
+.sp-stat b {
+  display: block;
+  margin-top: 2px;
+  overflow: hidden;
+  color: var(--orange-soft);
+  font:
+    600 16px "IBM Plex Mono",
+    Consolas,
+    monospace;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sp-two-col {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+.sp-table-wrap {
+  max-height: 310px;
+}
+.sp-fact-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(145px, 1fr));
+  gap: 7px;
+}
+.sp-fact {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 2px 8px;
+  padding: 8px 9px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: var(--panel-2);
+}
+.sp-fact span {
+  color: var(--dim);
+  font-size: 11.5px;
+}
+.sp-fact b {
+  color: var(--text);
+  font:
+    600 13px "IBM Plex Mono",
+    Consolas,
+    monospace;
+  text-align: right;
+}
+.sp-fact small {
+  grid-column: 1 / -1;
+  color: var(--dim);
+  font-size: 10.5px;
+}
+.sp-history {
+  display: flex;
+  flex-direction: column;
+}
+.sp-history-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+  padding: 7px 2px;
+  border-bottom: 1px solid var(--border);
+}
+.sp-history-row:last-child {
+  border-bottom: none;
+}
+.sp-history-row b,
+.sp-history-row span {
+  display: block;
+}
+.sp-history-row b {
+  font-size: 12.5px;
+}
+.sp-history-row span,
+.sp-history-row time {
+  color: var(--dim);
+  font-size: 11px;
+}
+.sp-history-row time {
+  white-space: nowrap;
+}
+
+.sp-readiness-level {
+  color: var(--orange-soft);
+  font:
+    700 11px "IBM Plex Mono",
+    Consolas,
+    monospace;
+  letter-spacing: 1px;
+  text-align: right;
+}
+.sp-readiness-layout {
+  display: grid;
+  grid-template-columns: 185px minmax(0, 1fr);
+  gap: 16px;
+  align-items: center;
+  margin: 4px 0 13px;
+}
+.sp-readiness-score {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  text-align: center;
+  font-size: 10.5px;
+}
+.sp-score-ring {
+  --score: 0deg;
+  position: relative;
+  display: grid;
+  place-content: center;
+  width: 116px;
+  height: 116px;
+  border-radius: 50%;
+  background: conic-gradient(var(--orange) 0 var(--score), var(--border) var(--score) 360deg);
+  font-family: "IBM Plex Mono", Consolas, monospace;
+}
+.sp-score-ring::before {
+  content: "";
+  position: absolute;
+  inset: 8px;
+  border-radius: 50%;
+  background: var(--panel);
+}
+.sp-score-ring b,
+.sp-score-ring span {
+  position: relative;
+  z-index: 1;
+}
+.sp-score-ring b {
+  color: var(--orange-soft);
+  font-size: 31px;
+  line-height: 1;
+}
+.sp-score-ring span {
+  color: var(--dim);
+  font-size: 10px;
+}
+.sp-checklist {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(120px, 1fr));
+  gap: 5px;
+}
+.sp-checklist span {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 32px;
+  padding: 5px 7px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--dim);
+  font-size: 11px;
+}
+.sp-checklist span i {
+  width: 15px;
+  color: var(--dim);
+  font-style: normal;
+  font-weight: 700;
+  text-align: center;
+}
+.sp-checklist span.present {
+  color: var(--text);
+  border-color: rgba(111, 191, 115, 0.38);
+}
+.sp-checklist span.present i {
+  color: var(--good);
+}
+.sp-observation-note {
+  margin-top: 7px;
+  padding: 7px 9px;
+  border-left: 3px solid var(--orange);
+  background: rgba(var(--accent-rgb), 0.05);
+  color: var(--dim);
+  font-size: calc(11px * var(--helper-scale));
+}
+.sp-observation-note b {
+  color: var(--orange-soft);
+}
+.sp-session-detail-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+  margin-top: 12px;
+}
+.sp-chip-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+.sp-chip-list > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 7px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--panel-2);
+  font-size: 11.5px;
+}
+.sp-chip-list > span b {
+  color: var(--orange-soft);
+  font:
+    600 11px "IBM Plex Mono",
+    Consolas,
+    monospace;
+}

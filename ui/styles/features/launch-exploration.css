@@ -1,0 +1,126 @@
+/* ---------- launch control: game-offline banner + ignition button ---------- */
+#game-offline {
+  display: none;
+}
+#game-offline.show {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px 24px;
+  position: relative;
+  padding: 12px 20px 14px;
+  /* accent-tinted dark housing, so the banner follows the color theme */
+  background:
+    linear-gradient(180deg, rgba(var(--accent-rgb), 0.08), rgba(var(--accent-rgb), 0.02)), #0b0c0e;
+  border-bottom: 1px solid rgba(var(--accent-rgb), 0.35);
+  overflow: hidden;
+}
+/* hazard chevrons along the top edge, like a guarded cockpit switch */
+#game-offline.show::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 4px;
+  background: repeating-linear-gradient(135deg, var(--orange) 0 10px, transparent 10px 20px);
+  opacity: 0.5;
+}
+.go-status {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+.go-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--bad);
+  box-shadow: 0 0 10px rgba(224, 93, 93, 0.6);
+  animation: busy-pulse 2s ease-in-out infinite;
+  flex: none;
+}
+#game-offline.launching .go-dot {
+  background: var(--orange);
+  box-shadow: 0 0 10px rgba(var(--accent-rgb), 0.6);
+}
+.go-lines {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.go-title {
+  font-size: 11px;
+  letter-spacing: 4px;
+  font-weight: 700;
+  color: var(--orange-soft);
+  white-space: nowrap;
+}
+.go-sub {
+  font-size: 12.5px;
+  letter-spacing: 0.5px;
+  color: var(--dim);
+}
+
+/* The ignition button is a Holo Bracket primary; this layer keeps only the
+   launching state: crawling hazard stripes while we wait for telemetry.
+   The button stays live — pressing it again aborts the sequence. */
+.go-launch {
+  flex: none;
+}
+.go-launch-label {
+  position: relative;
+  z-index: 1;
+}
+#game-offline.launching .go-launch {
+  background-color: #0d0a08;
+  background-image: repeating-linear-gradient(
+    135deg,
+    rgba(var(--accent-rgb), 0.18) 0 12px,
+    rgba(var(--accent-rgb), 0.04) 12px 24px
+  );
+  background-size: 200% 100%;
+  border-color: rgba(var(--accent-rgb), 0.5);
+  color: var(--orange);
+  animation: go-crawl 1.2s linear infinite;
+}
+
+/* Indeterminate launch-sequence bar along the banner's bottom edge */
+.go-seq {
+  display: none;
+}
+#game-offline.launching .go-seq {
+  display: block;
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: rgba(var(--accent-rgb), 0.12);
+}
+#game-offline.launching .go-seq > div {
+  height: 100%;
+  width: 22%;
+  background: linear-gradient(90deg, transparent, var(--orange), transparent);
+  animation: fp-sweep 1.6s cubic-bezier(0.22, 0.61, 0.36, 1) infinite;
+}
+
+/* "Where to sell your data" result sections */
+.sd-section {
+  margin-top: 14px;
+}
+.sd-section .label {
+  margin-bottom: 4px;
+}
+
+/* "Likely first log" badge (5x exobiology bonus) */
+.bio-first {
+  color: var(--good);
+  font-size: 0.72em;
+  font-weight: 700;
+  letter-spacing: 1px;
+  white-space: nowrap;
+  cursor: help;
+}

@@ -1,0 +1,33 @@
+{
+  "name": "frameshift-frontend",
+  "version": "0.0.0",
+  "private": true,
+  "engines": {
+    "node": ">=24 <25"
+  },
+  "scripts": {
+    "check:syntax": "node --check ui/hb.js && node --check ui/panel-bootstrap.js",
+    "format": "prettier --write . --ignore-unknown",
+    "format:check": "prettier --check . --ignore-unknown",
+    "lint": "eslint .",
+    "check:architecture": "node tools/check_ui_architecture.mjs --self-test && node tools/check_ui_architecture.mjs && node tools/check_ui_dependencies.mjs",
+    "check:css": "node tools/verify_ui_css_split.mjs",
+    "check:dom": "node tools/check_ui_dom_contract.mjs",
+    "check:performance": "node tools/check_ui_performance_budget.mjs",
+    "typecheck": "tsc --project tsconfig.json",
+    "test:unit": "vitest run",
+    "test:unit:watch": "vitest",
+    "test:e2e": "playwright test",
+    "test:e2e:ci": "playwright test",
+    "verify:frontend": "npm run check:syntax && npm run check:architecture && npm run check:dom && npm run check:css && npm run check:performance && npm run format:check && npm run lint && npm run typecheck && npm run test:unit"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.61.1",
+    "eslint": "10.7.0",
+    "globals": "17.7.0",
+    "happy-dom": "20.10.6",
+    "prettier": "3.9.5",
+    "typescript": "6.0.3",
+    "vitest": "4.1.10"
+  }
+}

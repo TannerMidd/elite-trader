@@ -1,0 +1,334 @@
+/* ---------- flight panel mode (tablet cockpit display) ---------- */
+body.panel-mode .topbar,
+body.panel-mode footer,
+body.panel-mode .tabs,
+body.panel-mode .location {
+  display: none;
+}
+body.panel-mode.fp-status-page main {
+  display: none;
+}
+body.panel-mode {
+  background: radial-gradient(1200px 700px at 70% -10%, #0c0e12, #060708) fixed #060708;
+  overscroll-behavior: none;
+  font-family: "Chakra Petch", "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
+  padding-left: 100px; /* clear the nav rail */
+}
+/* Holo Bracket buttons keep their own faces (Chakra / Plex Mono utility). */
+body.panel-mode input,
+body.panel-mode select,
+body.panel-mode textarea,
+body.panel-mode button:not(.hb) {
+  font-family: inherit;
+}
+
+/* Left nav rail: icon + label per page, voice/exit pinned at the bottom */
+#fp-nav {
+  display: none;
+}
+/* Tactical rail: accent header bar, hazard-striped active page with a cut
+   corner and ▸ marker. All tints derive from --accent-rgb so themes hold. */
+body.panel-mode #fp-nav {
+  display: flex;
+  flex-direction: column;
+  position: fixed;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  width: 100px;
+  z-index: 30;
+  background: linear-gradient(180deg, #0a0a0c, #060708);
+  border-right: 1px solid rgba(var(--accent-rgb), 0.22);
+  padding: 0 0 10px;
+}
+body.panel-mode #fp-nav::before {
+  content: "";
+  display: block;
+  flex: none;
+  height: 3px;
+  background: linear-gradient(90deg, var(--orange), rgba(var(--accent-rgb), 0.25));
+}
+.fp-nav-brand {
+  display: flex;
+  justify-content: center;
+  padding: 13px 0 12px;
+  border-bottom: 1px solid rgba(var(--accent-rgb), 0.13);
+}
+.fp-nav-brand img {
+  display: block;
+  filter: drop-shadow(0 0 10px rgba(var(--accent-rgb), 0.5));
+}
+.fp-nav-pages {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding-top: 8px;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+.fp-nav-pages button {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 9px 4px 8px;
+  min-height: 56px;
+  background: transparent;
+  border: none;
+  border-left: 3px solid transparent;
+  color: var(--dim);
+  cursor: pointer;
+  touch-action: manipulation;
+  transition:
+    color 0.15s,
+    background 0.15s,
+    border-color 0.15s;
+}
+.fp-nav-pages .fp-ni {
+  font-size: 18px;
+  line-height: 1;
+  font-variant-emoji: text;
+}
+.fp-nav-pages .fp-nl {
+  font-size: 9px;
+  letter-spacing: 2.5px;
+  font-weight: 700;
+}
+.fp-nav-pages button.active {
+  color: var(--orange);
+  border-left-color: var(--orange);
+  background: repeating-linear-gradient(
+    -45deg,
+    rgba(var(--accent-rgb), 0.16) 0 4px,
+    rgba(var(--accent-rgb), 0.05) 4px 8px
+  );
+  clip-path: polygon(0 0, 100% 0, 100% calc(100% - 10px), calc(100% - 10px) 100%, 0 100%);
+}
+.fp-nav-pages button.active .fp-ni {
+  text-shadow: 0 0 14px rgba(var(--accent-rgb), 0.8);
+}
+.fp-nav-pages button.active::after {
+  content: "▸";
+  position: absolute;
+  right: 5px;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 9px;
+  color: var(--orange-soft);
+}
+.fp-nav-pages button:active {
+  background: rgba(var(--accent-rgb), 0.08);
+}
+/* Short tablets: compress the rail so the primary pages stay visible (buttons
+   keep a >=44px touch target; without this the DB entry clips off-screen). */
+@media (max-height: 820px) {
+  /* Twelve pages × 48px plus the brand/foot sections; shorter rails scroll. */
+  .fp-nav-pages button {
+    min-height: 48px;
+    padding: 6px 4px 5px;
+    gap: 2px;
+  }
+  .fp-nav-pages .fp-ni {
+    font-size: 16px;
+  }
+}
+@media (max-height: 660px) {
+  .fp-nav-pages button {
+    min-height: 44px;
+  }
+  .fp-nav-pages .fp-nl {
+    font-size: 8px;
+  }
+}
+.fp-nav-foot {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 10px 4px;
+  border-top: 1px solid rgba(var(--accent-rgb), 0.13);
+}
+/* Rail commands are Holo Bracket utility buttons squeezed into the 100px
+   rail: tighter padding so VOICE / FULL / EXIT never clip. */
+.fp-nav-foot .hb {
+  font-variant-emoji: text;
+  min-height: 46px;
+  padding: 8px 4px;
+  letter-spacing: 1px;
+  font-size: 10px;
+}
+
+/* Persistent status strip: system / station / destination + fuel, cargo,
+   clock and commander — visible on every panel page */
+#fp-strip {
+  display: none;
+}
+body.panel-mode #fp-strip {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 18px;
+  position: sticky;
+  top: 0;
+  z-index: 25;
+  padding: 10px 20px 12px;
+  border-bottom: 1px solid rgba(var(--accent-rgb), 0.22);
+  background:
+    linear-gradient(180deg, rgba(var(--accent-rgb), 0.05), rgba(0, 0, 0, 0) 70%),
+    linear-gradient(180deg, #0c0b0a, #08090a);
+  overflow: hidden;
+}
+/* Split accent baseline: solid for the first third, dimmed after — the sweep
+   rides along it. */
+body.panel-mode #fp-strip::after {
+  content: "";
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: linear-gradient(90deg, var(--orange) 0 34%, rgba(var(--accent-rgb), 0.25) 34% 100%);
+}
+.fps-sweep {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  z-index: 1;
+  height: 2px;
+  width: 22%;
+  background: linear-gradient(90deg, transparent, rgba(var(--accent-soft-rgb), 0.9), transparent);
+  animation: fp-sweep 5s var(--ease) infinite;
+}
+.fps-block {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 110px;
+  max-width: calc(240px * var(--strip-scale));
+  overflow: hidden;
+}
+.fps-system-block {
+  flex: 1;
+  min-width: 180px;
+  max-width: none;
+}
+.fps-label {
+  font-size: calc(9px * var(--strip-scale));
+  letter-spacing: 3px;
+  color: var(--dim);
+  font-weight: 600;
+  white-space: nowrap;
+}
+.fps-system {
+  font-family: "IBM Plex Mono", Consolas, monospace;
+  font-size: calc(17px * var(--strip-scale));
+  font-weight: 600;
+  color: var(--orange);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-shadow: 0 0 12px rgba(var(--accent-rgb), 0.45);
+}
+.fps-system::before {
+  content: "◆ ";
+}
+.fps-value {
+  font-size: calc(13px * var(--strip-scale));
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.fps-dest {
+  color: var(--orange-soft);
+}
+.fps-right {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  margin-left: auto;
+}
+.fps-mini {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  width: calc(92px * var(--strip-scale));
+}
+.fps-mini-head {
+  display: flex;
+  justify-content: space-between;
+  font-size: calc(8px * var(--strip-scale));
+  letter-spacing: 2px;
+  color: var(--dim);
+  font-weight: 600;
+}
+.fps-mini-head span:last-child {
+  font-family: "IBM Plex Mono", Consolas, monospace;
+  letter-spacing: 0;
+  color: var(--text);
+}
+.fps-minibar {
+  position: relative;
+  height: calc(6px * var(--strip-scale));
+  background: #15120e;
+  border: 1px solid rgba(var(--accent-rgb), 0.22);
+  overflow: hidden;
+}
+.fps-minibar > div {
+  height: 100%;
+  width: 0;
+  background: var(--orange);
+  transition:
+    width 0.6s var(--ease),
+    background-color 0.3s;
+}
+/* Segment ticks over the fill, matching the page bars */
+.fps-minibar::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: repeating-linear-gradient(90deg, transparent 0 8px, #08090a 8px 10px);
+  pointer-events: none;
+}
+.fps-clock {
+  font-family: "IBM Plex Mono", Consolas, monospace;
+  font-size: calc(15px * var(--strip-scale));
+  letter-spacing: 1px;
+}
+.fps-cmdr {
+  font-size: calc(11px * var(--strip-scale));
+  letter-spacing: 2px;
+  color: var(--dim);
+}
+
+/* Touch-friendly scaling for the standard tabs while in panel mode.
+   The bottom padding keeps the last rows clear of the floating ⇅ button. */
+body.panel-mode main {
+  padding: 20px 22px 90px;
+  max-width: none;
+  font-size: 16px;
+}
+body.panel-mode .route-form input,
+body.panel-mode .route-form select,
+body.panel-mode .plot-form input,
+body.panel-mode #market-filter {
+  min-height: 48px;
+  font-size: 16px;
+}
+body.panel-mode th,
+body.panel-mode td {
+  padding: 10px 10px;
+  font-size: 15px;
+}
+body.panel-mode .linkrow a {
+  padding: 12px 18px;
+  font-size: 14px;
+}
+body.panel-mode .jumps li,
+body.panel-mode .cargo-list li {
+  padding: 11px 4px;
+  font-size: 15px;
+}

@@ -1,6 +1,6 @@
 /* ============================================================
    HOLO BRACKET — Frameshift button system v1.0
-   Drop-in for ui/style.css (or load after it). Speaks the existing
+   Imported by ui/styles/index.css in the components layer. Speaks the existing
    :root vars, so per-device color themes keep working:
    --orange, --orange-soft, --accent-rgb, --bad, --good,
    --text, --dim, --border, --border-bright.

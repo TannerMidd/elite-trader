@@ -1,0 +1,216 @@
+/* Unbanked exploration + bio value */
+.fp-unbanked {
+  padding: 14px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  clip-path: polygon(
+    12px 0,
+    100% 0,
+    100% calc(100% - 12px),
+    calc(100% - 12px) 100%,
+    0 100%,
+    0 12px
+  );
+}
+.fp-unbanked .fp-rule {
+  margin: 0 0 2px;
+}
+.fp-unb-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 10px;
+}
+.fp-unb-row .fp-label {
+  margin-bottom: 0;
+}
+.fp-unb-row .fp-value {
+  font-family: "IBM Plex Mono", Consolas, monospace;
+  font-size: clamp(17px, 2vw, 19px);
+  font-weight: 600;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.fp-unb-row .fp-value.orange {
+  color: var(--orange);
+}
+
+/* Unsold scans + samples worth many rebuys: full-width hazard banner */
+.fp-risk {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 11px 16px;
+  background:
+    repeating-linear-gradient(
+      -45deg,
+      rgba(var(--accent-soft-rgb), 0.05) 0 6px,
+      transparent 6px 12px
+    ),
+    rgba(var(--accent-rgb), 0.05);
+  border: 1px solid rgba(var(--accent-soft-rgb), 0.55);
+  border-left: 4px solid var(--orange-soft);
+  clip-path: polygon(0 0, 100% 0, 100% calc(100% - 10px), calc(100% - 10px) 100%, 0 100%);
+  cursor: help;
+}
+.fp-risk-tag {
+  font-size: 12px;
+  letter-spacing: 2px;
+  font-weight: 700;
+  color: var(--orange-soft);
+  white-space: nowrap;
+}
+.fp-risk.crit {
+  border-color: var(--bad);
+  border-left-color: var(--bad);
+  background: rgba(224, 93, 93, 0.08);
+}
+.fp-risk.crit .fp-risk-tag {
+  color: #ff9d9d;
+}
+#fp-risk-text {
+  font-family: "IBM Plex Mono", Consolas, monospace;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+}
+.fp-risk-hint {
+  font-size: 11px;
+  letter-spacing: 1px;
+  color: var(--dim);
+  margin-left: auto;
+  white-space: nowrap;
+}
+
+/* Session tiles: one joined readout strip with cut outer corners */
+.fp-tiles {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+.fp-tiles-row {
+  grid-template-columns: repeat(5, 1fr);
+  gap: 2px;
+  background: rgba(var(--accent-rgb), 0.13);
+  border: 1px solid rgba(var(--accent-rgb), 0.13);
+  clip-path: polygon(
+    14px 0,
+    100% 0,
+    100% calc(100% - 14px),
+    calc(100% - 14px) 100%,
+    0 100%,
+    0 14px
+  );
+}
+.fp-tile {
+  background: #0c0b0a;
+  border: none;
+  padding: 13px 18px;
+  min-width: 0;
+}
+.fp-tile .fp-value {
+  margin-top: 5px;
+  font-family: "IBM Plex Mono", Consolas, monospace;
+  font-size: clamp(19px, 2.2vw, 22px);
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-variant-numeric: tabular-nums;
+}
+.fp-tile .fp-value.orange {
+  color: var(--orange);
+}
+.fp-tile .fp-label {
+  margin-bottom: 0;
+}
+
+/* Section rules: label + fading hairline */
+.fp-rule {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-top: 4px;
+}
+.fp-rule > span {
+  font-size: 10px;
+  letter-spacing: 3px;
+  color: var(--orange);
+  font-weight: 700;
+  white-space: nowrap;
+}
+.fp-rule > i {
+  flex: 1;
+  height: 1px;
+  background: linear-gradient(90deg, rgba(var(--accent-rgb), 0.4), transparent);
+}
+
+.fp-jumps {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+  gap: 10px;
+}
+.fp-jump {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  background: linear-gradient(90deg, rgba(var(--accent-rgb), 0.06), transparent 40%), #0d0c0a;
+  border: 1px solid rgba(var(--accent-rgb), 0.13);
+  border-left: 3px solid var(--orange);
+  clip-path: polygon(0 0, 100% 0, 100% calc(100% - 10px), calc(100% - 10px) 100%, 0 100%);
+  color: var(--text);
+  font-size: clamp(14px, 1.7vw, 15px);
+  padding: 12px 16px;
+  min-height: 56px;
+  cursor: pointer;
+  text-align: left;
+  touch-action: manipulation;
+  transition:
+    border-color 0.15s,
+    background 0.15s,
+    transform 0.08s;
+}
+.fp-jump:active {
+  border-color: var(--orange);
+  background: var(--panel-2);
+  transform: scale(0.985);
+}
+.fp-jump-dist {
+  font-family: "IBM Plex Mono", Consolas, monospace;
+  color: var(--dim);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.fp-plotrow {
+  display: flex;
+  gap: 10px;
+}
+.fp-plotrow input {
+  flex: 1;
+  min-width: 0;
+  background: #0d0c0a;
+  border: 1px solid rgba(var(--accent-rgb), 0.22);
+  clip-path: polygon(
+    10px 0,
+    100% 0,
+    100% calc(100% - 10px),
+    calc(100% - 10px) 100%,
+    0 100%,
+    0 10px
+  );
+  color: var(--text);
+  font-family: inherit;
+  font-size: 15px;
+  letter-spacing: 1px;
+  padding: 0 16px;
+  min-height: 54px;
+}
+.fp-plotrow input:focus {
+  outline: none;
+  border-color: var(--orange);
+  box-shadow: var(--focus-ring);
+}

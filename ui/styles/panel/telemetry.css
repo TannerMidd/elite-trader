@@ -1,0 +1,303 @@
+/* Shared tactical surfaces: accent-tinted dark panels with cut corners.
+   All tints ride --accent-rgb so the color themes carry through. */
+.fp-cmd,
+.fp-gauge,
+.fp-unbanked,
+.fp-loop {
+  background:
+    linear-gradient(180deg, rgba(var(--accent-rgb), 0.05), rgba(0, 0, 0, 0) 60%),
+    linear-gradient(180deg, #0d0c0b, #090909);
+  border: 1px solid rgba(var(--accent-rgb), 0.13);
+}
+
+/* Command header: the system readout, dock state, tracked route and the
+   ship's money telemetry in one corner-cut block. */
+.fp-cmd {
+  position: relative;
+  display: flex;
+  align-items: flex-start;
+  gap: 28px;
+  padding: 18px 24px;
+  clip-path: polygon(
+    18px 0,
+    100% 0,
+    100% calc(100% - 18px),
+    calc(100% - 18px) 100%,
+    0 100%,
+    0 18px
+  );
+}
+.fp-cmd::before,
+.fp-cmd::after {
+  content: "";
+  position: absolute;
+  height: 2px;
+  width: 120px;
+  background: var(--orange);
+}
+.fp-cmd::before {
+  top: 0;
+  left: 18px;
+}
+.fp-cmd::after {
+  bottom: 0;
+  right: 18px;
+}
+.fp-cmd-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.fp-system-label {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  color: var(--dim);
+  letter-spacing: 4px;
+  font-size: clamp(10px, 1.2vw, 11px);
+  font-weight: 600;
+}
+.fp-blink {
+  flex: none;
+  width: 7px;
+  height: 7px;
+  background: var(--orange);
+  transform: rotate(45deg);
+  animation: fp-blink 2.4s ease-in-out infinite;
+}
+@keyframes fp-blink {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.25;
+  }
+}
+.fp-fade-rule {
+  flex: 1;
+  height: 1px;
+  background: linear-gradient(90deg, rgba(var(--accent-rgb), 0.5), transparent);
+}
+.fp-system {
+  font-family: "IBM Plex Mono", Consolas, monospace;
+  color: var(--orange);
+  font-size: clamp(30px, 4.8vw, 48px);
+  font-weight: 600;
+  line-height: 1.05;
+  text-shadow: 0 0 28px rgba(var(--accent-rgb), 0.55);
+  overflow-wrap: anywhere;
+}
+body.crt-fx .fp-system {
+  animation: fp-flicker 9s linear infinite;
+}
+.fp-chiprow {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+.fp-dockchip {
+  background: rgba(111, 191, 115, 0.1);
+  border: 1px solid rgba(111, 191, 115, 0.5);
+  color: var(--good);
+  font-size: clamp(11px, 1.4vw, 12px);
+  letter-spacing: 2.5px;
+  font-weight: 700;
+  padding: 5px 12px 4px;
+  clip-path: polygon(8px 0, 100% 0, 100% calc(100% - 8px), calc(100% - 8px) 100%, 0 100%, 0 8px);
+  white-space: nowrap;
+}
+.fp-dockchip.inspace {
+  background: rgba(var(--accent-soft-rgb), 0.08);
+  border-color: rgba(var(--accent-soft-rgb), 0.45);
+  color: var(--orange-soft);
+}
+.fp-sub {
+  font-size: clamp(15px, 2vw, 17px);
+  letter-spacing: 1px;
+}
+.fp-dest {
+  color: var(--orange-soft);
+  font-size: clamp(13px, 1.7vw, 15px);
+}
+.fp-status {
+  color: var(--dim);
+  font-size: clamp(13px, 1.7vw, 15px);
+  min-height: 1.4em;
+}
+.fp-status.error {
+  color: var(--bad);
+}
+
+/* Ship telemetry column (right side of the command header) */
+.fp-telemetry {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 8px;
+  font-family: "IBM Plex Mono", Consolas, monospace;
+}
+.fp-tel-head {
+  font-size: 11px;
+  color: var(--dim);
+  letter-spacing: 2px;
+  white-space: nowrap;
+}
+.fp-tel-head span:not(:empty)::before {
+  content: " · ";
+}
+.fp-tel-tiles {
+  display: flex;
+  gap: 20px;
+}
+.fp-tel {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  min-width: 0;
+}
+.fp-tel .fp-label {
+  margin-bottom: 0;
+}
+.fp-tel .fp-value {
+  font-size: clamp(17px, 2vw, 21px);
+  font-weight: 600;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.fp-tel .fp-value.orange {
+  color: var(--orange);
+}
+.fp-tel-sub {
+  font-size: 10px;
+  letter-spacing: 1px;
+  color: var(--good);
+  white-space: nowrap;
+  min-height: 1.2em;
+}
+.fp-tel-sub.thin {
+  color: var(--orange-soft);
+}
+.fp-tel-sub.bad {
+  color: var(--bad);
+}
+
+/* Tracked-route progress inside the command header */
+.fp-routeline {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 4px;
+}
+.fp-route-label {
+  font-size: 10px;
+  letter-spacing: 2.5px;
+  color: var(--orange-soft);
+  font-weight: 700;
+  white-space: nowrap;
+}
+.fp-routebar {
+  position: relative;
+  flex: 1;
+  height: 8px;
+  background: #0a0a09;
+  border: 1px solid rgba(var(--accent-rgb), 0.22);
+  overflow: hidden;
+}
+.fp-routebar > div {
+  height: 100%;
+  width: 0;
+  background: linear-gradient(90deg, rgba(var(--accent-rgb), 0.55), var(--orange));
+  box-shadow: 0 0 10px rgba(var(--accent-rgb), 0.5);
+  transition: width 0.6s var(--ease);
+}
+.fp-routebar::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: repeating-linear-gradient(90deg, transparent 0 12px, #090909 12px 14px);
+  pointer-events: none;
+}
+.fp-routetext {
+  font-family: "IBM Plex Mono", Consolas, monospace;
+  font-size: 11px;
+  color: var(--dim);
+  white-space: nowrap;
+}
+
+/* Fuel / cargo readouts: segmented bars with a status note underneath */
+.fp-gauge {
+  position: relative;
+  padding: 15px 18px;
+  clip-path: polygon(
+    12px 0,
+    100% 0,
+    100% calc(100% - 12px),
+    calc(100% - 12px) 100%,
+    0 100%,
+    0 12px
+  );
+}
+.fp-gauge-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin-bottom: 9px;
+}
+.fp-gauge-head .fp-label {
+  margin-bottom: 0;
+}
+.fp-label {
+  color: var(--dim);
+  letter-spacing: 3px;
+  font-size: clamp(10px, 1.2vw, 11px);
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+.fp-bar {
+  position: relative;
+  height: 18px;
+  background: #0a0a09;
+  border: 1px solid rgba(var(--accent-rgb), 0.22);
+  overflow: hidden;
+}
+.fp-bar > div {
+  height: 100%;
+  background: linear-gradient(90deg, rgba(var(--accent-rgb), 0.55), var(--orange));
+  box-shadow: 0 0 14px rgba(var(--accent-rgb), 0.5);
+  transition:
+    width 0.6s var(--ease),
+    background-color 0.3s;
+}
+.fp-bar::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: repeating-linear-gradient(90deg, transparent 0 14px, #090909 14px 17px);
+  pointer-events: none;
+}
+.fp-gvalue {
+  font-family: "IBM Plex Mono", Consolas, monospace;
+  font-size: clamp(17px, 2vw, 19px);
+  font-weight: 600;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.fp-gauge-note {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 6px;
+  font-family: "IBM Plex Mono", Consolas, monospace;
+  font-size: 10px;
+  color: var(--dim);
+  min-height: 1.2em;
+}
+.fp-gauge-note .good {
+  color: var(--good);
+}

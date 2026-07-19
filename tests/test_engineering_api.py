@@ -32,7 +32,7 @@ app.testing = True
 client = app.test_client()
 profile_headers = {"X-Frameshift-Commander": commander_id}
 
-response = client.get("/api/engineering")
+response = client.get("/api/engineering", headers=profile_headers)
 assert response.status_code == 200, response.get_json()
 body = response.get_json()
 assert body["catalog"]["stats"]["groups"] == 505
@@ -47,7 +47,7 @@ response = client.post("/api/engineering/pin", headers=profile_headers, json={
 })
 assert response.status_code == 200, response.get_json()
 assert len(response.get_json()["pinned"]) == 2
-response = client.get("/api/engineering")
+response = client.get("/api/engineering", headers=profile_headers)
 items = {item["id"]: item for item in response.get_json()["wishlist"]["items"]}
 assert items["suit--artemis"]["current_grade"] == 2
 assert items["suit--artemis"]["target_grade"] == 4

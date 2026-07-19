@@ -1,0 +1,45 @@
+# Generated and machine-local content
+node_modules/
+coverage/
+playwright-report/
+test-results/
+.venv/
+.claude/
+.agents/
+.codex/
+.pytest_cache/
+build/
+dist/
+/data/
+showcase/
+package-lock.json
+
+# Non-frontend source and large static assets
+elite/
+assets/
+packaging/
+docs/
+*.md
+*.py
+*.bat
+*.sh
+*.svg
+*.woff2
+
+# Format the native UI sources and decomposed styles; other root UI assets
+# retain their established hand-authored conventions.
+ui/*
+!ui/index.html
+!ui/src/
+!ui/src/**
+!ui/styles/
+!ui/styles/**
+
+# Existing Python/CJS tests stay under their current conventions.
+tests/*
+!tests/ui/
+!tests/ui/**
+!tests/e2e/
+!tests/e2e/**
+!tests/unit/
+!tests/unit/**

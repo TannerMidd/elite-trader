@@ -1,0 +1,43 @@
+/* color theme picker */
+.setting.setting-theme {
+  grid-template-columns: 1fr;
+}
+.theme-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+}
+.theme-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 8px 12px;
+  min-height: 40px;
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text);
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.theme-chip .theme-dot {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--chip);
+  box-shadow: 0 0 6px var(--chip);
+}
+.theme-chip.on {
+  border-color: var(--chip);
+  color: var(--chip);
+}
+.theme-custom input[type="color"] {
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: none;
+  background: none;
+  cursor: pointer;
+}

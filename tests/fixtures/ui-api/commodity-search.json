@@ -1,0 +1,24 @@
+{
+  "commodity": "Gold",
+  "results": [
+    {
+      "station": "Jameson Memorial",
+      "system": "Shinrarta Dezhra",
+      "sell_price": 52000,
+      "buy_price": 50000,
+      "demand": 7500,
+      "supply": 1200,
+      "distance": 0,
+      "dist_ls": 325,
+      "large_pad": true,
+      "updated_at": 1784372400,
+      "confidence": {
+        "band": "high",
+        "score": 96,
+        "source": "fixture market observation",
+        "age_s": 60,
+        "reasons": []
+      }
+    }
+  ]
+}

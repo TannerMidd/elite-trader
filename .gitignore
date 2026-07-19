@@ -14,7 +14,9 @@ Thumbs.db
 *.pid
 
 # Local market database + Spansh dump (multi-GB, machine-local)
-data/
+/data/
+# This root-anchored rule deliberately does not match ui/src/data: the
+# frontend's small static ESM datasets are versioned application source.
 # The small, release-built engineering reference is application data, not a
 # commander database.  It must be versioned and bundled into the executable.
 !elite/data/
@@ -28,3 +30,11 @@ dist/
 
 # Demo-recording browser profiles (Playwright/Edge scratch state)
 showcase/
+
+# Frontend development tooling
+node_modules/
+coverage/
+playwright-report/
+test-results/
+.vitest/
+*.tsbuildinfo

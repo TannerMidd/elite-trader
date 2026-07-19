@@ -57,6 +57,9 @@ try:
 finally:
     spansh.neutron_route = original_neutron
 assert blocked.status_code == 409 and not neutron_called
-assert app.test_client().get("/api/specialists").status_code == 200
+assert app.test_client().get(
+    "/api/specialists",
+    headers={"X-Frameshift-Commander": legacy_expected},
+).status_code == 200
 
 print("galaxy mode OK: profile isolation and fail-closed Live community tools")

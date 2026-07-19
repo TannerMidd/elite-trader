@@ -436,9 +436,17 @@ class AppState:
             "top": entries[:8],
         }
 
-    def get_loadout(self):
-        """The raw Loadout journal event (for EDSY/SLEF export), or None."""
+    def get_loadout(self, commander_id=None):
+        """Return the raw Loadout event while its commander still matches.
+
+        Request handlers pass the identity captured at request entry. If a
+        journal handoff wins the race before this lock is acquired, fail
+        closed instead of exporting the next commander's ship under the old
+        request identity.
+        """
         with self._lock:
+            if commander_id is not None and self.commander_id != commander_id:
+                return None
             return dict(self.loadout_raw) if self.loadout_raw else None
 
     _ENGINEER_STAGE = {"Unlocked": 0, "Invited": 1, "Known": 2}
@@ -510,6 +518,7 @@ class AppState:
                 "game_build": self.game_build,
                 "has_loadout": self.loadout_raw is not None,
                 "system": self.system,
+                "system_address": self.system_address,
                 "star_pos": self.star_pos,
                 "pos": dict(self.pos) if self.pos else None,
                 "body": self.body,

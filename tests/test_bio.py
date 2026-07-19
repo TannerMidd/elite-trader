@@ -1,10 +1,15 @@
 """Feed synthetic exobiology journal events through the real JournalWatcher."""
 import json
+import os
 import sys
 import tempfile
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+_tmp = tempfile.TemporaryDirectory()
+os.environ["ET_DATA_DIR"] = _tmp.name
+
 from elite.journal import JournalWatcher
 from elite.state import AppState
 

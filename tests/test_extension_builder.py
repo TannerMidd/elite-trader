@@ -132,10 +132,12 @@ assert result["truncated"] is True and len(result["matches"]) == 10
 # --- HTTP surface -------------------------------------------------------------
 from elite.server import create_app  # noqa: E402  (import late: heavy)
 from elite.state import AppState  # noqa: E402
+import elite.eventledger as eventledger_module  # noqa: E402
 import elite.extensions as ext_module  # noqa: E402
 
 ext_module.EXTENSIONS = ExtensionManager(ROOT)
-app = create_app(AppState())
+state = AppState()
+app = create_app(state)
 app.config["TESTING"] = True
 client = app.test_client()
 
@@ -153,6 +155,69 @@ resp = client.post("/api/extensions/test", json={
 assert resp.status_code == 200, resp.get_json()
 body = resp.get_json()
 assert body["matches"] and body["matches"][0]["action"]["text"] == "Bounty 999999 cr — anaconda"
+
+# Explicit sample events are generic and remain usable without a loaded
+# commander. History mode, however, must use only the request-entry identity
+# and must never trust a stale header as the ledger discriminator.
+ledger_commanders = []
+original_event_ledger = eventledger_module.EventLedger
+
+
+class RecordingEventLedger:
+    def __init__(self, commander_id):
+        ledger_commanders.append(commander_id)
+
+    def query(self, **_kwargs):
+        return []
+
+
+eventledger_module.EventLedger = RecordingEventLedger
+try:
+    pending = client.post("/api/extensions/test", json={"manifest": dict(VALID)})
+    assert pending.status_code == 409, pending.get_json()
+    assert pending.get_json()["profile_pending"] is True
+    assert ledger_commanders == []
+
+    state.update(commander="Alpha", commander_id="alpha-id")
+    unconfirmed = client.post(
+        "/api/extensions/test", json={"manifest": dict(VALID)})
+    assert unconfirmed.status_code == 409, unconfirmed.get_json()
+    assert unconfirmed.get_json()["profile_changed"] is True
+
+    stale = client.post(
+        "/api/extensions/test",
+        headers={"X-Frameshift-Commander": "beta-id"},
+        json={"manifest": dict(VALID)},
+    )
+    assert stale.status_code == 409, stale.get_json()
+    assert stale.get_json()["profile_changed"] is True
+    assert stale.get_json()["commander_id"] == "alpha-id"
+    assert ledger_commanders == []
+
+    history = client.post(
+        "/api/extensions/test",
+        headers={"X-Frameshift-Commander": "alpha-id"},
+        json={"manifest": dict(VALID)},
+    )
+    assert history.status_code == 200, history.get_json()
+    assert history.get_json()["scanned"] == 0
+    assert ledger_commanders == ["alpha-id"]
+
+    generic = client.post(
+        "/api/extensions/test",
+        headers={"X-Frameshift-Commander": "stale-id"},
+        json={
+            "manifest": dict(VALID),
+            "sample_event": {
+                "event": "Bounty", "Reward": 250000, "Target": "python"
+            },
+        },
+    )
+    assert generic.status_code == 200, generic.get_json()
+    assert generic.get_json()["matches"]
+    assert ledger_commanders == ["alpha-id"]
+finally:
+    eventledger_module.EventLedger = original_event_ledger
 
 resp = client.post("/api/extensions/save", json={"manifest": {"id": "x"}})
 assert resp.status_code == 400

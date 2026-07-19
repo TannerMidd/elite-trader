@@ -1,0 +1,16 @@
+{
+  "settings": {
+    "exclude_surface": false,
+    "exclude_carriers": true,
+    "eddn_upload": true,
+    "eddn_extended_upload": false,
+    "auto_update": false,
+    "journal_dir": ""
+  },
+  "info": {
+    "version": "2.5.0",
+    "journal_dir": "C:\\Users\\Test\\Saved Games\\Frontier Developments\\Elite Dangerous",
+    "data_dir": "C:\\Frameshift-E2E",
+    "auto_update_supported": false
+  }
+}

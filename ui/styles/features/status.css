@@ -1,0 +1,387 @@
+/* jump history & cargo — contained like .table-wrap so 20 rows can't
+   stretch the whole page (panel-mode rows are ~68px tall) */
+.jumps,
+.cargo-list {
+  list-style: none;
+  margin: 4px 0;
+  padding: 0;
+  max-height: 430px;
+  overflow-y: auto;
+}
+.jumps li,
+.cargo-list li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 2px;
+  border-bottom: 1px solid var(--border);
+  font-size: 13.5px;
+}
+.jumps .sysname {
+  flex: 1;
+}
+.jumps .dist,
+.jumps .when {
+  color: var(--dim);
+  font-size: 12px;
+  white-space: nowrap;
+}
+.cargo-list .count {
+  margin-left: auto;
+  color: var(--orange-soft);
+  font-variant-numeric: tabular-nums;
+}
+.cargo-label {
+  margin-top: 16px;
+}
+
+/* auto-update banner */
+.update-banner {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  background: linear-gradient(180deg, #10231a, #0c1a14);
+  border-bottom: 1px solid var(--good);
+  padding: 9px 18px;
+  font-size: 13.5px;
+  animation: drop-in 0.25s var(--ease);
+}
+.update-banner.ub-error {
+  background: #2a1414;
+  border-bottom-color: var(--bad);
+}
+.ub-badge {
+  color: var(--good);
+  font-weight: 800;
+  letter-spacing: 2px;
+  font-size: 11px;
+  white-space: nowrap;
+}
+.update-banner.ub-error .ub-badge {
+  color: var(--bad);
+}
+.ub-text b {
+  color: var(--text);
+}
+.ub-notes {
+  color: var(--good);
+  margin-left: auto;
+  font-size: 12.5px;
+}
+.ub-btn {
+  background: var(--good);
+  color: #0c140d;
+  border: none;
+  border-radius: 5px;
+  font-weight: 700;
+  letter-spacing: 1px;
+  padding: 7px 15px;
+  cursor: pointer;
+  transition:
+    filter 0.15s,
+    transform 0.08s;
+}
+.ub-btn:hover {
+  filter: brightness(1.1);
+}
+.ub-btn:active {
+  transform: translateY(1px);
+}
+
+/* route progress banner (F3) */
+.route-progress {
+  background: linear-gradient(180deg, #1a1400, #14110a);
+  border-bottom: 1px solid var(--orange);
+  padding: 8px 18px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  animation: drop-in 0.25s var(--ease);
+}
+.rp-main {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  font-size: 13.5px;
+}
+.rp-badge {
+  color: var(--orange);
+  font-weight: 800;
+  letter-spacing: 2px;
+  font-size: 11px;
+  white-space: nowrap;
+}
+.rp-label {
+  color: var(--text);
+  font-weight: 600;
+}
+.rp-count {
+  color: var(--dim);
+  font-variant-numeric: tabular-nums;
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 1px 9px;
+  font-size: 12px;
+}
+.rp-next {
+  color: var(--dim);
+}
+.rp-next b {
+  color: var(--orange-soft);
+}
+.rp-next.rp-done {
+  color: var(--good);
+}
+.rp-stop {
+  margin-left: auto;
+}
+.rp-skip,
+.rp-back {
+  color: var(--good);
+}
+.rp-bar {
+  height: 4px;
+  background: var(--panel-2);
+  border-radius: 999px;
+  overflow: hidden;
+}
+.rp-bar > div {
+  height: 100%;
+  background: var(--orange);
+  border-radius: 999px;
+  transition: width 0.4s var(--ease);
+}
+.trackbtn {
+  color: var(--orange-soft);
+  font-weight: 700;
+  letter-spacing: 1px;
+}
+.trackbtn:hover {
+  color: var(--orange);
+}
+
+/* route alerts */
+.alert-strip {
+  background: #3d1414;
+  border-bottom: 1px solid var(--bad);
+  color: #f2b8b8;
+  padding: 8px 18px;
+  font-size: 13px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  animation: drop-in 0.25s var(--ease);
+}
+.alert-strip .hb {
+  align-self: flex-start;
+  margin-top: 4px;
+}
+.alert-row {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  flex-wrap: wrap;
+}
+.alert-row > span:first-child {
+  flex: 1 1 520px;
+}
+.alert-recover {
+  color: #ffd19a;
+  border-color: rgba(255, 209, 154, 0.55);
+}
+.watch-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 4px 11px;
+  font-size: 12px;
+  color: var(--dim);
+  margin: 0 6px 8px 0;
+}
+
+/* analytics */
+.an-tiles {
+  justify-content: space-between;
+}
+.an-tiles .value {
+  color: var(--good);
+}
+.chart-wrap {
+  width: 100%;
+  overflow: hidden;
+}
+.chart-wrap svg {
+  display: block;
+  width: 100%;
+}
+.chart-tip {
+  position: absolute;
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  color: var(--text);
+  font-size: 12px;
+  padding: 4px 9px;
+  pointer-events: none;
+  z-index: 20;
+  white-space: nowrap;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.4);
+}
+#an-days {
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  color: var(--text);
+  border-radius: 5px;
+  padding: 5px 9px;
+  font-size: 13px;
+}
+#an-days:focus {
+  outline: none;
+  border-color: var(--orange);
+  box-shadow: var(--focus-ring);
+}
+
+/* session card */
+.session-tiles .value.good {
+  color: var(--good);
+}
+#session-card .card-head .value {
+  font-size: 20px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* earnings breakdown */
+.earnings {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  margin-top: 6px;
+}
+.earn-row {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.earn-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13.5px;
+}
+.earn-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex: none;
+}
+.earn-label {
+  color: var(--text);
+}
+.earn-val {
+  margin-left: auto;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+}
+.earn-pct {
+  width: 42px;
+  text-align: right;
+  color: var(--dim);
+  font-variant-numeric: tabular-nums;
+}
+.earn-bar {
+  height: 7px;
+  background: var(--panel-2);
+  border-radius: 999px;
+  overflow: hidden;
+}
+.earn-bar > div {
+  height: 100%;
+  border-radius: 999px;
+  transition: width 0.5s var(--ease);
+}
+
+/* active missions */
+.mission {
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--orange);
+  border-radius: 6px;
+  padding: 9px 12px;
+  margin-bottom: 8px;
+}
+.mission-top {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  flex-wrap: wrap;
+}
+.mission-top b {
+  font-size: 14.5px;
+}
+.mission-reward {
+  margin-left: auto;
+  color: var(--good);
+  font-weight: 700;
+  white-space: nowrap;
+}
+.mission-sub {
+  margin-top: 4px;
+  font-size: 12.5px;
+  color: var(--dim);
+}
+.mission-sub b {
+  color: var(--text);
+  font-weight: 600;
+}
+.mission-sub .arrow {
+  color: var(--orange);
+}
+.mission-sub .warn {
+  color: var(--bad);
+  font-weight: 600;
+}
+.mission-sub .soon {
+  color: var(--orange-soft);
+}
+.mission-sub .good {
+  color: var(--good);
+  font-weight: 600;
+}
+.mission-kind {
+  font-size: 10px;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  color: var(--dim);
+  flex: none;
+}
+.kind-delivery,
+.kind-collect,
+.kind-courier {
+  color: #5aa9e6;
+  border-color: #35506b;
+}
+.kind-salvage,
+.kind-mining {
+  color: #e0a54a;
+  border-color: #6b5730;
+}
+.kind-combat,
+.kind-piracy {
+  color: var(--bad);
+  border-color: #6b3535;
+}
+.kind-passenger,
+.kind-rescue {
+  color: #3fb6a8;
+  border-color: #305b56;
+}

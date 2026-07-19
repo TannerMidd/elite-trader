@@ -59,8 +59,16 @@ with tempfile.TemporaryDirectory() as td:
     assert response.status_code == 200
     assert response.headers["X-Frame-Options"] == "DENY"
     assert "frame-ancestors 'none'" in response.headers["Content-Security-Policy"]
+    assert response.headers["Cache-Control"] == "no-store"
+    assert response.headers["X-Frameshift-Version"]
     response = remote.get("/", headers=host, environ_base=remote_env)
     assert response.status_code == 200
+    assert response.headers["Cache-Control"] == "no-cache"
+    assert response.headers["X-Frameshift-Version"]
+    module = local.get("/src/main.js")
+    assert module.status_code == 200
+    assert module.headers["Cache-Control"] == "no-cache"
+    assert module.headers["X-Frameshift-Version"] == response.headers["X-Frameshift-Version"]
     response = remote.get("/api/state", headers=host, environ_base=remote_env)
     assert response.status_code == 401 and response.get_json()["pairing_required"]
 

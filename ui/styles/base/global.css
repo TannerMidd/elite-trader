@@ -1,0 +1,116 @@
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
+  font-size: 15px;
+  line-height: 1.45;
+  overflow-x: clip;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* panel-bootstrap.js sets this on <html> before the stylesheet loads. Keep
+   desktop chrome out of the first paint until the ESM shell boot has selected
+   the saved panel page; the pairing gate remains available if authentication
+   is needed. */
+html.panel-mode-prepaint,
+html.panel-mode-prepaint body {
+  background: radial-gradient(1200px 700px at 70% -10%, #0c0e12, #060708) fixed #060708;
+}
+html.panel-mode-prepaint body > :not(#pairing-gate):not(script) {
+  visibility: hidden;
+}
+
+::selection {
+  background: rgba(var(--accent-rgb), 0.32);
+}
+
+/* themed scrollbars */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
+}
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 999px;
+  border: 2px solid var(--bg);
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--border-bright);
+}
+
+button {
+  font-family: inherit;
+}
+button:focus-visible,
+a:focus-visible,
+select:focus-visible,
+input[type="checkbox"]:focus-visible {
+  outline: 2px solid var(--orange-soft);
+  outline-offset: 2px;
+}
+
+.topbar {
+  position: sticky;
+  top: 0;
+  z-index: 40;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 18px;
+  background: var(--panel);
+  border-bottom: 2px solid var(--orange);
+}
+
+.brand {
+  font-weight: 800;
+  letter-spacing: 3px;
+  color: var(--orange);
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+.brand span {
+  color: var(--text);
+  font-weight: 300;
+}
+.brand-mark {
+  display: block;
+}
+.pilot {
+  display: flex;
+  gap: 12px;
+  align-items: baseline;
+}
+.pilot #commander {
+  font-weight: 600;
+}
+
+.banner {
+  background: #4a2c00;
+  color: var(--orange-soft);
+  padding: 8px 18px;
+  border-bottom: 1px solid var(--orange);
+  animation: drop-in 0.25s var(--ease);
+}
+.banner.banner-critical {
+  background: #4a0d0d;
+  color: #ffb4b4;
+  border-bottom-color: var(--bad, #e05252);
+  font-weight: 700;
+}
+.banner.banner-warn {
+  background: #4a2c00;
+  color: var(--orange-soft);
+}

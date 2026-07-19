@@ -1,6 +1,6 @@
 /* Apply the saved panel preference before CSS can paint the desktop layout.
    This stays external so the server's strict script-src 'self' policy remains
-   intact. app.js removes the guard after it has selected the real panel page. */
+   intact. The ESM shell boot removes the guard after selecting the real panel page. */
 (() => {
   let panel = true;
   try {

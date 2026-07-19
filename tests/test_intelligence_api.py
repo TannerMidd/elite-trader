@@ -42,21 +42,26 @@ def post(path, **kwargs):
 def patch(path, **kwargs):
     return client.patch(path, headers=profile_headers, **kwargs)
 
+
+def get(path, **kwargs):
+    return client.get(path, headers=profile_headers, **kwargs)
+
+
 created = post("/api/objectives", json={
     "title": "Visit the engineer", "category": "engineering", "system": "Deciat",
 })
 assert created.status_code == 201, created.get_json()
 objective = created.get_json()["objective"]
-assert client.get("/api/objectives").get_json()["objectives"][0]["id"] == objective["id"]
+assert get("/api/objectives").get_json()["objectives"][0]["id"] == objective["id"]
 assert patch(f"/api/objectives/{objective['id']}", json={"status": "active"}).status_code == 200
 
 plan = post("/api/objectives/plan", json={"minutes": 60}).get_json()
 assert plan["budget_minutes"] == 60 and plan["graph"]["nodes"], plan
-assert client.get("/api/timings").get_json()["commander_id"] == commander_id
+assert get("/api/timings").get_json()["commander_id"] == commander_id
 
-summary = client.get("/api/history/summary").get_json()
+summary = get("/api/history/summary").get_json()
 assert summary["commander_id"] == commander_id and summary["events"] == 1, summary
-events = client.get("/api/history/events?types=FSDJump&limit=5").get_json()["events"]
+events = get("/api/history/events?types=FSDJump&limit=5").get_json()["events"]
 assert len(events) == 1 and events[0]["event"]["StarSystem"] == "Sol", events
 
 board_response = post("/api/operations", json={
@@ -68,9 +73,9 @@ added = post("/api/operations", json={
     "action": "add_objective", "board_id": board["id"], "title": "Deliver supplies",
 })
 assert added.status_code == 201, added.get_json()
-snapshot = client.get("/api/operations?board_id=" + board["id"]).get_json()
+snapshot = get("/api/operations?board_id=" + board["id"]).get_json()
 assert snapshot["board"]["id"] == board["id"] and len(snapshot["objectives"]) == 1
-exported = client.get("/api/operations/export?board_id=" + board["id"])
+exported = get("/api/operations/export?board_id=" + board["id"])
 assert exported.status_code == 200 and json.loads(exported.data)["format"] == "frameshift.operations"
 assert post("/api/operations/import", json={"document": json.loads(exported.data)}).status_code == 200
 large_document = json.loads(exported.data)
@@ -87,7 +92,7 @@ assert security["pairing"]["urls"][0] not in security["pairing"]["qr_svg"]
 assert client.get("/api/extensions").status_code == 200
 assert client.get("/api/diagnostics/health").status_code == 200
 
-specialists = client.get("/api/specialists")
+specialists = get("/api/specialists")
 assert specialists.status_code == 200 and "mining" in specialists.get_json()
 started = post("/api/specialists/mining/start", json={}).get_json()
 assert started["mining"]["active"] is True
@@ -102,7 +107,7 @@ state.update(pos={
 })
 pin = post("/api/specialists/exobiology/pins", json={"label": "Ship"})
 assert pin.status_code == 201, pin.get_json()
-geo = client.get("/api/specialists/exobiology/geojson").get_json()
+geo = get("/api/specialists/exobiology/geojson").get_json()
 assert geo["features"] and geo["features"][0]["properties"]["label"] == "Ship"
 
 bundle = post("/api/diagnostics/bundle")

@@ -1,0 +1,238 @@
+/* tabs — a Holo Bracket segmented group (holo-buttons.css owns the button
+   look); this layer only wraps the row and keeps bracket clearance. */
+.tabs {
+  flex-wrap: wrap;
+  row-gap: 10px;
+  align-items: center;
+  padding: 6px 0;
+}
+.tabpane {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  transition: transform 0.28s var(--ease);
+}
+/* One-shot entrance, applied by activateTab only when a pane is revealed
+   without a directional slide. An always-on animation here would restart —
+   and visibly flash — every time a slide class is removed after panel
+   navigation, because removing the class changes the computed animation. */
+.tabpane.pane-enter {
+  animation: pane-in 0.25s var(--ease);
+}
+
+td.warn {
+  color: var(--bad);
+  font-weight: 600;
+}
+
+/* location card */
+.location {
+  display: flex;
+  justify-content: space-between;
+  gap: 18px;
+  flex-wrap: wrap;
+}
+.system-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.system-row h1 {
+  margin: 0;
+  font-size: 30px;
+  font-weight: 650;
+  color: var(--orange);
+}
+.station-row {
+  margin-top: 4px;
+  font-size: 16px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.dest-row {
+  margin-top: 4px;
+  font-size: 13px;
+}
+
+.stats {
+  display: flex;
+  gap: 22px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.stat .value {
+  font-size: 19px;
+  font-weight: 600;
+  margin-top: 2px;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+/* rebuy coverage states (shared by the stat row and flight-panel tile) */
+.value.bad,
+.fp-value.bad {
+  color: var(--bad) !important;
+}
+.value.low,
+.fp-value.low {
+  color: var(--orange-soft) !important;
+}
+
+/* quick links */
+.linkrow {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 6px;
+}
+.linkrow a {
+  color: var(--orange-soft);
+  text-decoration: none;
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  padding: 7px 13px;
+  border-radius: 999px;
+  font-size: 13px;
+  transition:
+    color 0.15s,
+    border-color 0.15s,
+    background 0.15s;
+}
+.linkrow a:hover {
+  border-color: var(--orange);
+  color: var(--orange);
+}
+
+/* trade route form */
+.route-form {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  margin: 8px 0;
+}
+.route-form label {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  font-size: 11px;
+  color: var(--dim);
+  letter-spacing: 1px;
+}
+.route-form input[type="text"] {
+  width: 180px;
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  color: var(--text);
+  border-radius: 5px;
+  padding: 6px 8px;
+  font-size: 14px;
+}
+.route-form input[type="number"] {
+  width: 105px;
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  color: var(--text);
+  border-radius: 5px;
+  padding: 6px 8px;
+  font-size: 14px;
+}
+.route-form input,
+.route-form select,
+.plot-form input,
+.fp-plotrow input,
+#market-filter,
+#an-days {
+  transition:
+    border-color 0.15s,
+    box-shadow 0.15s;
+}
+.route-form input:focus {
+  outline: none;
+  border-color: var(--orange);
+  box-shadow: var(--focus-ring);
+}
+.route-form .check {
+  flex-direction: row;
+  align-items: center;
+  gap: 6px;
+  padding-bottom: 8px;
+  font-size: 13px;
+}
+.route-form select {
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  color: var(--text);
+  border-radius: 5px;
+  padding: 6px 8px;
+  font-size: 14px;
+}
+.route-form select:focus {
+  outline: none;
+  border-color: var(--orange);
+  box-shadow: var(--focus-ring);
+}
+
+/* Cockpit switches: checkboxes speak the Holo Bracket language — a squared
+   1px-framed housing on a translucent accent face, with a paddle that slides
+   and lights orange when the circuit is on. (.setting rows hide their native
+   input and render the same look through .setting .switch below.) */
+input[type="checkbox"] {
+  appearance: none;
+  position: relative;
+  width: 36px;
+  height: 20px;
+  flex: none;
+  vertical-align: middle;
+  margin: 0;
+  background: rgba(var(--accent-rgb), 0.05);
+  border: 1px solid rgba(var(--accent-rgb), 0.32);
+  border-radius: 2px;
+  cursor: pointer;
+  transition:
+    background 0.18s,
+    border-color 0.18s,
+    box-shadow 0.18s;
+}
+input[type="checkbox"]::after {
+  content: "";
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 14px;
+  height: 14px;
+  border-radius: 1px;
+  background: var(--dim);
+  transition:
+    transform 0.18s var(--ease),
+    background 0.18s,
+    box-shadow 0.18s;
+}
+input[type="checkbox"]:hover {
+  border-color: rgba(var(--accent-rgb), 0.7);
+}
+input[type="checkbox"]:checked {
+  background: rgba(var(--accent-rgb), 0.14);
+  border-color: var(--orange);
+  box-shadow: 0 0 12px rgba(var(--accent-rgb), 0.25);
+}
+input[type="checkbox"]:checked::after {
+  transform: translateX(16px);
+  background: var(--orange);
+  box-shadow: 0 0 8px rgba(var(--accent-rgb), 0.6);
+}
+input[type="checkbox"]:disabled {
+  border: 1px dashed var(--border);
+  background: transparent;
+  box-shadow: none;
+  cursor: not-allowed;
+}
+input[type="checkbox"]:disabled::after {
+  background: #5c626c;
+  box-shadow: none;
+}
+@media (forced-colors: active) {
+  input[type="checkbox"] {
+    appearance: auto;
+  }
+}

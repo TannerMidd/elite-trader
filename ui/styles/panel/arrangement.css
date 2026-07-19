@@ -1,0 +1,210 @@
+/* ---------- arrangement mode: drag cards to reorder ---------- */
+.tab-arrange {
+  margin-left: auto;
+}
+
+.fp-arrange {
+  display: none;
+  position: fixed;
+  right: 14px;
+  bottom: 14px;
+  z-index: 31;
+  width: 54px;
+  height: 54px;
+  border-radius: 50%;
+  background: var(--panel-2);
+  border: 1px solid var(--orange);
+  color: var(--orange);
+  font-size: 22px;
+  cursor: pointer;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5);
+  touch-action: manipulation;
+}
+body.panel-mode:not(.fp-status-page) .fp-arrange {
+  display: block;
+}
+.fp-arrange.on {
+  background: var(--orange);
+  color: #14100a;
+}
+
+body.arranging .tabpane section.card[data-arr] {
+  position: relative;
+  outline: 1px dashed rgba(var(--accent-rgb), 0.5);
+  outline-offset: 3px;
+}
+/* While arranging, cards collapse to just their header so even table-heavy
+   pages fit on screen and short drags reorder anything. */
+body.arranging
+  .tabpane
+  section.card[data-arr]
+  > :not(.label):not(.card-head):not(.arr-handle):not(.arr-eye) {
+  display: none !important;
+}
+body.arranging .tabpane section.card[data-arr] {
+  min-height: 62px;
+  padding-right: 250px; /* keep the header clear of the HIDE + DRAG controls */
+}
+body.arranging .tabpane section.card[data-arr] .label {
+  margin-bottom: 0;
+  border-bottom: none;
+}
+body.arranging .tabpane section.card[data-arr] .card-head {
+  margin-bottom: 0;
+}
+body.arranging .tabpane section.card[data-arr] .card-head input,
+body.arranging .tabpane section.card[data-arr] .card-head select,
+body.arranging .tabpane section.card[data-arr] .card-head button {
+  display: none;
+}
+body.arranging .two-col {
+  grid-template-columns: 1fr;
+  gap: 8px;
+  outline: 1px dashed rgba(var(--accent-soft-rgb), 0.35);
+  outline-offset: 6px;
+  border-radius: 8px;
+}
+.arr-handle {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 5;
+  min-height: 44px;
+  padding: 8px 16px;
+  border-radius: 6px;
+  background: var(--orange);
+  color: #14100a;
+  border: none;
+  font-weight: 800;
+  font-size: 13px;
+  letter-spacing: 1px;
+  cursor: grab;
+  touch-action: none; /* the handle drags the card, never scrolls the page */
+  user-select: none;
+}
+.arr-handle:active {
+  cursor: grabbing;
+}
+/* card visibility (customize): user-hidden cards are gone outside arrange
+   mode, dimmed-but-present inside it so they can be restored */
+.tabpane .user-hidden {
+  display: none !important;
+}
+body.arranging .tabpane section.card.user-hidden {
+  display: block !important;
+  opacity: 0.45;
+}
+.arr-eye {
+  position: absolute;
+  top: 8px;
+  right: 126px;
+  z-index: 5;
+  min-height: 44px;
+  padding: 8px 14px;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--orange-soft);
+  border: 1px solid var(--orange);
+  font-weight: 800;
+  font-size: 13px;
+  letter-spacing: 1px;
+  cursor: pointer;
+  user-select: none;
+}
+.all-hidden-note {
+  padding: 18px 6px;
+}
+
+/* engineers card */
+.eng-stage {
+  margin-top: 10px;
+}
+.eng-stage > .label {
+  margin-bottom: 4px;
+}
+.eng-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 4px 0;
+  font-size: 13.5px;
+  border-bottom: 1px solid var(--border);
+}
+.eng-row:last-child {
+  border-bottom: none;
+}
+/* Single-target list rows park their ◎ / action button in a right-edge
+   column — trailing a variable-length line leaves them scattered. */
+.eng-row .hb,
+.ep-trader .hb,
+.ship-row .hb,
+.fc-jump .hb,
+.fact-top .hb {
+  margin-left: auto;
+  flex: none;
+}
+.eng-pips {
+  color: var(--good);
+  font-size: 12px;
+  letter-spacing: 1px;
+  white-space: nowrap;
+}
+
+/* stored ships card */
+.ship-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 4px 0;
+  font-size: 13.5px;
+  border-bottom: 1px solid var(--border);
+}
+.ship-row:last-of-type {
+  border-bottom: none;
+}
+.ship-row .warn {
+  color: var(--bad);
+  font-weight: 600;
+}
+
+/* fleet carrier card */
+.fc-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 8px 0;
+  flex-wrap: wrap;
+}
+.fc-fuelbar {
+  flex: 1;
+  min-width: 140px;
+}
+#fc-fuel-fill {
+  height: 100%;
+  width: 0;
+  background: var(--good);
+}
+.fc-jump {
+  margin: 6px 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.fc-jump-badge {
+  color: var(--orange);
+  font-weight: 700;
+  letter-spacing: 1px;
+}
+.fc-jump .soon {
+  color: var(--orange-soft);
+  font-weight: 600;
+}
+
+/* neutron plotter dry-leg warning */
+#nr-table .warn {
+  color: var(--bad);
+  font-weight: 600;
+}

@@ -1,0 +1,35 @@
+/*
+ * Frameshift UI cascade entrypoint.
+ *
+ * Layer precedence is declared once. Import order within a layer is an
+ * intentional part of the cascade contract and is verified in CI.
+ */
+@layer reset, tokens, base, components, features, panel, themes, motion;
+
+@import url("./tokens/tokens.css") layer(tokens);
+@import url("./base/fonts.css") layer(base);
+@import url("./base/global.css") layer(base);
+@import url("./components/startup.css") layer(components);
+@import url("./components/navigation-forms.css") layer(components);
+@import url("./components/route-progress.css") layer(components);
+@import url("./components/tables-system-stations.css") layer(components);
+@import url("./features/engineering.css") layer(features);
+@import url("./features/status.css") layer(features);
+@import url("./features/guides-settings.css") layer(features);
+@import url("./panel/shell.css") layer(panel);
+@import url("./panel/content.css") layer(panel);
+@import url("./panel/arrangement.css") layer(panel);
+@import url("./features/ops.css") layer(features);
+@import url("./features/specialists.css") layer(features);
+@import url("./features/specialists-tools.css") layer(features);
+@import url("./features/galaxy.css") layer(features);
+@import url("./themes/picker.css") layer(themes);
+@import url("./components/dialogs-settings.css") layer(components);
+@import url("./panel/telemetry.css") layer(panel);
+@import url("./panel/telemetry-session.css") layer(panel);
+@import url("./panel/quick-controls.css") layer(panel);
+@import url("./features/launch-exploration.css") layer(features);
+@import url("./motion/motion.css") layer(motion);
+@import url("./features/security-extensions.css") layer(features);
+@import url("./panel/hud-controls.css") layer(panel);
+@import url("../holo-buttons.css") layer(components);

@@ -1,0 +1,9 @@
+{
+  "local": true,
+  "authenticated": true,
+  "pairing_required": false,
+  "scopes": ["read", "control", "admin"],
+  "paired_devices": 0,
+  "device": null,
+  "pairing": null
+}

@@ -1,0 +1,353 @@
+/* complete offline engineering workshop */
+.eng-help {
+  margin: 4px 0 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 8px 12px;
+  background: var(--panel-2);
+  font-size: 13px;
+}
+.eng-help summary {
+  cursor: pointer;
+  color: var(--orange-soft);
+  letter-spacing: 0.5px;
+}
+.eng-help p {
+  margin: 8px 0 2px;
+  color: var(--dim);
+}
+.eng-help b {
+  color: var(--text);
+}
+.engplan-form {
+  display: grid;
+  grid-template-columns: minmax(190px, 1.1fr) minmax(150px, 0.75fr) minmax(260px, 1.8fr) repeat(
+      3,
+      minmax(86px, 0.5fr)
+    );
+  gap: 9px;
+  align-items: end;
+  margin: 12px 0 6px;
+}
+.engplan-form label {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 4px;
+  color: var(--dim);
+  font-size: 10.5px;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+}
+.engplan-form input,
+.engplan-form select {
+  width: 100%;
+  min-width: 0;
+  height: 36px;
+  box-sizing: border-box;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  padding: 6px 9px;
+  color: var(--text);
+  background: var(--panel-2);
+  font:
+    13px "IBM Plex Mono",
+    Consolas,
+    monospace;
+}
+.engplan-form input:focus,
+.engplan-form select:focus {
+  outline: none;
+  border-color: var(--orange);
+  box-shadow: var(--focus-ring);
+}
+.engplan-form button {
+  min-height: 36px;
+}
+.engplan-form #ep-pin {
+  grid-column: span 2;
+}
+.engplan-form #ep-traders {
+  grid-column: span 1;
+}
+.ep-search-field {
+  grid-column: span 1;
+}
+.ep-item-field {
+  grid-column: span 2;
+}
+.ep-picker-meta {
+  display: flex;
+  align-items: baseline;
+  gap: 14px;
+  min-height: 21px;
+  margin-bottom: 9px;
+  font-size: 12px;
+}
+#ep-match-count {
+  white-space: nowrap;
+}
+#ep-desc {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+#engplan-summary {
+  margin-top: 12px;
+  padding: 11px 12px;
+  border: 1px solid var(--border);
+  background: linear-gradient(90deg, rgba(var(--accent-rgb), 0.08), transparent 70%);
+}
+#engplan-summary:empty {
+  display: none;
+}
+.ep-summary-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 14px;
+  margin-bottom: 7px;
+  font-size: 13px;
+}
+.ep-count {
+  color: var(--orange-soft);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.ep-api-error {
+  padding: 7px;
+}
+.ep-empty {
+  border: 1px dashed var(--border);
+  margin-top: 10px;
+}
+.engplan {
+  margin-top: 8px;
+}
+.ep-wish-item {
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--orange);
+  background: var(--panel-2);
+}
+.ep-wish-item.done {
+  border-left-color: var(--good);
+}
+.ep-wish-main {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+.ep-wish-main > div:first-child {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-width: 0;
+}
+.ep-wish-main b {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ep-kind-chip {
+  flex: 0 0 auto;
+}
+.ep-wish-actions {
+  display: flex;
+  gap: 5px;
+}
+.ep-wish-actions .hb {
+  margin: 0;
+}
+.ep-wish-actions .ep-remove {
+  color: var(--bad);
+}
+.ep-wish-facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+  margin-top: 7px;
+  color: var(--orange-soft);
+  font-size: 12px;
+}
+.ep-wish-facts span + span::before {
+  content: "·";
+  margin-right: 14px;
+  color: var(--dim);
+}
+.ep-engineers {
+  margin-top: 5px;
+  font-size: 11.5px;
+}
+.ep-shopping-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 14px;
+  margin: 18px 0 7px;
+}
+.ep-shopping-head .dim {
+  font-size: 11.5px;
+  text-align: right;
+}
+.ep-material-rows {
+  display: grid;
+  gap: 4px;
+}
+.ep-material-row {
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr);
+  gap: 7px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  background: rgba(0, 0, 0, 0.08);
+}
+.ep-material-row.ready {
+  opacity: 0.72;
+}
+.ep-material-status {
+  padding-top: 1px;
+  font-weight: 800;
+  text-align: center;
+}
+.ep-material-body {
+  min-width: 0;
+}
+.ep-material-main {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 7px;
+  font-size: 13px;
+}
+.ep-material-main b {
+  margin-right: 2px;
+}
+.ep-counts {
+  margin-left: auto;
+  font-variant-numeric: tabular-nums;
+}
+.ep-trade {
+  margin-top: 5px;
+  color: var(--orange-soft);
+  font-size: 11.5px;
+}
+.ep-trade b {
+  margin-right: 5px;
+  letter-spacing: 0.8px;
+}
+.ep-source {
+  margin-top: 4px;
+  color: var(--dim);
+  font-size: 11.5px;
+}
+.ep-source summary {
+  display: inline-block;
+  cursor: pointer;
+  color: var(--dim);
+  font-size: 9.5px;
+  letter-spacing: 1px;
+}
+.ep-source summary::-webkit-details-marker {
+  display: none;
+}
+.ep-source summary::before {
+  content: "+ ";
+  color: var(--orange-soft);
+}
+.ep-source[open] summary::before {
+  content: "− ";
+}
+.ep-source div {
+  max-width: 920px;
+  padding: 4px 0 1px;
+  line-height: 1.45;
+}
+.ep-trader {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 0;
+  font-size: 14px;
+}
+.ep-trader b {
+  letter-spacing: 1px;
+  font-size: 12px;
+  color: var(--orange-soft);
+  min-width: 110px;
+}
+#engplan-traders:not(:empty) {
+  margin-top: 12px;
+  border-top: 1px solid var(--border);
+  padding-top: 7px;
+}
+@media (max-width: 1050px) {
+  .engplan-form {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+  .ep-search-field,
+  .ep-item-field {
+    grid-column: span 2;
+  }
+  .engplan-form #ep-pin,
+  .engplan-form #ep-traders {
+    grid-column: span 1;
+  }
+}
+@media (max-width: 680px) {
+  .engplan-form {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .ep-search-field,
+  .ep-item-field {
+    grid-column: 1 / -1;
+  }
+  .ep-picker-meta,
+  .ep-shopping-head,
+  .ep-summary-head {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 4px;
+  }
+  .ep-shopping-head .dim {
+    text-align: left;
+  }
+  .ep-wish-main {
+    align-items: flex-start;
+  }
+  .ep-kind-chip {
+    display: none;
+  }
+  .ep-counts {
+    flex-basis: 100%;
+    margin-left: 0;
+  }
+}
+.trend.up {
+  color: var(--good);
+}
+.trend.down {
+  color: var(--bad);
+}
+.community {
+  color: var(--orange-soft);
+}
+.community .sub {
+  color: var(--dim);
+}
+
+#market-filter {
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  color: var(--text);
+  border-radius: 5px;
+  padding: 5px 9px;
+  font-size: 13px;
+  width: 140px;
+}
+#market-filter:focus {
+  outline: none;
+  border-color: var(--orange);
+  box-shadow: var(--focus-ring);
+}

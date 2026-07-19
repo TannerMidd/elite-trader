@@ -31,9 +31,21 @@ DB_PATH = DATA_DIR / "market.db"
 USER_DB_PATH = DATA_DIR / "commander.db"
 BACKUP_DIR = DATA_DIR / "backups"
 USER_DB_ALIAS = commanderdb.ALIAS
+_COMMANDER_PROFILE_TRANSITION_LOCK = threading.RLock()
 
 CARRIER_TYPES = {"Drake-Class Carrier", "Fleet Carrier"}
 CARRIER_NAME_RE = re.compile(r"^[A-Z0-9]{3}-[A-Z0-9]{3}$")
+
+
+def commander_profile_transition():
+    """Serialize changes to the process-wide active profile.
+
+    The journal owns the live commander while Elite is running, while the
+    profile administration UI may select an archived commander for offline
+    browsing.  Both transitions must update the database and AppState as one
+    logical operation, so callers hold this re-entrant guard across both.
+    """
+    return _COMMANDER_PROFILE_TRANSITION_LOCK
 
 CACHE_SCHEMA = """
 CREATE TABLE IF NOT EXISTS meta(key TEXT PRIMARY KEY, value TEXT);
@@ -407,34 +419,34 @@ def ensure_commander_profile(name, commander_id=None, make_active=True, galaxy_m
     galaxy_mode = "legacy" if str(galaxy_mode).casefold() == "legacy" else "live"
     commander_id = commander_id or commander_profile_id(name, galaxy_mode)
     now = utc_now_iso()
-    conn = connect_user()
-    try:
-        conn.execute("BEGIN IMMEDIATE")
-        if make_active:
-            conn.execute("UPDATE commander_profiles SET is_active = 0")
-        conn.execute(
-            "INSERT INTO commander_profiles"
-            "(id, name, galaxy_mode, created_at, last_seen_at, is_active)"
-            " VALUES(?, ?, ?, ?, ?, ?)"
-            " ON CONFLICT(id) DO UPDATE SET name = excluded.name,"
-            " galaxy_mode = excluded.galaxy_mode,"
-            " last_seen_at = excluded.last_seen_at,"
-            " is_active = CASE WHEN excluded.is_active = 1 THEN 1"
-            "                  ELSE commander_profiles.is_active END",
-            (commander_id, str(name or "Unknown"), galaxy_mode, now, now, int(bool(make_active))),
-        )
-        if make_active:
-            _adopt_default_profile_rows(conn, commander_id)
-        if make_active:
+    with commander_profile_transition():
+        conn = connect_user()
+        try:
+            conn.execute("BEGIN IMMEDIATE")
+            if make_active:
+                conn.execute("UPDATE commander_profiles SET is_active = 0")
             conn.execute(
-                "INSERT OR REPLACE INTO user_meta(key, value)"
-                " VALUES('active_commander_id', ?)",
-                (commander_id,),
+                "INSERT INTO commander_profiles"
+                "(id, name, galaxy_mode, created_at, last_seen_at, is_active)"
+                " VALUES(?, ?, ?, ?, ?, ?)"
+                " ON CONFLICT(id) DO UPDATE SET name = excluded.name,"
+                " galaxy_mode = excluded.galaxy_mode,"
+                " last_seen_at = excluded.last_seen_at,"
+                " is_active = CASE WHEN excluded.is_active = 1 THEN 1"
+                "                  ELSE commander_profiles.is_active END",
+                (commander_id, str(name or "Unknown"), galaxy_mode, now, now, int(bool(make_active))),
             )
-        conn.commit()
-        return commander_id
-    finally:
-        conn.close()
+            if make_active:
+                _adopt_default_profile_rows(conn, commander_id)
+                conn.execute(
+                    "INSERT OR REPLACE INTO user_meta(key, value)"
+                    " VALUES('active_commander_id', ?)",
+                    (commander_id,),
+                )
+            conn.commit()
+            return commander_id
+        finally:
+            conn.close()
 
 
 def active_commander_id():
@@ -527,7 +539,7 @@ def profile_overview():
 
 def _require_profile(conn, commander_id):
     row = conn.execute(
-        "SELECT id, name, is_active FROM commander_profiles WHERE id = ?",
+        "SELECT id, name, is_active, galaxy_mode FROM commander_profiles WHERE id = ?",
         (commander_id,),
     ).fetchone()
     if not row:
@@ -622,33 +634,37 @@ def delete_commander_profile(commander_id):
 
 
 def activate_commander_profile(commander_id):
-    """Make a profile the stored active commander (the journal can override
-    it again at the next Commander event — that is the desired behavior)."""
+    """Make a profile the stored active commander and return its identity."""
     commander_id = str(commander_id or "").strip()
     if not commander_id:
         raise ValidationError("Choose a commander profile to activate.")
-    conn = connect_user()
-    try:
-        conn.execute("BEGIN IMMEDIATE")
-        _require_profile(conn, commander_id)
-        conn.execute("UPDATE commander_profiles SET is_active = 0")
-        conn.execute(
-            "UPDATE commander_profiles SET is_active = 1, last_seen_at = ?"
-            " WHERE id = ?",
-            (utc_now_iso(), commander_id),
-        )
-        conn.execute(
-            "INSERT OR REPLACE INTO user_meta(key, value)"
-            " VALUES('active_commander_id', ?)",
-            (commander_id,),
-        )
-        conn.commit()
-        return True
-    except Exception:
-        conn.rollback()
-        raise
-    finally:
-        conn.close()
+    with commander_profile_transition():
+        conn = connect_user()
+        try:
+            conn.execute("BEGIN IMMEDIATE")
+            row = _require_profile(conn, commander_id)
+            conn.execute("UPDATE commander_profiles SET is_active = 0")
+            conn.execute(
+                "UPDATE commander_profiles SET is_active = 1, last_seen_at = ?"
+                " WHERE id = ?",
+                (utc_now_iso(), commander_id),
+            )
+            conn.execute(
+                "INSERT OR REPLACE INTO user_meta(key, value)"
+                " VALUES('active_commander_id', ?)",
+                (commander_id,),
+            )
+            conn.commit()
+            return {
+                "id": row[0],
+                "name": row[1],
+                "galaxy_mode": row[3],
+            }
+        except Exception:
+            conn.rollback()
+            raise
+        finally:
+            conn.close()
 
 
 def build_path():

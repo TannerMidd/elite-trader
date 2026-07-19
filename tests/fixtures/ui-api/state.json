@@ -1,0 +1,120 @@
+{
+  "commander": "Test Pilot",
+  "commander_id": "cmdr-e2e",
+  "ship_type": "Cobra Mk III",
+  "ship_name": "Wayfinder",
+  "ship_ident": "E2E-01",
+  "cargo_capacity": 32,
+  "max_jump_range": 25.4,
+  "fuel_capacity": 16,
+  "rebuy": 123456,
+  "horizons": true,
+  "odyssey": true,
+  "game_version": "4.1.0",
+  "game_build": "r-test",
+  "has_loadout": false,
+  "system": "Shinrarta Dezhra",
+  "star_pos": [55.71875, 17.59375, 27.15625],
+  "pos": null,
+  "body": "Shinrarta Dezhra",
+  "docked": true,
+  "station": "Jameson Memorial",
+  "station_type": "Coriolis Starport",
+  "dist_from_star_ls": 325,
+  "credits": 123456789,
+  "fuel_main": 12.5,
+  "fuel_reservoir": 0.5,
+  "cargo_tons": 4,
+  "legal_state": "Clean",
+  "destination": "Sol",
+  "jump_history": [
+    {
+      "system": "Lave",
+      "dist": 14.2,
+      "timestamp": "2026-07-18T11:55:00Z"
+    }
+  ],
+  "cargo_inventory": [
+    {
+      "name": "Gold",
+      "count": 4
+    }
+  ],
+  "market": null,
+  "bio": {
+    "system_signals": [],
+    "sampling": null,
+    "vault": {
+      "items": [],
+      "total": 0
+    }
+  },
+  "exploration": {
+    "total": 0,
+    "count": 0,
+    "mapped": 0,
+    "firsts": 0,
+    "top": []
+  },
+  "colonisation": [],
+  "missions": [],
+  "materials": {
+    "raw": [],
+    "manufactured": [],
+    "encoded": [],
+    "total": 0
+  },
+  "synth": {},
+  "engineers": [],
+  "galaxy": {
+    "powerplay": null,
+    "pp_system": null,
+    "controlling_faction": null,
+    "factions": [],
+    "conflicts": [],
+    "community_goals": [],
+    "squadron": null
+  },
+  "stored_ships": null,
+  "ship_locker": null,
+  "carrier": null,
+  "specialists": null,
+  "session": {
+    "start_ts": 1784372400,
+    "end_ts": null,
+    "start_credits": 123450000,
+    "credits_now": 123456789,
+    "earned": 6789,
+    "jumps": 1,
+    "ly": 14.2,
+    "collected": 0
+  },
+  "combat": {
+    "kills": 0,
+    "bounty_cr": 0,
+    "bonds_cr": 0,
+    "massacre": []
+  },
+  "nav": {
+    "system": "Shinrarta Dezhra",
+    "ahead": [],
+    "fuel_per_jump": 2.1,
+    "jumps_of_fuel": 5,
+    "advisory": null
+  },
+  "alerts": [],
+  "links": [],
+  "last_journal_event": "2026-07-18T12:00:00Z",
+  "journal_dir_found": true,
+  "journal_rebuild": {
+    "active": false,
+    "phase": "idle",
+    "completed": 0,
+    "total": 0,
+    "current": null,
+    "attempt": 0,
+    "retrying": false
+  },
+  "game_running": true,
+  "galaxy_mode": "live"
+}

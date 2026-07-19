@@ -1,0 +1,18 @@
+{
+  "commander_id": "cmdr-e2e",
+  "today": {
+    "profit": 6789
+  },
+  "week": {
+    "profit": 12345
+  },
+  "period": {
+    "profit": 54321,
+    "tons": 4
+  },
+  "session": {},
+  "earnings": {},
+  "balance": [],
+  "daily": [],
+  "top": []
+}

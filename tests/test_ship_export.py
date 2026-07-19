@@ -67,19 +67,43 @@ with tempfile.TemporaryDirectory() as td:
 from elite.server import create_app  # noqa: E402
 
 state = AppState()
+state.update(commander="Ship Export Test", commander_id="ship-export-test")
 app = create_app(state)
 client = app.test_client()
+profile_headers = {"X-Frameshift-Commander": "ship-export-test"}
 
-resp = client.get("/api/loadout-export")
+resp = client.get("/api/loadout-export", headers=profile_headers)
 assert resp.status_code == 404 and "error" in resp.get_json(), resp.get_json()
 
 state.update(loadout_raw=dict(LOADOUT))
-resp = client.get("/api/loadout-export")
+resp = client.get("/api/loadout-export", headers=profile_headers)
 data = resp.get_json()
 assert resp.status_code == 200, data
 assert data["ship_ident"] == "TM-02" and data["ship_name"] == "BESSIE"
 assert data["edsy_url"].startswith("https://edsy.org/#/I=")
 assert json.loads(data["slef"])[0]["data"]["ShipName"] == "BESSIE"
+
+# A request pinned to Alpha must not export a loadout installed by a journal
+# handoff after Flask captured the request identity.
+original_get_loadout = state.get_loadout
+
+
+def switch_before_loadout_read(commander_id=None):
+    state.update(
+        commander="Other Ship Export Test",
+        commander_id="other-ship-export-test",
+        loadout_raw={**LOADOUT, "ShipName": "OTHER SHIP"},
+    )
+    return original_get_loadout(commander_id)
+
+
+state.get_loadout = switch_before_loadout_read
+try:
+    raced = client.get("/api/loadout-export", headers=profile_headers)
+    assert raced.status_code == 404
+    assert "OTHER SHIP" not in raced.get_data(as_text=True)
+finally:
+    state.get_loadout = original_get_loadout
 
 print("api OK: 404 before a loadout, full export after")
 print("ALL SHIP EXPORT TESTS PASSED")

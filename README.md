@@ -99,6 +99,14 @@ Detailed guides live in the wiki:
 [Panel mode](../../wiki/Flight-Panel-Mode) ·
 [Autoplot](../../wiki/Autoplot).
 
+## Engineering
+
+The enforced frontend design is documented in
+[UI architecture](docs/UI_ARCHITECTURE.md), with the completed modernization
+record in [the implementation plan](docs/UI_ARCHITECTURE_PLAN.md). The
+[Engineering dossier](https://tannermidd.github.io/frameshift/architecture/)
+provides the broader system and release-pipeline overview.
+
 ## Local-first data and security
 
 - Commander history, objectives, watches, and specialist records stay local

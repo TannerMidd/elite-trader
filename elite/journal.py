@@ -178,6 +178,8 @@ class JournalWatcher:
         self._rebuy_level = 0      # 0 = covered, 1 = below 2x rebuy, 2 = below 1x
         self._sample_clear_said = True  # per-sample-point "clear to sample" callout
         self._commander_id = None
+        self._commander_name = None
+        self._commander_mode = None
         self._event_ledger = None
         self._timing_model = None
         self._extension_sink = None
@@ -255,18 +257,32 @@ class JournalWatcher:
 
     def handle_event(self, event, *, source_file=None, source_line=None):
         etype = event.get("event")
+        handler = getattr(self, f"_on_{etype.lower()}", None) if etype else None
+        handled = False
         try:
+            # Mark a live producer before dispatch. In particular, a Commander
+            # handler changes the active profile; profile administration must
+            # see the game as live before it can race that transition.
+            if self._live and etype:
+                with marketdb.commander_profile_transition():
+                    if etype == "Shutdown":
+                        if handler:
+                            handler(event)
+                            handled = True
+                    else:
+                        self.state.update(game_running=True)
+                    if etype in {"Commander", "LoadGame", "Fileheader"}:
+                        if handler:
+                            handler(event)
+                            handled = True
+                    elif etype != "Shutdown":
+                        self._reassert_live_commander()
             if self._live and etype in {"Location", "FSDJump", "CarrierJump"}:
                 self._preflush_public_signals()
-            handler = getattr(self, f"_on_{etype.lower()}", None) if etype else None
-            if handler:
+            if handler and not handled:
                 handler(event)
             if event.get("timestamp"):
                 self.state.update(last_journal_event=event["timestamp"])
-            # A live journal line can only come from a running game; Shutdown is
-            # the game announcing the opposite (its handler just set it False).
-            if self._live and etype and etype != "Shutdown":
-                self.state.update(game_running=True)
             if self._live and etype:
                 self._publish_public_event(event)
         finally:
@@ -279,6 +295,34 @@ class JournalWatcher:
         """Switch every durable local reducer to the journal's commander."""
         if not name:
             return
+        with marketdb.commander_profile_transition():
+            self._activate_commander_locked(name)
+
+    def _reassert_live_commander(self):
+        """End offline profile viewing as soon as the live journal resumes."""
+        commander_id = self._commander_id
+        if (not commander_id or self._profile_handoff_pending
+                or self.state.commander_id == commander_id):
+            return
+        with marketdb.commander_profile_transition():
+            if self.state.commander_id == commander_id:
+                return
+            name = self._commander_name or "Unknown"
+            mode = self._commander_mode or "live"
+            self.state.reset_commander_context()
+            marketdb.ensure_commander_profile(
+                name, commander_id=commander_id, galaxy_mode=mode)
+            updates = {
+                "commander": name,
+                "commander_id": commander_id,
+                "galaxy_mode": mode,
+            }
+            if self._specialists is not None:
+                updates["specialists"] = self._specialists.snapshot()
+            self.state.update(**updates)
+
+    def _activate_commander_locked(self, name):
+        """Perform a journal-owned profile transition under the shared guard."""
         mode = self.state.galaxy_mode if self.state.galaxy_mode in {"live", "legacy"} else "live"
         commander_id = marketdb.commander_profile_id(name, mode)
         if commander_id == self._commander_id and self._event_ledger is not None:
@@ -287,6 +331,8 @@ class JournalWatcher:
             self._finish_profile_handoff()
             marketdb.ensure_commander_profile(
                 name, commander_id=commander_id, galaxy_mode=mode)
+            self._commander_name = name
+            self._commander_mode = mode
             self.state.update(commander=name, commander_id=commander_id)
             self._flush_pending_local_events()
             return
@@ -308,6 +354,8 @@ class JournalWatcher:
         from .timings import TimingModel
 
         self._commander_id = commander_id
+        self._commander_name = name
+        self._commander_mode = mode
         self._event_ledger = EventLedger(commander_id)
         self._timing_model = TimingModel(commander_id)
         self._extension_sink = ExtensionActionSink(
@@ -400,6 +448,8 @@ class JournalWatcher:
     def _reset_profile_context(self):
         """Reset watcher caches that are meaningful only for one commander."""
         self._commander_id = None
+        self._commander_name = None
+        self._commander_mode = None
         self._event_ledger = None
         self._timing_model = None
         self._extension_sink = None
@@ -978,16 +1028,23 @@ class JournalWatcher:
     # ---------- trade & balance logging (analytics) ----------
 
     def _on_marketbuy(self, e):
+        commander_id = self._commander_id
+        if not commander_id:
+            return
         try:
             marketdb.log_trade(
                 marketdb.parse_update_time(e.get("timestamp")), "buy",
                 (e.get("Type") or "").lower(), e.get("Type_Localised") or (e.get("Type") or "").title(),
                 e.get("Count"), e.get("BuyPrice"), e.get("TotalCost"),
+                commander_id=commander_id,
             )
         except Exception as exc:
             self._log_background_failure("market-buy analytics", exc)
 
     def _on_marketsell(self, e):
+        commander_id = self._commander_id
+        if not commander_id:
+            return
         try:
             profit = None
             if e.get("SellPrice") is not None and e.get("AvgPricePaid") is not None:
@@ -996,20 +1053,28 @@ class JournalWatcher:
                 marketdb.parse_update_time(e.get("timestamp")), "sell",
                 (e.get("Type") or "").lower(), e.get("Type_Localised") or (e.get("Type") or "").title(),
                 e.get("Count"), e.get("SellPrice"), e.get("TotalSale"), profit,
+                commander_id=commander_id,
             )
         except Exception as exc:
             self._log_background_failure("market-sell analytics", exc)
 
     def _log_balance_point(self, ts, balance):
+        commander_id = self._commander_id
+        if not commander_id:
+            return
         try:
-            marketdb.log_balance(ts, balance)
+            marketdb.log_balance(ts, balance, commander_id=commander_id)
         except Exception as exc:
             self._log_background_failure("balance analytics", exc)
 
     def _log_income(self, e, category, amount, detail=None):
+        commander_id = self._commander_id
+        if not commander_id:
+            return
         try:
             marketdb.log_income(
-                marketdb.parse_update_time(e.get("timestamp")), category, amount, detail
+                marketdb.parse_update_time(e.get("timestamp")), category, amount, detail,
+                commander_id=commander_id,
             )
         except Exception as exc:
             self._log_background_failure("income analytics", exc)
@@ -1741,7 +1806,9 @@ class JournalWatcher:
         # immediately, with the snapshot's own (possibly old) timestamp.
         if data.get("MarketID") and items:
             try:
-                marketdb.track_market(data["MarketID"])
+                if self._commander_id:
+                    marketdb.track_market(
+                        data["MarketID"], commander_id=self._commander_id)
                 conn = marketdb.connect()
                 try:
                     marketdb.record_price_history(

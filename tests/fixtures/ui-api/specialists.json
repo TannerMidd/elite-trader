@@ -1,0 +1,41 @@
+{
+  "commander_id": "cmdr-e2e",
+  "mining": {
+    "active": false,
+    "session": null,
+    "history": []
+  },
+  "combat": {
+    "active": false,
+    "session": null,
+    "target": null,
+    "history": [],
+    "readiness": {
+      "level": "not_ax_equipped",
+      "score": 0,
+      "checklist": {},
+      "ammo": {
+        "by_module": []
+      }
+    }
+  },
+  "carrier": {
+    "finance": {},
+    "upkeep": {},
+    "space": {},
+    "orders": {
+      "items": []
+    },
+    "inventory": {},
+    "route": {
+      "legs": [],
+      "leg_count": 0
+    }
+  },
+  "exobiology": {
+    "position": null,
+    "sampling": null,
+    "current_map": null,
+    "history": []
+  }
+}

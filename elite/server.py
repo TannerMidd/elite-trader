@@ -12,6 +12,7 @@ from flask import Flask, g, jsonify, request, send_file, send_from_directory
 from werkzeug.serving import make_server
 
 from . import alerts, biovalues, launcher, links, marketdb, routes, settings, shipexport, spansh, tts
+from ._version import VERSION
 from .eddn import LISTENER
 from .errors import UserFacingError
 from .network import pairing_urls as build_pairing_urls
@@ -48,17 +49,37 @@ _CONTROL_ENDPOINTS = {
     "/api/watch", "/api/watch/remove", "/api/alerts/clear",
     "/api/plot", "/api/plot/cancel",
 }
-_COMMANDER_SCOPED_PREFIXES = (
-    "/api/engineering",
-    "/api/objectives",
-    "/api/timings",
-    "/api/history",
-    "/api/operations",
-    "/api/specialists",
-    "/api/alerts",
-    "/api/watch",
-    "/api/analytics",
-)
+_COMMANDER_SCOPE_ATTRIBUTE = "_frameshift_commander_scope"
+
+
+def commander_scoped(view):
+    """Mark one Flask view as requiring a confirmed live commander.
+
+    Scope is route metadata rather than a second path-routing table, so adding
+    or renaming an endpoint cannot silently inherit or lose commander policy.
+    """
+    setattr(view, _COMMANDER_SCOPE_ATTRIBUTE, True)
+    return view
+
+
+def commander_scoped_when(predicate):
+    """Mark a view whose request payload decides whether commander data is read."""
+
+    def decorate(view):
+        setattr(view, _COMMANDER_SCOPE_ATTRIBUTE, predicate)
+        return view
+
+    return decorate
+
+
+def commander_scope_policy(view):
+    """Return ``required``, ``conditional`` or ``None`` for contract tests."""
+    policy = getattr(view, _COMMANDER_SCOPE_ATTRIBUTE, None)
+    if policy is True:
+        return "required"
+    if callable(policy):
+        return "conditional"
+    return None
 
 
 def _host_allowed(host):
@@ -259,6 +280,18 @@ def create_app(state, security_manager=None):
         """Return the one live-state image captured when this request began."""
         return g.frameshift_state_snapshot
 
+    def extension_history_uses_commander():
+        """Only history-backed extension tests consume commander-owned data."""
+        body = request.get_json(silent=True) or {}
+        return not isinstance(body.get("sample_event"), dict)
+
+    def current_route_uses_commander():
+        view = app.view_functions.get(request.endpoint or "")
+        if view is None:
+            return False
+        policy = getattr(view, _COMMANDER_SCOPE_ATTRIBUTE, None)
+        return bool(policy() if callable(policy) else policy)
+
     @app.before_request
     def _validate_request_source():
         request.max_content_length = (
@@ -390,17 +423,17 @@ def create_app(state, security_manager=None):
                 ),
                 "galaxy_mode": "legacy",
             }), 409
-        if (request.path.startswith(_COMMANDER_SCOPED_PREFIXES)
-                and not g.frameshift_commander_id):
+        commander_required = current_route_uses_commander()
+        if commander_required and not g.frameshift_commander_id:
             return jsonify({
                 "error": "Commander profile is changing. Try again after the journal identity is established.",
                 "profile_pending": True,
             }), 409
-        if request.path.startswith(_COMMANDER_SCOPED_PREFIXES):
+        if commander_required:
             expected_commander = str(
                 request.headers.get("X-Frameshift-Commander") or ""
             ).strip()
-            if _is_side_effect() and not expected_commander:
+            if not expected_commander:
                 return jsonify({
                     "error": "Commander confirmation is required. Refresh Frameshift and try again.",
                     "profile_changed": True,
@@ -423,6 +456,7 @@ def create_app(state, security_manager=None):
         response.headers.setdefault("Cross-Origin-Opener-Policy", "same-origin")
         response.headers.setdefault("Cross-Origin-Resource-Policy", "same-origin")
         response.headers.setdefault("X-Permitted-Cross-Domain-Policies", "none")
+        response.headers.setdefault("X-Frameshift-Version", VERSION)
         response.headers.setdefault(
             "Content-Security-Policy",
             "default-src 'self'; base-uri 'none'; object-src 'none'; "
@@ -434,6 +468,11 @@ def create_app(state, security_manager=None):
         )
         if request.path.startswith("/api/"):
             response.headers["Cache-Control"] = "no-store"
+        elif request.method in {"GET", "HEAD"}:
+            # UI files are deliberately unbundled native modules. Require an
+            # ETag revalidation on every navigation/import so a paired tablet
+            # cannot keep an older module graph after the desktop updates.
+            response.headers["Cache-Control"] = "no-cache"
         return response
 
     @app.get("/api/security/status")
@@ -606,11 +645,35 @@ def create_app(state, security_manager=None):
 
     @app.post("/api/profiles/<profile_id>/activate")
     def api_profiles_activate(profile_id):
-        try:
-            marketdb.activate_commander_profile(profile_id)
-        except UserFacingError as exc:
-            return error_response(exc, 400)
-        return jsonify({"ok": True})
+        # Archived profiles are an offline viewing mode. Serialize this whole
+        # transition with JournalWatcher._activate_commander so the stored
+        # active profile and the identity exposed by /api/state cannot split.
+        with marketdb.commander_profile_transition():
+            current = state.snapshot()
+            current_id = str(current.get("commander_id") or "").strip()
+            if current.get("game_running") is True and current_id != profile_id:
+                return jsonify({
+                    "error": (
+                        "Close Elite Dangerous before viewing another commander. "
+                        "The live journal profile remains active while the game is running."
+                    ),
+                    "commander_id": current_id or None,
+                    "profile_live": True,
+                }), 409
+            try:
+                profile = marketdb.activate_commander_profile(profile_id)
+            except UserFacingError as exc:
+                return error_response(exc, 400)
+            if current.get("game_running") is not True:
+                state.reset_commander_context(
+                    commander=profile["name"], commander_id=profile["id"])
+                state.update(galaxy_mode=profile["galaxy_mode"])
+        return jsonify({
+            "ok": True,
+            "commander": profile["name"],
+            "commander_id": profile["id"],
+            "galaxy_mode": profile["galaxy_mode"],
+        })
 
     @app.delete("/api/profiles/<profile_id>")
     def api_profiles_delete(profile_id):
@@ -640,6 +703,7 @@ def create_app(state, security_manager=None):
         return resp
 
     @app.post("/api/trade-route")
+    @commander_scoped
     def api_trade_route():
         snap = request_state_snapshot()
         body = request.get_json(silent=True) or {}
@@ -721,6 +785,7 @@ def create_app(state, security_manager=None):
         return jsonify({"commodities": routes.list_commodities()})
 
     @app.get("/api/commodity-search")
+    @commander_scoped
     def api_commodity_search():
         snap = request_state_snapshot()
         args = request.args
@@ -747,6 +812,7 @@ def create_app(state, security_manager=None):
         return jsonify(result)
 
     @app.get("/api/mining")
+    @commander_scoped
     def api_mining():
         snap = request_state_snapshot()
         args = request.args
@@ -771,6 +837,7 @@ def create_app(state, security_manager=None):
         return jsonify(result)
 
     @app.get("/api/mining/hotspots")
+    @commander_scoped
     def api_mining_hotspots():
         snap = request_state_snapshot()
         mineral = (request.args.get("mineral") or "").strip()
@@ -784,6 +851,7 @@ def create_app(state, security_manager=None):
         return jsonify({"mineral": mineral, "reference": ref, "hotspots": hotspots})
 
     @app.get("/api/exobio-route")
+    @commander_scoped
     def api_exobio_route():
         snap = request_state_snapshot()
         args = request.args
@@ -810,6 +878,7 @@ def create_app(state, security_manager=None):
                         "total_value": total, "relaxed": relaxed})
 
     @app.get("/api/system-stations")
+    @commander_scoped
     def api_system_stations():
         """Stations of a system: Spansh station facts (services, economy,
         pads) merged with local-DB market freshness."""
@@ -823,8 +892,10 @@ def create_app(state, security_manager=None):
             local = marketdb.system_station_markets(conn, name)
         finally:
             conn.close()
+        # Keep the system name and address on the same request snapshot. A
+        # live AppState read here could cross a journal profile handoff.
         id64 = row[0] if row else (
-            state.system_address if name == snap.get("system") else None
+            snap.get("system_address") if name == snap.get("system") else None
         )
         stations = spansh.system_stations(id64)
         for s in stations:
@@ -844,6 +915,7 @@ def create_app(state, security_manager=None):
         return jsonify(market)
 
     @app.get("/api/engineering")
+    @commander_scoped
     def api_engineering():
         """Complete local catalog and a shared material plan for the wishlist."""
         from elite import blueprints, engineering_catalog, wishlist
@@ -875,6 +947,7 @@ def create_app(state, security_manager=None):
         })
 
     @app.post("/api/engineering/pin")
+    @commander_scoped
     def api_engineering_pin():
         from elite import blueprints, wishlist
 
@@ -895,6 +968,7 @@ def create_app(state, security_manager=None):
         return jsonify({"ok": True, "commander_id": commander_id(), "pinned": pinned})
 
     @app.get("/api/objectives")
+    @commander_scoped
     def api_objectives():
         from .objectives import ObjectiveStore
 
@@ -905,6 +979,7 @@ def create_app(state, security_manager=None):
         return jsonify({"objectives": ObjectiveStore(commander_id()).list(statuses=statuses)})
 
     @app.post("/api/objectives")
+    @commander_scoped
     def api_objectives_create():
         from .objectives import ObjectiveStore
 
@@ -923,6 +998,7 @@ def create_app(state, security_manager=None):
         return jsonify({"objective": objective}), 201
 
     @app.patch("/api/objectives/<objective_id>")
+    @commander_scoped
     def api_objectives_update(objective_id):
         from .objectives import ObjectiveStore
 
@@ -936,6 +1012,7 @@ def create_app(state, security_manager=None):
         return jsonify({"objective": objective})
 
     @app.delete("/api/objectives/<objective_id>")
+    @commander_scoped
     def api_objectives_delete(objective_id):
         from .objectives import ObjectiveStore
 
@@ -945,6 +1022,7 @@ def create_app(state, security_manager=None):
         return jsonify({"objective": objective})
 
     @app.post("/api/objectives/plan")
+    @commander_scoped
     def api_objectives_plan():
         from . import blueprints, wishlist
         from .objectives import ObjectiveEngine
@@ -981,18 +1059,21 @@ def create_app(state, security_manager=None):
             minutes, snapshot, max_tasks=max_tasks))
 
     @app.get("/api/timings")
+    @commander_scoped
     def api_timings():
         from .timings import TimingModel
 
         return jsonify(TimingModel(commander_id()).snapshot())
 
     @app.get("/api/history/summary")
+    @commander_scoped
     def api_history_summary():
         from .eventledger import EventLedger
 
         return jsonify(EventLedger(commander_id()).lifetime_summary())
 
     @app.get("/api/history/events")
+    @commander_scoped
     def api_history_events():
         from .eventledger import EventLedger
 
@@ -1014,6 +1095,7 @@ def create_app(state, security_manager=None):
         return jsonify({"events": events})
 
     @app.get("/api/operations")
+    @commander_scoped
     def api_operations():
         from .operations import OperationsBoard
 
@@ -1029,6 +1111,7 @@ def create_app(state, security_manager=None):
         return jsonify(snapshot)
 
     @app.post("/api/operations")
+    @commander_scoped
     def api_operations_create():
         from .operations import OperationsBoard
 
@@ -1068,6 +1151,7 @@ def create_app(state, security_manager=None):
         return jsonify({"record": result}), 201
 
     @app.patch("/api/operations/<kind>/<record_id>")
+    @commander_scoped
     def api_operations_update(kind, record_id):
         from .operations import OperationsBoard
 
@@ -1081,6 +1165,7 @@ def create_app(state, security_manager=None):
         return jsonify({"record": result})
 
     @app.delete("/api/operations/<kind>/<record_id>")
+    @commander_scoped
     def api_operations_delete(kind, record_id):
         from .operations import OperationsBoard
 
@@ -1093,6 +1178,7 @@ def create_app(state, security_manager=None):
         return jsonify({"record": result})
 
     @app.get("/api/operations/export")
+    @commander_scoped
     def api_operations_export():
         from .operations import OperationsBoard
 
@@ -1106,6 +1192,7 @@ def create_app(state, security_manager=None):
         return response
 
     @app.post("/api/operations/import")
+    @commander_scoped
     def api_operations_import():
         from .operations import OperationsBoard
 
@@ -1118,6 +1205,7 @@ def create_app(state, security_manager=None):
         return jsonify(report)
 
     @app.post("/api/cargo-recovery")
+    @commander_scoped
     def api_cargo_recovery():
         body = request.get_json(silent=True) or {}
         snapshot = request_state_snapshot()
@@ -1162,10 +1250,12 @@ def create_app(state, security_manager=None):
         return payload
 
     @app.get("/api/specialists")
+    @commander_scoped
     def api_specialists():
         return jsonify(_specialist_response(_specialist_facade()))
 
     @app.post("/api/specialists/mining/<action>")
+    @commander_scoped
     def api_specialists_mining(action):
         workflows = _specialist_facade()
         body = request.get_json(silent=True) or {}
@@ -1178,6 +1268,7 @@ def create_app(state, security_manager=None):
         return jsonify(_specialist_response(workflows))
 
     @app.post("/api/specialists/combat/<action>")
+    @commander_scoped
     def api_specialists_combat(action):
         workflows = _specialist_facade()
         body = request.get_json(silent=True) or {}
@@ -1190,6 +1281,7 @@ def create_app(state, security_manager=None):
         return jsonify(_specialist_response(workflows))
 
     @app.post("/api/specialists/carrier/config")
+    @commander_scoped
     def api_specialists_carrier_config():
         workflows = _specialist_facade()
         body = request.get_json(silent=True) or {}
@@ -1203,6 +1295,7 @@ def create_app(state, security_manager=None):
         return jsonify(_specialist_response(workflows))
 
     @app.post("/api/specialists/carrier/route")
+    @commander_scoped
     def api_specialists_carrier_route():
         workflows = _specialist_facade()
         body = request.get_json(silent=True) or {}
@@ -1216,6 +1309,7 @@ def create_app(state, security_manager=None):
         return jsonify(_specialist_response(workflows))
 
     @app.post("/api/specialists/carrier/inventory")
+    @commander_scoped
     def api_specialists_carrier_inventory():
         workflows = _specialist_facade()
         body = request.get_json(silent=True) or {}
@@ -1226,6 +1320,7 @@ def create_app(state, security_manager=None):
         return jsonify(_specialist_response(workflows))
 
     @app.post("/api/specialists/exobiology/pins")
+    @commander_scoped
     def api_specialists_exobiology_pin():
         workflows = _specialist_facade()
         body = request.get_json(silent=True) or {}
@@ -1239,6 +1334,7 @@ def create_app(state, security_manager=None):
         return jsonify(_specialist_response(workflows)), 201
 
     @app.delete("/api/specialists/exobiology/pins/<pin_id>")
+    @commander_scoped
     def api_specialists_exobiology_pin_delete(pin_id):
         workflows = _specialist_facade()
         if not workflows.exobiology.remove_pin(pin_id):
@@ -1246,11 +1342,13 @@ def create_app(state, security_manager=None):
         return jsonify(_specialist_response(workflows))
 
     @app.get("/api/specialists/exobiology/geojson")
+    @commander_scoped
     def api_specialists_exobiology_geojson():
         workflows = _specialist_facade()
         return jsonify(workflows.exobiology.geojson(request.args.get("body") or None))
 
     @app.get("/api/material-traders")
+    @commander_scoped
     def api_material_traders():
         snap = request_state_snapshot()
         ref = request.args.get("system") or snap.get("system")
@@ -1262,6 +1360,7 @@ def create_app(state, security_manager=None):
         return jsonify({"kind": kind.title(), "reference": ref, "traders": traders})
 
     @app.get("/api/sell-data")
+    @commander_scoped
     def api_sell_data():
         """Nearest ports to sell exploration data (Universal Cartographics) and
         bio samples (Vista Genomics) — the deep-space 'get me home' search."""
@@ -1280,6 +1379,7 @@ def create_app(state, security_manager=None):
         return jsonify({"reference": ref, **out})
 
     @app.get("/api/interstellar-factors")
+    @commander_scoped
     def api_interstellar_factors():
         """Nearest stations with an Interstellar Factors contact — the service
         that clears bounties and fines (for a 25% cut) without flying to the
@@ -1297,10 +1397,11 @@ def create_app(state, security_manager=None):
                         "stations": [r for r in rows if not r["carrier"]][:6]})
 
     @app.get("/api/loadout-export")
+    @commander_scoped
     def api_loadout_export():
         """The current ship as an EDSY import link + SLEF JSON (Coriolis/Inara),
         from the last Loadout journal event."""
-        loadout = state.get_loadout()
+        loadout = state.get_loadout(commander_id())
         if not loadout:
             return error_response(
                 UserFacingError("No ship loadout seen yet — it arrives when you "
@@ -1377,6 +1478,7 @@ def create_app(state, security_manager=None):
         return jsonify({"genera": sorted(biovalues.GENUS_VALUE_RANGE)})
 
     @app.post("/api/riches")
+    @commander_scoped
     def api_riches():
         snap = request_state_snapshot()
         body = request.get_json(silent=True) or {}
@@ -1403,6 +1505,7 @@ def create_app(state, security_manager=None):
         return jsonify({"systems": systems})
 
     @app.post("/api/neutron")
+    @commander_scoped
     def api_neutron():
         snap = request_state_snapshot()
         body = request.get_json(silent=True) or {}
@@ -1428,6 +1531,7 @@ def create_app(state, security_manager=None):
         return jsonify(route)
 
     @app.get("/api/station-search")
+    @commander_scoped
     def api_station_search():
         snap = request_state_snapshot()
         q = (request.args.get("q") or "").strip()
@@ -1446,6 +1550,7 @@ def create_app(state, security_manager=None):
         return jsonify({"results": results})
 
     @app.get("/api/cargo-sell")
+    @commander_scoped
     def api_cargo_sell():
         snap = request_state_snapshot()
         args = request.args
@@ -1470,6 +1575,7 @@ def create_app(state, security_manager=None):
         return jsonify({"results": results})
 
     @app.get("/api/colonisation-sources")
+    @commander_scoped
     def api_colonisation_sources():
         snap = request_state_snapshot()
         try:
@@ -1501,6 +1607,7 @@ def create_app(state, security_manager=None):
         return jsonify({"commodities": out})
 
     @app.get("/api/alerts")
+    @commander_scoped
     def api_alerts():
         active_commander_id = commander_id()
         payload = alerts.snapshot(active_commander_id)
@@ -1510,6 +1617,7 @@ def create_app(state, security_manager=None):
         return resp
 
     @app.post("/api/watch")
+    @commander_scoped
     def api_watch():
         body = request.get_json(silent=True) or {}
         try:
@@ -1519,16 +1627,19 @@ def create_app(state, security_manager=None):
         return jsonify({"ok": True, "watch": {"id": watch["id"], "label": watch["label"]}})
 
     @app.post("/api/watch/remove")
+    @commander_scoped
     def api_watch_remove():
         body = request.get_json(silent=True) or {}
         return jsonify({"ok": alerts.remove_watch(body.get("id", 0), commander_id())})
 
     @app.post("/api/alerts/clear")
+    @commander_scoped
     def api_alerts_clear():
         alerts.clear_alerts(commander_id())
         return jsonify({"ok": True})
 
     @app.get("/api/analytics")
+    @commander_scoped
     def api_analytics():
         try:
             days = max(1, min(365, int(request.args.get("days", 30))))
@@ -1751,6 +1862,7 @@ def create_app(state, security_manager=None):
             return error_response(exc, 400)
 
     @app.post("/api/extensions/test")
+    @commander_scoped_when(extension_history_uses_commander)
     def api_extension_test():
         from .extensions import ExtensionError, dry_run_rules
 
@@ -1761,16 +1873,9 @@ def create_app(state, security_manager=None):
         else:
             from .eventledger import EventLedger
 
-            snap = request_state_snapshot()
-            commander_id = (
-                str(request.headers.get("X-Frameshift-Commander") or "").strip()
-                or snap.get("commander_id")
+            events = EventLedger(commander_id()).query(
+                limit=1000, ascending=False
             )
-            if not commander_id:
-                return error_response(UserFacingError(
-                    "No commander history yet — test runs need a loaded profile "
-                    "or a sample event."), 400)
-            events = EventLedger(commander_id).query(limit=1000, ascending=False)
         try:
             return jsonify(dry_run_rules(body.get("manifest"), events))
         except ExtensionError as exc:
