@@ -1,51 +1,53 @@
-## Frameshift v2.4.0 — the Holo Bracket controls
+## Frameshift v2.5.0 — a modern, safer cockpit core
 
-Every button in the app now speaks one design language, and the pages put
-their most-used cards and orderings first.
+This release rebuilds the application underneath the cockpit without changing
+the local-first experience. The legacy frontend monolith is gone; every pane
+now runs through a small, explicit module with guarded data and rendering
+boundaries.
 
-### One button system
+### Faster, cleaner cockpit foundation
 
-Buttons read as light projected onto glass: translucent faces, thin frames,
-and breathing corner brackets that mark what matters. Four tiers — solid
-primary for the one action a card exists for, translucent secondary, quiet
-ghost for cancel/dismiss, and compact mono utility for in-table chrome.
-Every press answers with a 350ms face flash, before any network round-trip.
+- The frontend is now a native ES-module graph split by feature, with a tiny
+  startup shell and layered styles. There is still no bundler, CDN, runtime
+  package, or cloud account.
+- Desktop and Panel mode share one typed application state while keeping their
+  presentation and controls independently testable.
+- Browser assets revalidate safely after an update, and a running client
+  reloads once if it detects a newer backend version.
+- The existing Holo Bracket controls, themes, saved layouts, paired devices,
+  and touch-first Panel experience are preserved.
 
-- Busy buttons pulse and say what they're doing; disabled ones go dashed.
-- Toggles (VOICE, FULL, tabs, the specialist switcher) light up with solid
-  brackets and a glow when active.
-- The desktop tabs and specialist switcher are segmented groups — the
-  active segment is the only one wearing brackets.
-- Honors reduced-motion, Windows High Contrast, and your color theme.
+### Commander data stays with the right commander
 
-### Cockpit switches
+- Every commander-owned request carries a stable commander identity. Work
+  still in flight is cancelled and ignored when profiles change.
+- Archived commanders are now explicitly offline viewers. Frameshift rejects
+  switching away from the journal commander while Elite Dangerous is live,
+  preventing the UI, analytics, and tracked-market data from splitting across
+  profiles.
+- Profile activation and journal handoffs now share one serialized transition,
+  and live journal activity always reasserts its commander before updates are
+  recorded.
 
-Checkboxes are now flight switches: a squared, accent-framed housing with a
-paddle that slides and lights orange when the circuit is on. The Settings
-toggles share the same look, and everything scales up to touch size in
-panel mode.
+### Safer rendering and transport
 
-### Tidier rows
+- Dynamic cockpit content is escaped through one reviewed rendering boundary.
+- Feature code can only reach same-origin Frameshift API routes through named,
+  typed clients; it cannot bypass the transport policy or embed ad-hoc API
+  calls.
+- The server now checks commander metadata for every commander-scoped route and
+  continues to enforce a self-only script policy.
 
-The ◎ plot buttons that trailed each row at a different position now park
-in a clean right-edge column — engineers, ships, traders, missions,
-community goals, alerts.
+### Release-grade browser coverage
 
-### Smarter defaults
-
-- Search results show their sort up front in the column headers: buying
-  lists cheapest first, selling richest first, outfitting nearest first.
-  Click any header to override; your choice sticks for the session.
-- System stations list real ports by arrival distance — fleet carriers
-  sink to the bottom instead of drowning the list.
-- Active missions sort soonest-deadline first, matching the card's own
-  "red = expiring soon" legend.
-- Pages lead with their most-used cards: LOCAL puts the station market and
-  jump history above the fold, TRADE puts commodity search ahead of the
-  mining advisor, ENGINEERING puts the workshop above the materials table.
-  Your own card arrangements and hidden cards are untouched — the new
-  layout only applies where you haven't customized.
+- Unit and DOM behavior run against the real module graph.
+- Complete Chromium journeys cover desktop behavior, while WebKit journeys
+  exercise the iPad-sized Panel experience.
+- Every Python test file runs in its own deterministic process, and the
+  packaged executable must serve a coherent, cache-safe module graph before a
+  release can publish.
 
 ### Upgrade notes
 
-- Update normally from any 2.x release. No database changes.
+- Update normally from any 2.x release. There are no database schema changes
+  and no manual migration steps.
