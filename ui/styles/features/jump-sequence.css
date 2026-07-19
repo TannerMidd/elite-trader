@@ -1,0 +1,395 @@
+/* FSD jump-sequence overlay: charge countdown, witchspace tunnel HUD, and
+   arrival reveal above the flight panel. The WebGL tunnel renders inside
+   .fsd-stage; everything else is chrome. Sits below the CRT scanline layers
+   (z 55/56) so the retro treatment applies to the tunnel too, and below the
+   panel boot splash (z 80). Keyframes live in motion/motion.css. */
+
+#fsd-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.5s ease;
+}
+#fsd-overlay.fsd-on {
+  opacity: 1;
+  pointer-events: auto;
+}
+.fsd-frame {
+  position: absolute;
+  inset: 0;
+  background: #05060a;
+  user-select: none;
+  font-family: "IBM Plex Mono", Consolas, monospace;
+}
+/* During the charge the cockpit remains faintly visible underneath. */
+.fsd-frame[data-phase="charge"] {
+  background: rgba(5, 6, 10, 0.92);
+}
+.fsd-stage {
+  position: absolute;
+  inset: 0;
+}
+/* Data readouts are mono (the frame default); labels speak the display face. */
+.fsd-label,
+.fsd-charge-title,
+.fsd-hud-route,
+.fsd-arrival-label {
+  font-family: "Chakra Petch", "Segoe UI", system-ui, sans-serif;
+}
+
+.fsd-corner {
+  position: absolute;
+  width: 56px;
+  height: 56px;
+  z-index: 2;
+  border: 0 solid rgba(var(--accent-soft-rgb), 0.7);
+}
+.fsd-tl,
+.fsd-tr {
+  top: 22px;
+  border-top-width: 2px;
+}
+.fsd-bl,
+.fsd-br {
+  bottom: 22px;
+  border-bottom-width: 2px;
+}
+.fsd-tl,
+.fsd-bl {
+  left: 22px;
+  border-left-width: 2px;
+}
+.fsd-tr,
+.fsd-br {
+  right: 22px;
+  border-right-width: 2px;
+}
+
+.fsd-banner,
+.fsd-hud-box {
+  clip-path: polygon(9px 0, 100% 0, 100% calc(100% - 9px), calc(100% - 9px) 100%, 0 100%, 0 9px);
+}
+.fsd-banner {
+  position: absolute;
+  top: 30px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 3;
+  padding: 10px 24px;
+  font-size: 12px;
+  letter-spacing: 3px;
+  font-weight: 600;
+  white-space: nowrap;
+  color: var(--orange-soft);
+  border: 1px solid rgba(var(--accent-rgb), 0.5);
+  background: rgba(5, 6, 10, 0.6);
+}
+.fsd-banner-neutron,
+.fsd-banner-critical {
+  background: repeating-linear-gradient(-45deg, var(--fsd-stripe) 0 6px, transparent 6px 12px)
+    rgba(5, 6, 10, 0.6);
+}
+.fsd-banner-neutron {
+  --fsd-stripe: rgba(89, 216, 255, 0.12);
+  color: #7de5ff;
+  border-color: rgba(89, 216, 255, 0.55);
+}
+.fsd-banner-critical {
+  --fsd-stripe: rgba(224, 93, 93, 0.14);
+  color: #ff9d9d;
+  border-color: rgba(224, 93, 93, 0.6);
+  animation: fsd-blink-warn 1.1s ease-in-out infinite;
+}
+
+.fsd-label {
+  font-size: 10px;
+  letter-spacing: 3px;
+  color: var(--dim);
+  font-weight: 600;
+}
+.fsd-mono-dim {
+  font-size: 10px;
+  letter-spacing: 2.5px;
+  color: var(--dim);
+}
+
+/* ---------- charge ---------- */
+
+.fsd-charge {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 24px;
+  text-align: center;
+  animation: fsd-rise-in 0.4s ease;
+}
+.fsd-charge-head,
+.fsd-charge-dest,
+.fsd-charge-foot {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+.fsd-charge-title {
+  font-size: 13px;
+  letter-spacing: 6px;
+  color: var(--orange);
+  font-weight: 700;
+}
+.fsd-charge-sub {
+  font-size: 10px;
+  letter-spacing: 3px;
+  color: var(--dim);
+}
+.fsd-ring {
+  position: relative;
+  width: clamp(170px, 24vh, 240px);
+  height: clamp(170px, 24vh, 240px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.fsd-ring > i {
+  position: absolute;
+  border-radius: 50%;
+}
+.fsd-ring > i:nth-child(1) {
+  inset: 0;
+  border: 1px dashed rgba(var(--accent-soft-rgb), 0.5);
+  animation: fsd-spin-cw 9s linear infinite;
+}
+.fsd-ring > i:nth-child(2) {
+  inset: 24px;
+  border: 1px dashed rgba(var(--accent-rgb), 0.35);
+  animation: fsd-spin-ccw 6s linear infinite;
+}
+.fsd-ring > i:nth-child(3) {
+  inset: 48px;
+  border: 1px solid rgba(var(--accent-rgb), 0.14);
+}
+#fsd-count {
+  font-size: 96px;
+  font-weight: 600;
+  color: var(--orange);
+  text-shadow: 0 0 34px rgba(var(--accent-rgb), 0.7);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 2px;
+}
+#fsd-count.fsd-engage {
+  font-size: 34px;
+}
+.fsd-charge-name {
+  font-size: clamp(24px, 3.4vw, 34px);
+  font-weight: 600;
+  color: var(--orange);
+  text-shadow: 0 0 24px rgba(var(--accent-rgb), 0.5);
+  overflow-wrap: anywhere;
+  max-width: 84vw;
+}
+.fsd-chips {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+.fsd-chip {
+  --fsd-chip-color: var(--dim);
+  border: 1px solid var(--fsd-chip-color);
+  color: var(--fsd-chip-color);
+  font-size: 11px;
+  letter-spacing: 2px;
+  font-weight: 600;
+  padding: 5px 12px;
+  clip-path: polygon(7px 0, 100% 0, 100% calc(100% - 7px), calc(100% - 7px) 100%, 0 100%, 0 7px);
+}
+.fsd-chip-good {
+  --fsd-chip-color: var(--good);
+}
+.fsd-chip-bad {
+  --fsd-chip-color: var(--bad);
+}
+.fsd-chargebar,
+.fsd-routebar {
+  position: relative;
+  height: 8px;
+  background: #0a0a09;
+  border: 1px solid rgba(var(--accent-rgb), 0.26);
+  overflow: hidden;
+}
+.fsd-chargebar {
+  width: 340px;
+  max-width: 70vw;
+}
+.fsd-routebar {
+  width: 320px;
+  max-width: 30vw;
+}
+.fsd-chargebar > div,
+.fsd-routebar > div {
+  height: 100%;
+  width: 0;
+  background: linear-gradient(90deg, rgba(var(--accent-rgb), 0.55), var(--orange));
+  box-shadow: 0 0 12px rgba(var(--accent-rgb), 0.55);
+}
+.fsd-chargebar::after,
+.fsd-routebar::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: repeating-linear-gradient(90deg, transparent 0 11px, #05060a 11px 13px);
+  pointer-events: none;
+}
+.fsd-charge-warn {
+  font-size: 10px;
+  letter-spacing: 2.5px;
+  color: var(--orange-soft);
+  animation: fsd-blink-warn 1.4s ease-in-out infinite;
+}
+.fsd-charge-warn.fsd-warn-good {
+  color: var(--good);
+}
+.fsd-firmware {
+  font-size: 9px;
+  letter-spacing: 2px;
+  color: #565c66;
+  margin-top: 12px;
+}
+
+/* ---------- witchspace HUD ---------- */
+
+.fsd-hud {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  animation: fsd-hud-shake var(--fsd-shake, 3s) ease-in-out infinite alternate;
+}
+.fsd-hud-box {
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 14px 18px;
+  background: rgba(5, 6, 10, 0.42);
+  border: 1px solid rgba(var(--accent-rgb), 0.18);
+}
+.fsd-hud-nw {
+  top: 96px;
+  left: 44px;
+}
+.fsd-hud-ne {
+  top: 96px;
+  right: 44px;
+  align-items: flex-end;
+}
+.fsd-hud-sw {
+  bottom: 84px;
+  left: 44px;
+  gap: 8px;
+}
+.fsd-hud-dest {
+  font-size: clamp(18px, 2.2vw, 26px);
+  font-weight: 600;
+  color: var(--orange);
+  text-shadow: 0 0 18px rgba(var(--accent-rgb), 0.5);
+}
+.fsd-hud-class {
+  font-size: 11px;
+  letter-spacing: 2px;
+}
+.fsd-hud-eta {
+  font-size: clamp(28px, 3.4vw, 42px);
+  font-weight: 600;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+.fsd-hud-route {
+  font-size: 10px;
+  letter-spacing: 3px;
+  color: var(--orange-soft);
+  font-weight: 700;
+}
+.fsd-hud-tag {
+  position: absolute;
+  bottom: 34px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 10px;
+  letter-spacing: 4px;
+  color: rgba(var(--accent-soft-rgb), 0.8);
+  animation: fsd-blink 2.4s ease-in-out infinite;
+  white-space: nowrap;
+}
+
+/* ---------- arrival ---------- */
+
+.fsd-arrival {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+}
+.fsd-arrival-box {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+  padding: 56px 90px;
+  background: radial-gradient(closest-side, rgb(3 4 7 / 82%), rgb(3 4 7 / 60%) 58%, transparent);
+  animation: fsd-rise-in 0.4s ease both;
+}
+.fsd-arrival-label,
+.fsd-arrival-tail {
+  color: #9aa0aa;
+  text-shadow: 0 1px 8px #000;
+}
+.fsd-arrival-label {
+  font-size: 12px;
+  letter-spacing: 5px;
+  font-weight: 600;
+  animation: fsd-rise-in 0.5s ease both;
+}
+.fsd-arrival-name {
+  font-size: clamp(38px, 5.4vw, 62px);
+  font-weight: 600;
+  color: var(--orange);
+  text-shadow: 0 0 42px rgba(var(--accent-rgb), 0.6);
+  animation: fsd-reveal-in 0.7s var(--ease) both;
+  overflow-wrap: anywhere;
+  max-width: 80vw;
+}
+.fsd-arrival-note {
+  font-size: 13px;
+  letter-spacing: 2.5px;
+  text-shadow: 0 1px 8px #000;
+  animation: fsd-rise-in 0.6s ease 0.25s both;
+}
+.fsd-arrival-tail {
+  font-size: 11px;
+  letter-spacing: 2px;
+  animation: fsd-rise-in 0.6s ease 0.4s both;
+}
+
+.fsd-skip {
+  position: absolute;
+  bottom: 26px;
+  right: 92px;
+  z-index: 4;
+  letter-spacing: 2px;
+}
+
+/* Settings: the preview row keeps the .setting grid but is not a toggle. */
+.fsd-preview-row {
+  cursor: default;
+  align-items: center;
+}

@@ -554,7 +554,7 @@ class JournalWatcher:
         # during startup (and can persist through a long history import if the
         # OS probe is unavailable). Live Shutdown remains authoritative.
         if self._live:
-            self.state.update(game_running=False)
+            self.state.update(game_running=False, jump=None)
         # Freeze the session clock: duration/cr-per-hour shouldn't keep
         # counting wall time after you stop playing.
         self.state.end_session(marketdb.parse_update_time(e.get("timestamp")))
@@ -648,6 +648,23 @@ class JournalWatcher:
         self._capture_system_politics(e)
         self._fetch_community_bio(e.get("SystemAddress"), e.get("StarSystem"))
 
+    def _on_startjump(self, e):
+        # Hyperspace only — the supercruise variant has no destination lock or
+        # tunnel. Live tailing only: a bootstrap replay must not resurrect a
+        # long-finished jump into the panel's jump-sequence overlay.
+        if not self._live or e.get("JumpType") != "Hyperspace":
+            return
+        self.state.update(jump={
+            "system": e.get("StarSystem"),
+            "star_class": e.get("StarClass"),
+            "scoopable": flight.is_scoopable(e.get("StarClass")),
+            "taxi": bool(e.get("Taxi")),
+            # Wall clock at observation, not the journal timestamp: paired
+            # panel devices cannot assume the gaming PC's clock matches theirs,
+            # so the snapshot serves a server-computed elapsed_s instead.
+            "started_ms": int(time.time() * 1000),
+        })
+
     def _on_fsdjump(self, e):
         self._body_scans = {}
         self._body_ids = {}
@@ -662,6 +679,7 @@ class JournalWatcher:
             station_market_id=None,
             dist_from_star_ls=None,
             bio_signals={},
+            jump=None,
         )
         self._remember_eddn_location(e)
         self._eddn_journal_body_name = None

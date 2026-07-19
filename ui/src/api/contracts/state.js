@@ -146,6 +146,15 @@
  * }} NavigationState
  *
  * @typedef {{
+ *   system: string|null,
+ *   star_class: string|null,
+ *   scoopable: boolean,
+ *   taxi: boolean,
+ *   started_ms: number,
+ *   elapsed_s: number,
+ * }} JumpProgress
+ *
+ * @typedef {{
  *   id?: number|string,
  *   level?: string,
  *   code?: string,
@@ -212,6 +221,7 @@
  *   session: SessionState,
  *   combat: CombatState,
  *   nav: NavigationState,
+ *   jump: JumpProgress|null,
  *   alerts: StateAlert[],
  *   last_journal_event: string|null,
  *   journal_dir_found: boolean,

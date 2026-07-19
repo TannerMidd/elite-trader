@@ -34,6 +34,7 @@ import {
 import { enterPairingRequired } from "../features/security.js";
 import { refreshLoadoutExport, resetLoadoutExport } from "../features/services.js";
 import { renderMissions, renderSession } from "../features/status.js";
+import { renderJumpSequence } from "../shell/jump-sequence.js";
 import { renderRebuy } from "../shell/rebuy.js";
 import { renderPanel } from "../shell/status.js";
 
@@ -123,6 +124,7 @@ export function renderApplicationSnapshot(snapshot = appStore.getSnapshot()) {
   if (syncRouteToPosition()) saveActiveRoute();
   renderRouteProgress();
   renderPanel(snapshot);
+  renderJumpSequence(snapshot);
   seedRouteForm();
 }
 

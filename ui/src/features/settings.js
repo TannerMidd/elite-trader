@@ -6,6 +6,7 @@ import { checkForUpdatesNow } from "./updater.js";
 import {
   buildCrtSetting,
   buildDisplaySettings,
+  buildJumpSequenceSettings,
   buildVoiceVolumeSetting,
 } from "./settings/display.js";
 import { buildJournalDirSetting } from "./settings/journal.js";
@@ -19,6 +20,7 @@ export {
   applyDisplaySettings,
   buildCrtSetting,
   buildDisplaySettings,
+  buildJumpSequenceSettings,
   buildSliderSetting,
   buildVoiceVolumeSetting,
   displayVal,
@@ -100,6 +102,7 @@ export function renderSettings(values, info) {
     buildTtsSetting(),
     buildVoiceVolumeSetting(),
     buildCrtSetting(),
+    ...buildJumpSequenceSettings(),
     ...buildDisplaySettings(),
   );
   for (const definition of SETTINGS_DEFS) {

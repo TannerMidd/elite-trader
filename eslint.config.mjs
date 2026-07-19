@@ -29,6 +29,7 @@ export default [
       "dist/**",
       "ui/hb.js",
       "ui/panel-bootstrap.js",
+      "ui/fsd-tunnel.js",
     ],
   },
   {

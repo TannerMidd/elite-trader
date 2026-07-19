@@ -6,7 +6,7 @@
     "node": ">=24 <25"
   },
   "scripts": {
-    "check:syntax": "node --check ui/hb.js && node --check ui/panel-bootstrap.js",
+    "check:syntax": "node --check ui/hb.js && node --check ui/panel-bootstrap.js && node --check ui/fsd-tunnel.js",
     "format": "prettier --write . --ignore-unknown",
     "format:check": "prettier --check . --ignore-unknown",
     "lint": "eslint .",

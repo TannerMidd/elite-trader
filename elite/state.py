@@ -2,6 +2,7 @@
 
 import copy
 import threading
+import time
 from collections import deque
 
 
@@ -50,6 +51,10 @@ class AppState:
         self.jump_history = deque(maxlen=20)  # newest first
         self.cargo_inventory = []
         self.market = None  # {"market_id", "station", "system", "timestamp", "items": [...]}
+
+        # Live FSD hyperspace jump in progress (StartJump → FSDJump), driving
+        # the flight panel's jump-sequence overlay. None outside a jump.
+        self.jump = None  # {"system","star_class","scoopable","taxi","started_ms"}
 
         # Flight safety: plotted route (for fuel-scoop callouts) and a queue of
         # one-shot voice alerts (interdiction, hull damage, first discovery).
@@ -336,6 +341,21 @@ class AppState:
             "advisory": advisory,
         }
 
+    # A hyperspace jump resolves in well under a minute; if the FSDJump never
+    # lands (crash mid-jump, journal stall), stop advertising it so the panel
+    # overlay cannot trigger from a long-dead StartJump.
+    JUMP_EXPIRY_S = 150
+
+    def _jump_snapshot(self):
+        if not self.jump:
+            return None
+        elapsed_s = max(0.0, time.time() - self.jump["started_ms"] / 1000)
+        if elapsed_s > self.JUMP_EXPIRY_S:
+            return None
+        snap = dict(self.jump)
+        snap["elapsed_s"] = round(elapsed_s, 1)
+        return snap
+
     def start_session(self, ts, credits):
         """Reset the live-session counters at a game launch (LoadGame)."""
         with self._lock:
@@ -565,6 +585,7 @@ class AppState:
                 "session": self._session_snapshot(),
                 "combat": self._combat_snapshot(),
                 "nav": self._nav_snapshot(synth=synth),
+                "jump": self._jump_snapshot(),
                 "alerts": list(self.alerts),
                 "last_journal_event": self.last_journal_event,
                 "journal_dir_found": self.journal_dir_found,

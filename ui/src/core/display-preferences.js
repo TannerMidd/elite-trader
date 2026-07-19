@@ -5,6 +5,7 @@ export const DISPLAY_DEFAULTS = Object.freeze({
   stripScale: 100,
   helperScale: 100,
   voiceVolume: 100,
+  fsdSeqIntensity: 85,
 });
 
 /**

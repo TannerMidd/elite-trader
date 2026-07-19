@@ -32,4 +32,5 @@
 @import url("./motion/motion.css") layer(motion);
 @import url("./features/security-extensions.css") layer(features);
 @import url("./panel/hud-controls.css") layer(panel);
+@import url("./features/jump-sequence.css") layer(features);
 @import url("../holo-buttons.css") layer(components);

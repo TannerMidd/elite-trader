@@ -205,6 +205,7 @@ const applicationMarkup = [
 
 <div id="fp-scan" aria-hidden="true"></div>
 <div id="fp-vignette" aria-hidden="true"></div>
+<div id="fsd-overlay" class="hidden" aria-hidden="true"></div>
 
 <div id="fp-boot" class="hidden" aria-hidden="true">
   <img src="icon.svg" alt="" width="72" height="72">

@@ -1,6 +1,11 @@
 import { DISPLAY_DEFAULTS, displayValue, voiceVolume } from "../../core/display-preferences.js";
 import { setStyleValue } from "../../core/dom.js";
 import { html, render } from "../../core/html.js";
+import {
+  jumpSequenceEnabled,
+  previewJumpSequence,
+  reduceJumpFlash,
+} from "../../shell/jump-sequence.js";
 import { speak } from "../../shell/voice.js";
 
 /**
@@ -141,4 +146,70 @@ export function buildCrtSetting() {
   );
   row.append(checkbox, toggle, text);
   return row;
+}
+
+/**
+ * @param {string} key
+ * @param {boolean} checked
+ * @param {import("../../core/html.js").TemplateResult} label
+ */
+function buildLocalToggle(key, checked, label) {
+  const row = document.createElement("label");
+  row.className = "setting";
+  const checkbox = document.createElement("input");
+  checkbox.type = "checkbox";
+  checkbox.checked = checked;
+  checkbox.addEventListener("change", () => {
+    localStorage.setItem(key, checkbox.checked ? "1" : "0");
+  });
+  const toggle = document.createElement("span");
+  toggle.className = "switch";
+  const text = document.createElement("div");
+  text.className = "setting-text";
+  render(text, label);
+  row.append(checkbox, toggle, text);
+  return row;
+}
+
+export function buildJumpSequenceSettings() {
+  const master = buildLocalToggle(
+    "fsdSeq",
+    jumpSequenceEnabled(),
+    html`<b>FSD jump sequence</b>
+      <div class="dim">
+        Cinematic charge countdown, witchspace tunnel and arrival flash in the flight panel whenever
+        your ship jumps. Neutron stars and critically low fuel get their own look. Saved on this
+        device only.
+      </div>`,
+  );
+  const flash = buildLocalToggle(
+    "fsdSeqReduceFlash",
+    reduceJumpFlash(),
+    html`<b>Reduce jump flashing</b>
+      <div class="dim">
+        Caps the bright white flashes at launch and arrival — kinder for photosensitive commanders
+        and night flying. The sequence also calms itself when this device asks for reduced motion.
+      </div>`,
+  );
+  const intensity = buildSliderSetting({
+    key: "fsdSeqIntensity",
+    label: "Jump effect intensity",
+    unit: "%",
+    min: 30,
+    max: 100,
+    step: 5,
+    desc: "How hard the tunnel, camera shake and glow go during the jump sequence.",
+  });
+  const preview = document.createElement("div");
+  preview.className = "setting fsd-preview-row";
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "hb hb-utility hb-sm";
+  button.textContent = "◈ PREVIEW JUMP";
+  button.addEventListener("click", () => previewJumpSequence());
+  const hint = document.createElement("div");
+  hint.className = "dim";
+  hint.textContent = "Plays a simulated hyperspace jump right now — no game needed.";
+  preview.append(button, hint);
+  return [master, flash, intensity, preview];
 }

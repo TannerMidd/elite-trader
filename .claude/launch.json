@@ -1,0 +1,14 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "frameshift-dev",
+      "runtimeExecutable": "cmd",
+      "runtimeArgs": [
+        "/c",
+        "set ET_DATA_DIR=%TEMP%\\frameshift-dev-data&& .venv\\Scripts\\python.exe app.py --headless --port 8777"
+      ],
+      "port": 8777
+    }
+  ]
+}
