@@ -1,53 +1,45 @@
-## Frameshift v2.5.0 — a modern, safer cockpit core
+## Frameshift v2.6.0 — the jump is part of the show
 
-This release rebuilds the application underneath the cockpit without changing
-the local-first experience. The legacy frontend monolith is gone; every pane
-now runs through a small, explicit module with guarded data and rendering
-boundaries.
+The flight panel now plays a cinematic FSD jump sequence in step with your
+ship: the hyperspace countdown, the witchspace tunnel, and the arrival
+reveal, driven live from the journal the moment your drive commits to a jump.
 
-### Faster, cleaner cockpit foundation
+### A jump sequence with real flight data
 
-- The frontend is now a native ES-module graph split by feature, with a tiny
-  startup shell and layered styles. There is still no bundler, CDN, runtime
-  package, or cloud account.
-- Desktop and Panel mode share one typed application state while keeping their
-  presentation and controls independently testable.
-- Browser assets revalidate safely after an update, and a running client
-  reloads once if it detects a newer backend version.
-- The existing Holo Bracket controls, themes, saved layouts, paired devices,
-  and touch-first Panel experience are preserved.
+- The countdown screen locks in your destination the way the drive does:
+  system name, star class, and whether the arrival star is scoopable.
+- The tunnel is a real-time WebGL render with a heads-up display —
+  destination and class on one side, transit clock and fuel on the other,
+  plus your route position when a route is plotted.
+- Arrival flashes into normal space and reveals the system name, the jump
+  distance, and what to do next: deploy the scoop at a fuel star, or a clear
+  warning when a low tank meets a star with no fuel to give.
+- Neutron stars get their own cyan cone-transit look with the ×4 supercharge
+  banner. Jumping on critically low fuel turns the sequence red and keeps
+  the advice on screen. ("DON'T PANIC.")
 
-### Commander data stays with the right commander
+### You decide how much spectacle you want
 
-- Every commander-owned request carries a stable commander identity. Work
-  still in flight is cancelled and ignored when profiles change.
-- Archived commanders are now explicitly offline viewers. Frameshift rejects
-  switching away from the journal commander while Elite Dangerous is live,
-  preventing the UI, analytics, and tracked-market data from splitting across
-  profiles.
-- Profile activation and journal handoffs now share one serialized transition,
-  and live journal activity always reasserts its commander before updates are
-  recorded.
+- **Settings → FSD jump sequence** turns the whole thing on or off for the
+  device, and a SKIP button on the overlay dismisses any single jump.
+- **Reduce jump flashing** caps the bright white flashes at launch and
+  arrival, and the sequence calms itself automatically when your device asks
+  for reduced motion.
+- **Jump effect intensity** scales the tunnel, camera shake, and glow from
+  calm to full theatre.
+- **◈ PREVIEW JUMP** plays a simulated jump on the spot — no game needed.
 
-### Safer rendering and transport
+### Built for the cockpit tablet
 
-- Dynamic cockpit content is escaped through one reviewed rendering boundary.
-- Feature code can only reach same-origin Frameshift API routes through named,
-  typed clients; it cannot bypass the transport policy or embed ad-hoc API
-  calls.
-- The server now checks commander metadata for every commander-scoped route and
-  continues to enforce a self-only script policy.
-
-### Release-grade browser coverage
-
-- Unit and DOM behavior run against the real module graph.
-- Complete Chromium journeys cover desktop behavior, while WebKit journeys
-  exercise the iPad-sized Panel experience.
-- Every Python test file runs in its own deterministic process, and the
-  packaged executable must serve a coherent, cache-safe module graph before a
-  release can publish.
+- The tunnel renders at adaptive resolution so tablet GPUs hold their frame
+  rate, and the WebGL context exists only while a sequence is playing.
+- The sequence rides the panel's existing state link — no new connections —
+  and a paired device that reloads mid-jump joins the tunnel in progress.
+- A jump that never resolves (a crash mid-jump, a stale session) expires
+  quietly instead of leaving the overlay on screen.
 
 ### Upgrade notes
 
 - Update normally from any 2.x release. There are no database schema changes
-  and no manual migration steps.
+  and no manual migration steps. The sequence is on by default in Panel
+  mode; turn it off any time in Settings.
